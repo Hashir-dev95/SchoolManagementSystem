@@ -12,17 +12,35 @@ import { studentApi } from './studentService';
 import { studentPreview } from './previewData';
 
 const colors = {
-  ink: '#14243A',
-  muted: '#69788C',
-  blue: '#246BFD',
-  pale: '#F2F6FC',
-  line: '#E3EAF3',
+  ink: '#282940',
+  muted: '#92918A',
+  blue: '#4857B5',
+  pale: '#FFF9EF',
+  line: '#E6E2D7',
   green: '#168A62',
   red: '#B42318',
   amber: '#B66A0A',
 };
 
-function Section({ title, children, empty }) {
+function Section({ title, activePage, children, empty }) {
+  const sectionPage = {
+    Timetable: 'Learning',
+    Attendance: 'Attendance',
+    Homework: 'Homework',
+    'Published results': 'Results',
+    Progress: 'Progress',
+    Fees: 'Fees',
+    'Application status history': 'Applications',
+    'Application history': 'Applications',
+  }[title];
+  if (
+    activePage &&
+    activePage !== 'All' &&
+    activePage !== 'My children' &&
+    activePage !== sectionPage &&
+    !(activePage === 'Timetable' && title === 'Timetable')
+  )
+    return null;
   return (
     <View>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -83,6 +101,7 @@ function Field({
 export default function StudentDashboard({
   previewOnly = false,
   searchQuery = '',
+  page = 'All',
 }) {
   const [records, setRecords] = useState(
     previewOnly
@@ -116,7 +135,8 @@ export default function StudentDashboard({
   const visibleRecords = React.useMemo(() => {
     if (!previewOnly || !searchQuery.trim()) return records;
     const query = searchQuery.trim().toLowerCase();
-    const matches = item => JSON.stringify(item).toLowerCase().includes(query);
+    const matches = (item) =>
+      JSON.stringify(item).toLowerCase().includes(query);
     return {
       ...records,
       timetable: records.timetable.filter(matches),
@@ -128,7 +148,7 @@ export default function StudentDashboard({
     };
   }, [previewOnly, records, searchQuery]);
 
-  const loadDashboard = useCallback(async filters => {
+  const loadDashboard = useCallback(async (filters) => {
     setLoading(true);
     setError('');
     try {
@@ -238,8 +258,7 @@ export default function StudentDashboard({
       </Text>
       {previewOnly ? (
         <Text style={styles.previewNotice}>
-          DEVELOPMENT UI PREVIEW · Fictional records · APIs and submissions are
-          disabled
+          Design preview · sample records
         </Text>
       ) : null}
 
@@ -271,16 +290,16 @@ export default function StudentDashboard({
             <Field
               label="From (YYYY-MM-DD)"
               value={dateRange.from}
-              onChangeText={value =>
-                setDateRange(current => ({ ...current, from: value }))
+              onChangeText={(value) =>
+                setDateRange((current) => ({ ...current, from: value }))
               }
               placeholder="2026-01-01"
             />
             <Field
               label="To (YYYY-MM-DD)"
               value={dateRange.to}
-              onChangeText={value =>
-                setDateRange(current => ({ ...current, to: value }))
+              onChangeText={(value) =>
+                setDateRange((current) => ({ ...current, to: value }))
               }
               placeholder="2026-12-31"
             />
@@ -299,10 +318,11 @@ export default function StudentDashboard({
       {!loading && !error ? (
         <>
           <Section
+            activePage={page}
             title="Timetable"
             empty="No timetable entries are available."
           >
-            {visibleRecords.timetable.map(item => (
+            {visibleRecords.timetable.map((item) => (
               <Record
                 key={
                   item.id ||
@@ -319,10 +339,11 @@ export default function StudentDashboard({
             ))}
           </Section>
           <Section
+            activePage={page}
             title="Attendance"
             empty="No attendance records found for these dates."
           >
-            {visibleRecords.attendance.map(item => (
+            {visibleRecords.attendance.map((item) => (
               <Record
                 key={item.id || `${item.date}-${item._id}`}
                 title={
@@ -336,10 +357,11 @@ export default function StudentDashboard({
             ))}
           </Section>
           <Section
+            activePage={page}
             title="Published results"
             empty="No results have been published for you."
           >
-            {visibleRecords.results.map(item => (
+            {visibleRecords.results.map((item) => (
               <Record
                 key={item.id || item._id}
                 title={item.examName || item.title || item.subject || 'Result'}
@@ -356,8 +378,12 @@ export default function StudentDashboard({
               />
             ))}
           </Section>
-          <Section title="Progress" empty="No progress records are available.">
-            {visibleRecords.progress.map(item => (
+          <Section
+            activePage={page}
+            title="Progress"
+            empty="No progress records are available."
+          >
+            {visibleRecords.progress.map((item) => (
               <Record
                 key={item.id || item._id}
                 title={item.subject || item.area || item.title || 'Progress'}
@@ -375,10 +401,11 @@ export default function StudentDashboard({
             ))}
           </Section>
           <Section
+            activePage={page}
             title="Homework"
             empty="No published homework is assigned to you."
           >
-            {visibleRecords.homework.map(item => {
+            {visibleRecords.homework.map((item) => {
               const submission = item.latestSubmission;
               const homeworkId = item.id || String(item._id);
               return (
@@ -409,16 +436,16 @@ export default function StudentDashboard({
                       <Field
                         label="File URI from device"
                         value={asset.uri}
-                        onChangeText={value =>
-                          setAsset(current => ({ ...current, uri: value }))
+                        onChangeText={(value) =>
+                          setAsset((current) => ({ ...current, uri: value }))
                         }
                         placeholder="Select a file in your device flow"
                       />
                       <Field
                         label="Filename"
                         value={asset.name}
-                        onChangeText={value =>
-                          setAsset(current => ({ ...current, name: value }))
+                        onChangeText={(value) =>
+                          setAsset((current) => ({ ...current, name: value }))
                         }
                         placeholder="homework.pdf"
                         autoCapitalize="none"
@@ -426,8 +453,8 @@ export default function StudentDashboard({
                       <Field
                         label="MIME type"
                         value={asset.type}
-                        onChangeText={value =>
-                          setAsset(current => ({ ...current, type: value }))
+                        onChangeText={(value) =>
+                          setAsset((current) => ({ ...current, type: value }))
                         }
                         placeholder="application/pdf"
                       />
@@ -456,7 +483,7 @@ export default function StudentDashboard({
               );
             })}
           </Section>
-          {!previewOnly ? (
+          {!previewOnly && (page === 'Applications' || page === 'All') ? (
             <>
               <Text style={styles.sectionTitle}>
                 Applications to class teacher
@@ -504,10 +531,11 @@ export default function StudentDashboard({
                 </Text>
               )}
               <Section
+                activePage={page}
                 title="Application status history"
                 empty="You have no applications yet."
               >
-                {records.applications.map(item => (
+                {records.applications.map((item) => (
                   <View key={item.id || item._id} style={styles.card}>
                     <View style={styles.cardHeader}>
                       <Text style={styles.cardTitle}>{item.title}</Text>
@@ -534,10 +562,11 @@ export default function StudentDashboard({
             </>
           ) : (
             <Section
+              activePage={page}
               title="Application history"
               empty="No preview applications."
             >
-              {records.applications.map(item => (
+              {records.applications.map((item) => (
                 <Record key={item.id} title={item.title} status={item.status} />
               ))}
             </Section>
@@ -556,7 +585,7 @@ export default function StudentDashboard({
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.pale },
-  content: { padding: 20, paddingBottom: 42 },
+  content: { padding: 18, paddingBottom: 30 },
   eyebrow: {
     color: colors.blue,
     fontSize: 11,
@@ -582,7 +611,7 @@ const styles = StyleSheet.create({
   muted: { color: colors.muted, fontSize: 12 },
   errorBox: {
     backgroundColor: '#FFF0EF',
-    borderRadius: 12,
+    borderRadius: 18,
     padding: 14,
     marginTop: 14,
   },
@@ -598,7 +627,7 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   input: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFEFA',
     borderWidth: 1,
     borderColor: colors.line,
     borderRadius: 10,
@@ -617,20 +646,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 8,
   },
-  buttonText: { color: '#FFFFFF', fontWeight: '800', fontSize: 12 },
+  buttonText: { color: '#FFFEFA', fontWeight: '800', fontSize: 12 },
   disabled: { opacity: 0.55 },
   empty: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFEFA',
     color: colors.muted,
     borderRadius: 11,
     padding: 13,
     fontSize: 12,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFEFA',
     borderWidth: 1,
     borderColor: colors.line,
-    borderRadius: 12,
+    borderRadius: 18,
     padding: 13,
     marginBottom: 8,
   },

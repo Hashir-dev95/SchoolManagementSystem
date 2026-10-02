@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { getAuthHeaders } from './authSession';
 
 const API_ROOT =
   Platform.OS === 'android'
@@ -11,11 +12,13 @@ async function request(path, options = {}) {
     response = await fetch(`${API_ROOT}${path}`, {
       credentials: 'include',
       ...options,
-      headers:
-        options.headers ||
-        (options.body instanceof FormData
-          ? undefined
-          : { 'Content-Type': 'application/json' }),
+      headers: {
+        ...getAuthHeaders(),
+        ...(options.headers ||
+          (options.body instanceof FormData
+            ? {}
+            : { 'Content-Type': 'application/json' })),
+      },
     });
   } catch {
     throw new Error(

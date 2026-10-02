@@ -5,6 +5,8 @@ const { getClient, getDatabase } = require('./database');
 const studentRoutes = require('./studentRoutes');
 const parentRoutes = require('./parentRoutes');
 const { createUserNotificationRouter } = require('./userNotificationRoutes');
+const { authenticateRequest } = require('./auth');
+const authRoutes = require('./authRoutes');
 
 const router = express.Router();
 let paymentIdempotencyIndexPromise;
@@ -86,6 +88,8 @@ const notFound = (res, entity, id) =>
     .status(404)
     .json({ success: false, error: `${entity} ${id} was not found` });
 
+router.use('/auth', authRoutes);
+router.use(authenticateRequest);
 router.use('/students/me', studentRoutes);
 router.use('/parents/me', parentRoutes);
 router.use('/finance', requireFinanceContext);

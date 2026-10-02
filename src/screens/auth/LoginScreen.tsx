@@ -1,50 +1,11 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-
-const LoginScreen = () => {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>School Management System</Text>
-      <Text accessibilityRole="header" style={styles.status}>
-        Authentication integration pending
-      </Text>
-      <Text style={styles.description}>
-        Sign-in is not available yet. Student, Parent, and Finance dashboards
-        will be available once school account authentication is connected.
-      </Text>
-    </View>
-  );
+import React, {useState} from 'react';
+import {Pressable, StyleSheet, Text, TextInput, View} from 'react-native';
+import {login} from '../../mobileApp/authService';
+type Props = {onAuthenticated: (user: any) => void; onDeveloperPreview?: () => void};
+const LoginScreen = ({onAuthenticated, onDeveloperPreview}: Props) => {
+  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  async function submit() { setError(''); setBusy(true); try { const user = await login(email, password); onAuthenticated(user); } catch (failure: any) { setError(failure?.message || 'Could not sign in.'); } finally { setBusy(false); } }
+  return <View style={styles.container}><Text style={styles.title}>School Management System</Text><Text style={styles.status}>Sign in to your school workspace</Text><TextInput autoCapitalize="none" autoCorrect={false} keyboardType="email-address" value={email} onChangeText={setEmail} placeholder="Email" style={styles.input} placeholderTextColor="#69788C"/><TextInput secureTextEntry value={password} onChangeText={setPassword} placeholder="Password" style={styles.input} placeholderTextColor="#69788C"/><Pressable disabled={busy} onPress={submit} style={styles.button}><Text style={styles.buttonText}>{busy ? 'Signing in…' : 'Sign in'}</Text></Pressable>{typeof __DEV__ !== 'undefined' && __DEV__ && onDeveloperPreview ? <Pressable onPress={onDeveloperPreview} style={styles.previewButton}><Text style={styles.previewText}>Login as Developer</Text></Pressable> : null}{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    backgroundColor: '#F2F6FC',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 10,
-    color: '#14243A',
-    textAlign: 'center',
-  },
-  status: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#14243A',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  description: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#526176',
-    textAlign: 'center',
-    maxWidth: 420,
-  },
-});
-
+const styles = StyleSheet.create({container: {flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#F2F6FC'}, title: {fontSize: 24, fontWeight: '700', marginBottom: 10, color: '#14243A', textAlign: 'center'}, status: {fontSize: 18, fontWeight: '600', color: '#14243A', textAlign: 'center', marginBottom: 22}, input: {backgroundColor: '#FFF', borderColor: '#E3EAF3', borderWidth: 1, borderRadius: 12, minHeight: 48, paddingHorizontal: 14, marginBottom: 12, color: '#14243A'}, button: {backgroundColor: '#246BFD', borderRadius: 12, minHeight: 48, alignItems: 'center', justifyContent: 'center'}, buttonText: {color: '#FFF', fontWeight: '800'}, previewButton: {marginTop: 12, minHeight: 48, alignItems: 'center', justifyContent: 'center'}, previewText: {color: '#246BFD', fontWeight: '800'}, error: {color: '#B42318', marginTop: 14, textAlign: 'center'}});
 export default LoginScreen;

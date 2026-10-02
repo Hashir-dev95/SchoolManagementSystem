@@ -12,11 +12,11 @@ import { financeApi } from './financeService';
 import { financePreview } from './previewData';
 
 const colors = {
-  ink: '#14243A',
-  muted: '#69788C',
-  blue: '#246BFD',
-  pale: '#F2F6FC',
-  line: '#E3EAF3',
+  ink: '#282940',
+  muted: '#92918A',
+  blue: '#4857B5',
+  pale: '#FFF9EF',
+  line: '#E6E2D7',
   green: '#168A62',
   red: '#B42318',
 };
@@ -102,6 +102,7 @@ function financeErrorMessage(error) {
 export default function FinanceDashboard({
   previewOnly = false,
   searchQuery = '',
+  page = 'All',
 }) {
   const [filters, setFilters] = useState({ from: '', to: '', q: '' });
   const [summary, setSummary] = useState(
@@ -146,12 +147,12 @@ export default function FinanceDashboard({
     .trim()
     .toLowerCase();
   const visibleInvoices = financeSearch
-    ? invoices.filter(item =>
+    ? invoices.filter((item) =>
         JSON.stringify(item).toLowerCase().includes(financeSearch),
       )
     : invoices;
   const visibleDues = financeSearch
-    ? dues.filter(item =>
+    ? dues.filter((item) =>
         JSON.stringify(item).toLowerCase().includes(financeSearch),
       )
     : dues;
@@ -259,7 +260,7 @@ export default function FinanceDashboard({
       return;
     }
     const selectedDue = dues.find(
-      invoice => String(invoice.id) === payment.invoiceId.trim(),
+      (invoice) => String(invoice.id) === payment.invoiceId.trim(),
     );
     if (!selectedDue) {
       setPaymentError(
@@ -324,12 +325,12 @@ export default function FinanceDashboard({
       setStudentResults(
         query
           ? financePreview.invoices
-              .filter(item =>
+              .filter((item) =>
                 `${item.student} ${item.studentId}`
                   .toLowerCase()
                   .includes(query),
               )
-              .map(item => ({
+              .map((item) => ({
                 id: item.studentId,
                 fullName: item.student,
                 grade: 'Preview record',
@@ -391,8 +392,7 @@ export default function FinanceDashboard({
       </Text>
       {previewOnly ? (
         <Text style={styles.previewNotice}>
-          DEVELOPMENT UI PREVIEW · Fictional balances · API searches,
-          verification and payment entry are disabled
+          Design preview · sample records
         </Text>
       ) : null}
 
@@ -401,16 +401,16 @@ export default function FinanceDashboard({
         <Field
           label="From (YYYY-MM-DD)"
           value={filters.from}
-          onChangeText={value =>
-            setFilters(current => ({ ...current, from: value }))
+          onChangeText={(value) =>
+            setFilters((current) => ({ ...current, from: value }))
           }
           placeholder="2026-01-01"
         />
         <Field
           label="To (YYYY-MM-DD)"
           value={filters.to}
-          onChangeText={value =>
-            setFilters(current => ({ ...current, to: value }))
+          onChangeText={(value) =>
+            setFilters((current) => ({ ...current, to: value }))
           }
           placeholder="2026-12-31"
         />
@@ -418,8 +418,8 @@ export default function FinanceDashboard({
       <Field
         label="Invoice search"
         value={filters.q}
-        onChangeText={value =>
-          setFilters(current => ({ ...current, q: value }))
+        onChangeText={(value) =>
+          setFilters((current) => ({ ...current, q: value }))
         }
         placeholder="Invoice, voucher, or student ID"
         autoCapitalize="characters"
@@ -456,323 +456,365 @@ export default function FinanceDashboard({
         </View>
       ) : null}
 
-      <Text style={styles.section}>Student search</Text>
-      <Field
-        label="Student name, ID, or email"
-        value={studentQuery}
-        onChangeText={setStudentQuery}
-        placeholder="Search this branch"
-        autoCapitalize="none"
-      />
-      <Action
-        title={studentSearchLoading ? 'Searching…' : 'Search students'}
-        disabled={studentSearchLoading}
-        onPress={searchStudents}
-      />
-      <Notice message={studentSearchError} error />
-      {!studentSearchLoading &&
-      !studentSearchError &&
-      studentResults.length === 0 &&
-      studentQuery.trim() ? (
-        <Text style={styles.empty}>
-          No students match this search in your authorized branch.
-        </Text>
-      ) : null}
-      {studentResults.map(student => (
-        <View key={student.id} style={styles.card}>
-          <Text style={styles.cardTitle}>
-            {student.fullName || student.name}
-          </Text>
-          <Text style={styles.cardText}>
-            {student.id} · {student.grade || 'Grade unavailable'}
-          </Text>
-        </View>
-      ))}
-
-      <Text style={styles.section}>Outstanding dues</Text>
-      {!loading && !loadError && dues.length === 0 ? (
-        <Text style={styles.empty}>
-          No invoices have an outstanding balance.
-        </Text>
-      ) : null}
-      {visibleDues.map(invoice => (
-        <Pressable
-          key={`due-${invoice.id}`}
-          accessibilityRole="button"
-          onPress={() =>
-            setPayment(current => ({
-              ...current,
-              invoiceId: String(invoice.id),
-            }))
-          }
-          style={styles.card}
-        >
-          <Text style={styles.cardTitle}>
-            {invoice.id} · {invoice.student || invoice.studentId}
-          </Text>
-          <Text style={styles.cardText}>
-            Paid {formatMoney(invoice.paidAmount, invoice.currency)} · Pending{' '}
-            {formatMoney(invoice.pendingAmount, invoice.currency)}
-          </Text>
-          <Text style={styles.cardText}>
-            Due {formatMoney(invoice.balanceDue, invoice.currency)} · Available{' '}
-            {formatMoney(invoice.availableBalance, invoice.currency)}
-          </Text>
-          <Text style={styles.cardText}>
-            Due {String(invoice.dueDate || '—').slice(0, 10)} · {invoice.status}
-          </Text>
-          <Text style={styles.cardText}>
-            Tap to use this invoice for a payment entry.
-          </Text>
-        </Pressable>
-      ))}
-
-      <Text style={styles.section}>Invoices</Text>
-      {!loading && !loadError && invoices.length === 0 ? (
-        <Text style={styles.empty}>No invoices match these filters.</Text>
-      ) : null}
-      {visibleInvoices.map(invoice => (
-        <Pressable
-          key={invoice.id}
-          accessibilityRole="button"
-          onPress={() =>
-            setPayment(current => ({
-              ...current,
-              invoiceId: String(invoice.id),
-            }))
-          }
-          style={styles.card}
-        >
-          <Text style={styles.cardTitle}>
-            {invoice.id} · {invoice.student || invoice.studentId}
-          </Text>
-          <Text style={styles.cardText}>
-            {invoice.description || 'Invoice'} ·{' '}
-            {formatMoney(invoice.amount, invoice.currency)}
-          </Text>
-          <Text style={styles.cardText}>
-            Due {String(invoice.dueDate || '—').slice(0, 10)} · {invoice.status}
-          </Text>
-          {(() => {
-            const balance = dues.find(
-              item => String(item.id) === String(invoice.id),
-            );
-            return balance ? (
-              <Text style={styles.cardText}>
-                Paid {formatMoney(balance.paidAmount, balance.currency)} ·
-                Pending {formatMoney(balance.pendingAmount, balance.currency)} ·
-                Due {formatMoney(balance.balanceDue, balance.currency)} ·
-                Available{' '}
-                {formatMoney(balance.availableBalance, balance.currency)}
-              </Text>
-            ) : (
-              <Text style={styles.cardText}>
-                No outstanding available balance is listed for this invoice.
-              </Text>
-            );
-          })()}
-          {invoice.voucherCode ? (
-            <Text style={styles.cardText}>Voucher {invoice.voucherCode}</Text>
-          ) : null}
-          <Text style={styles.cardText}>
-            Tap to use this invoice for a payment entry.
-          </Text>
-        </Pressable>
-      ))}
-
-      <Text style={styles.section}>Voucher verification</Text>
-      <Field
-        label="Voucher code"
-        value={voucher}
-        onChangeText={setVoucher}
-        placeholder="Enter voucher code"
-        autoCapitalize="characters"
-      />
-      <Action
-        title={voucherLoading ? 'Checking…' : 'Verify voucher'}
-        disabled={previewOnly || voucherLoading}
-        onPress={verifyVoucher}
-      />
-      <Notice message={voucherError} error />
-      {voucherResult ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>
-            Voucher verified: {voucherResult.voucherCode}
-          </Text>
-          <Text style={styles.cardText}>
-            Invoice {voucherResult.invoiceId} ·{' '}
-            {voucherResult.student || 'Student record unavailable'}
-          </Text>
-          <Text style={styles.cardText}>
-            Invoice total{' '}
-            {formatMoney(voucherResult.amount, voucherResult.currency)} ·{' '}
-            {voucherResult.paymentStatus}
-          </Text>
-          <Text style={styles.cardText}>
-            Paid {formatMoney(voucherResult.paidAmount, voucherResult.currency)}{' '}
-            · Pending{' '}
-            {formatMoney(voucherResult.pendingAmount, voucherResult.currency)}
-          </Text>
-          <Text style={styles.cardText}>
-            Due {formatMoney(voucherResult.balanceDue, voucherResult.currency)}{' '}
-            · Available{' '}
-            {formatMoney(
-              voucherResult.availableBalance,
-              voucherResult.currency,
-            )}
-          </Text>
-          <Text style={styles.cardText}>
-            Voucher validity does not confirm receipt of payment.
-          </Text>
-        </View>
-      ) : null}
-
-      <Text style={styles.section}>Payment entry</Text>
-      <Text style={styles.muted}>
-        Entries are saved as pending verification. No payment is confirmed and
-        no receipt is issued by this action.
-      </Text>
-      <Field
-        label="Invoice ID"
-        value={payment.invoiceId}
-        onChangeText={value =>
-          setPayment(current => ({ ...current, invoiceId: value }))
-        }
-        placeholder="Enter invoice ID"
-        autoCapitalize="characters"
-      />
-      <Field
-        label="Amount"
-        value={payment.amount}
-        onChangeText={value =>
-          setPayment(current => ({ ...current, amount: value }))
-        }
-        placeholder="0.00"
-        keyboardType="decimal-pad"
-      />
-      <Field
-        label="Method (cash, bank_transfer, card, cheque, other)"
-        value={payment.method}
-        onChangeText={value =>
-          setPayment(current => ({ ...current, method: value }))
-        }
-        placeholder="cash"
-      />
-      <Field
-        label="Reference (optional)"
-        value={payment.reference}
-        onChangeText={value =>
-          setPayment(current => ({ ...current, reference: value }))
-        }
-        placeholder="Transaction or cheque reference"
-        autoCapitalize="characters"
-      />
-      <Action
-        title={paymentLoading ? 'Saving entry…' : 'Record payment entry'}
-        disabled={previewOnly || paymentLoading}
-        onPress={submitPayment}
-      />
-      <Notice message={paymentError} error />
-      <Notice message={paymentNotice} />
-
-      <Text style={styles.section}>Payments awaiting verification</Text>
-      {!loading && pendingPayments.length === 0 ? (
-        <Text style={styles.empty}>
-          No payment entries are awaiting verification.
-        </Text>
-      ) : null}
-      {pendingPayments.map(item => (
-        <View key={String(item._id)} style={styles.card}>
-          <Text style={styles.cardTitle}>Invoice {item.invoiceId}</Text>
-          <Text style={styles.cardText}>
-            {formatMoney(item.amount, item.currency)} · {item.method} ·{' '}
-            {item.status}
-          </Text>
-          {!previewOnly ? (
-            <Action
-              title={
-                verifyingPaymentId === String(item._id)
-                  ? 'Verifying…'
-                  : 'Verify payment and issue receipt'
-              }
-              disabled={previewOnly || !!verifyingPaymentId}
-              onPress={() => verifyPayment(String(item._id))}
-            />
-          ) : (
-            <Text style={styles.muted}>
-              Preview only · no real verification
+      {(page === 'All' || page === 'Student search') && (
+        <>
+          <Text style={styles.section}>Student search</Text>
+          <Field
+            label="Student name, ID, or email"
+            value={studentQuery}
+            onChangeText={setStudentQuery}
+            placeholder="Search this branch"
+            autoCapitalize="none"
+          />
+          <Action
+            title={studentSearchLoading ? 'Searching…' : 'Search students'}
+            disabled={studentSearchLoading}
+            onPress={searchStudents}
+          />
+          <Notice message={studentSearchError} error />
+          {!studentSearchLoading &&
+          !studentSearchError &&
+          studentResults.length === 0 &&
+          studentQuery.trim() ? (
+            <Text style={styles.empty}>
+              No students match this search in your authorized branch.
             </Text>
-          )}
-        </View>
-      ))}
-
-      <Text style={styles.section}>Payment history</Text>
-      {!loading && !loadError && paymentHistory.length === 0 ? (
-        <Text style={styles.empty}>
-          No confirmed payments in this date range.
-        </Text>
-      ) : null}
-      {paymentHistory.map(item => (
-        <View key={String(item._id)} style={styles.card}>
-          <Text style={styles.cardTitle}>Invoice {item.invoiceId}</Text>
-          <Text style={styles.cardText}>
-            {formatMoney(item.amount, item.currency)} · {item.method} ·{' '}
-            {item.status}
+          ) : null}
+          {studentResults.map((student) => (
+            <View key={student.id} style={styles.card}>
+              <Text style={styles.cardTitle}>
+                {student.fullName || student.name}
+              </Text>
+              <Text style={styles.cardText}>
+                {student.id} · {student.grade || 'Grade unavailable'}
+              </Text>
+            </View>
+          ))}
+        </>
+      )}
+      {(page === 'All' || page === 'Outstanding dues') && (
+        <>
+          <Text style={styles.section}>Outstanding dues</Text>
+          {!loading && !loadError && dues.length === 0 ? (
+            <Text style={styles.empty}>
+              No invoices have an outstanding balance.
+            </Text>
+          ) : null}
+          {visibleDues.map((invoice) => (
+            <Pressable
+              key={`due-${invoice.id}`}
+              accessibilityRole="button"
+              onPress={() =>
+                setPayment((current) => ({
+                  ...current,
+                  invoiceId: String(invoice.id),
+                }))
+              }
+              style={styles.card}
+            >
+              <Text style={styles.cardTitle}>
+                {invoice.id} · {invoice.student || invoice.studentId}
+              </Text>
+              <Text style={styles.cardText}>
+                Paid {formatMoney(invoice.paidAmount, invoice.currency)} ·
+                Pending {formatMoney(invoice.pendingAmount, invoice.currency)}
+              </Text>
+              <Text style={styles.cardText}>
+                Due {formatMoney(invoice.balanceDue, invoice.currency)} ·
+                Available{' '}
+                {formatMoney(invoice.availableBalance, invoice.currency)}
+              </Text>
+              <Text style={styles.cardText}>
+                Due {String(invoice.dueDate || '—').slice(0, 10)} ·{' '}
+                {invoice.status}
+              </Text>
+              <Text style={styles.cardText}>
+                Tap to use this invoice for a payment entry.
+              </Text>
+            </Pressable>
+          ))}
+        </>
+      )}
+      {(page === 'All' || page === 'Invoices') && (
+        <>
+          <Text style={styles.section}>Invoices</Text>
+          {!loading && !loadError && invoices.length === 0 ? (
+            <Text style={styles.empty}>No invoices match these filters.</Text>
+          ) : null}
+          {visibleInvoices.map((invoice) => (
+            <Pressable
+              key={invoice.id}
+              accessibilityRole="button"
+              onPress={() =>
+                setPayment((current) => ({
+                  ...current,
+                  invoiceId: String(invoice.id),
+                }))
+              }
+              style={styles.card}
+            >
+              <Text style={styles.cardTitle}>
+                {invoice.id} · {invoice.student || invoice.studentId}
+              </Text>
+              <Text style={styles.cardText}>
+                {invoice.description || 'Invoice'} ·{' '}
+                {formatMoney(invoice.amount, invoice.currency)}
+              </Text>
+              <Text style={styles.cardText}>
+                Due {String(invoice.dueDate || '—').slice(0, 10)} ·{' '}
+                {invoice.status}
+              </Text>
+              {(() => {
+                const balance = dues.find(
+                  (item) => String(item.id) === String(invoice.id),
+                );
+                return balance ? (
+                  <Text style={styles.cardText}>
+                    Paid {formatMoney(balance.paidAmount, balance.currency)} ·
+                    Pending{' '}
+                    {formatMoney(balance.pendingAmount, balance.currency)} · Due{' '}
+                    {formatMoney(balance.balanceDue, balance.currency)} ·
+                    Available{' '}
+                    {formatMoney(balance.availableBalance, balance.currency)}
+                  </Text>
+                ) : (
+                  <Text style={styles.cardText}>
+                    No outstanding available balance is listed for this invoice.
+                  </Text>
+                );
+              })()}
+              {invoice.voucherCode ? (
+                <Text style={styles.cardText}>
+                  Voucher {invoice.voucherCode}
+                </Text>
+              ) : null}
+              <Text style={styles.cardText}>
+                Tap to use this invoice for a payment entry.
+              </Text>
+            </Pressable>
+          ))}
+        </>
+      )}
+      {(page === 'All' || page === 'Voucher verification') && (
+        <>
+          <Text style={styles.section}>Voucher verification</Text>
+          <Field
+            label="Voucher code"
+            value={voucher}
+            onChangeText={setVoucher}
+            placeholder="Enter voucher code"
+            autoCapitalize="characters"
+          />
+          <Action
+            title={voucherLoading ? 'Checking…' : 'Verify voucher'}
+            disabled={previewOnly || voucherLoading}
+            onPress={verifyVoucher}
+          />
+          <Notice message={voucherError} error />
+          {voucherResult ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>
+                Voucher verified: {voucherResult.voucherCode}
+              </Text>
+              <Text style={styles.cardText}>
+                Invoice {voucherResult.invoiceId} ·{' '}
+                {voucherResult.student || 'Student record unavailable'}
+              </Text>
+              <Text style={styles.cardText}>
+                Invoice total{' '}
+                {formatMoney(voucherResult.amount, voucherResult.currency)} ·{' '}
+                {voucherResult.paymentStatus}
+              </Text>
+              <Text style={styles.cardText}>
+                Paid{' '}
+                {formatMoney(voucherResult.paidAmount, voucherResult.currency)}{' '}
+                · Pending{' '}
+                {formatMoney(
+                  voucherResult.pendingAmount,
+                  voucherResult.currency,
+                )}
+              </Text>
+              <Text style={styles.cardText}>
+                Due{' '}
+                {formatMoney(voucherResult.balanceDue, voucherResult.currency)}{' '}
+                · Available{' '}
+                {formatMoney(
+                  voucherResult.availableBalance,
+                  voucherResult.currency,
+                )}
+              </Text>
+              <Text style={styles.cardText}>
+                Voucher validity does not confirm receipt of payment.
+              </Text>
+            </View>
+          ) : null}
+        </>
+      )}
+      {(page === 'All' || page === 'Payment entry') && (
+        <>
+          <Text style={styles.section}>Payment entry</Text>
+          <Text style={styles.muted}>
+            Entries are saved as pending verification. No payment is confirmed
+            and no receipt is issued by this action.
           </Text>
-          <Text style={styles.cardText}>
-            {item.receiptNumber ? `Receipt ${item.receiptNumber} · ` : ''}
-            {item.reference ? `Reference ${item.reference} · ` : ''}
-            {item.confirmedAt
-              ? new Date(item.confirmedAt).toLocaleDateString()
-              : 'Date unavailable'}
-          </Text>
-        </View>
-      ))}
-
-      <Text style={styles.section}>Receipts</Text>
-      {!loading && !loadError && receipts.length === 0 ? (
-        <Text style={styles.empty}>
-          No confirmed receipts in this date range.
-        </Text>
-      ) : null}
-      {receipts.map(receipt => (
-        <View key={String(receipt._id)} style={styles.card}>
-          <Text style={styles.cardTitle}>
-            {receipt.receiptNumber || 'Receipt number unavailable'}
-          </Text>
-          <Text style={styles.cardText}>
-            {receipt.student || 'Student'} · invoice {receipt.invoiceId}
-          </Text>
-          <Text style={styles.cardText}>
-            {formatMoney(receipt.amount, receipt.currency)} ·{' '}
-            {receipt.confirmedAt
-              ? new Date(receipt.confirmedAt).toLocaleDateString()
-              : 'Date unavailable'}
-          </Text>
-        </View>
-      ))}
-
-      <Text style={styles.section}>Collection report</Text>
-      {!loading && !loadError && report?.confirmedCollections?.length === 0 ? (
-        <Text style={styles.empty}>
-          No confirmed collections in this date range.
-        </Text>
-      ) : null}
-      {report?.confirmedCollections?.map(item => (
-        <View key={item._id || 'currency'} style={styles.card}>
-          <Text style={styles.cardTitle}>
-            {formatMoney(item.total, item._id || 'PKR')}
-          </Text>
-          <Text style={styles.cardText}>
-            {item.count} confirmed collections
-          </Text>
-        </View>
-      ))}
-      {report?.byMethod?.map(item => (
-        <Text key={item._id || 'method'} style={styles.reportLine}>
-          {item._id || 'Unspecified'}: {formatMoney(item.total)} ({item.count})
-        </Text>
-      ))}
+          <Field
+            label="Invoice ID"
+            value={payment.invoiceId}
+            onChangeText={(value) =>
+              setPayment((current) => ({ ...current, invoiceId: value }))
+            }
+            placeholder="Enter invoice ID"
+            autoCapitalize="characters"
+          />
+          <Field
+            label="Amount"
+            value={payment.amount}
+            onChangeText={(value) =>
+              setPayment((current) => ({ ...current, amount: value }))
+            }
+            placeholder="0.00"
+            keyboardType="decimal-pad"
+          />
+          <Field
+            label="Method (cash, bank_transfer, card, cheque, other)"
+            value={payment.method}
+            onChangeText={(value) =>
+              setPayment((current) => ({ ...current, method: value }))
+            }
+            placeholder="cash"
+          />
+          <Field
+            label="Reference (optional)"
+            value={payment.reference}
+            onChangeText={(value) =>
+              setPayment((current) => ({ ...current, reference: value }))
+            }
+            placeholder="Transaction or cheque reference"
+            autoCapitalize="characters"
+          />
+          <Action
+            title={paymentLoading ? 'Saving entry…' : 'Record payment entry'}
+            disabled={previewOnly || paymentLoading}
+            onPress={submitPayment}
+          />
+          <Notice message={paymentError} error />
+          <Notice message={paymentNotice} />
+        </>
+      )}
+      {(page === 'All' || page === 'Pending verification') && (
+        <>
+          <Text style={styles.section}>Payments awaiting verification</Text>
+          {!loading && pendingPayments.length === 0 ? (
+            <Text style={styles.empty}>
+              No payment entries are awaiting verification.
+            </Text>
+          ) : null}
+          {pendingPayments.map((item) => (
+            <View key={String(item._id)} style={styles.card}>
+              <Text style={styles.cardTitle}>Invoice {item.invoiceId}</Text>
+              <Text style={styles.cardText}>
+                {formatMoney(item.amount, item.currency)} · {item.method} ·{' '}
+                {item.status}
+              </Text>
+              {!previewOnly ? (
+                <Action
+                  title={
+                    verifyingPaymentId === String(item._id)
+                      ? 'Verifying…'
+                      : 'Verify payment and issue receipt'
+                  }
+                  disabled={previewOnly || !!verifyingPaymentId}
+                  onPress={() => verifyPayment(String(item._id))}
+                />
+              ) : (
+                <Text style={styles.muted}>
+                  Preview only · no real verification
+                </Text>
+              )}
+            </View>
+          ))}
+        </>
+      )}
+      {(page === 'All' || page === 'Payment history') && (
+        <>
+          <Text style={styles.section}>Payment history</Text>
+          {!loading && !loadError && paymentHistory.length === 0 ? (
+            <Text style={styles.empty}>
+              No confirmed payments in this date range.
+            </Text>
+          ) : null}
+          {paymentHistory.map((item) => (
+            <View key={String(item._id)} style={styles.card}>
+              <Text style={styles.cardTitle}>Invoice {item.invoiceId}</Text>
+              <Text style={styles.cardText}>
+                {formatMoney(item.amount, item.currency)} · {item.method} ·{' '}
+                {item.status}
+              </Text>
+              <Text style={styles.cardText}>
+                {item.receiptNumber ? `Receipt ${item.receiptNumber} · ` : ''}
+                {item.reference ? `Reference ${item.reference} · ` : ''}
+                {item.confirmedAt
+                  ? new Date(item.confirmedAt).toLocaleDateString()
+                  : 'Date unavailable'}
+              </Text>
+            </View>
+          ))}
+        </>
+      )}
+      {(page === 'All' || page === 'Receipts') && (
+        <>
+          <Text style={styles.section}>Receipts</Text>
+          {!loading && !loadError && receipts.length === 0 ? (
+            <Text style={styles.empty}>
+              No confirmed receipts in this date range.
+            </Text>
+          ) : null}
+          {receipts.map((receipt) => (
+            <View key={String(receipt._id)} style={styles.card}>
+              <Text style={styles.cardTitle}>
+                {receipt.receiptNumber || 'Receipt number unavailable'}
+              </Text>
+              <Text style={styles.cardText}>
+                {receipt.student || 'Student'} · invoice {receipt.invoiceId}
+              </Text>
+              <Text style={styles.cardText}>
+                {formatMoney(receipt.amount, receipt.currency)} ·{' '}
+                {receipt.confirmedAt
+                  ? new Date(receipt.confirmedAt).toLocaleDateString()
+                  : 'Date unavailable'}
+              </Text>
+            </View>
+          ))}
+        </>
+      )}
+      {(page === 'All' || page === 'Collection report') && (
+        <>
+          <Text style={styles.section}>Collection report</Text>
+          {!loading &&
+          !loadError &&
+          report?.confirmedCollections?.length === 0 ? (
+            <Text style={styles.empty}>
+              No confirmed collections in this date range.
+            </Text>
+          ) : null}
+          {report?.confirmedCollections?.map((item) => (
+            <View key={item._id || 'currency'} style={styles.card}>
+              <Text style={styles.cardTitle}>
+                {formatMoney(item.total, item._id || 'PKR')}
+              </Text>
+              <Text style={styles.cardText}>
+                {item.count} confirmed collections
+              </Text>
+            </View>
+          ))}
+          {report?.byMethod?.map((item) => (
+            <Text key={item._id || 'method'} style={styles.reportLine}>
+              {item._id || 'Unspecified'}: {formatMoney(item.total)} (
+              {item.count})
+            </Text>
+          ))}
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -805,7 +847,7 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   input: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFEFA',
     borderColor: colors.line,
     borderWidth: 1,
     borderRadius: 11,
@@ -824,7 +866,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 8,
   },
-  actionText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
+  actionText: { color: '#FFFEFA', fontWeight: '800', fontSize: 13 },
   secondaryAction: { backgroundColor: '#EAF0FA' },
   secondaryText: { color: colors.ink },
   disabled: { opacity: 0.55 },
@@ -846,16 +888,16 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     padding: 14,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: '#FFFEFA',
+    borderRadius: 18,
   },
   metrics: { flexDirection: 'row', gap: 10, marginTop: 17 },
   metric: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFEFA',
     borderColor: colors.line,
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 20,
     padding: 14,
     minHeight: 95,
     justifyContent: 'center',
@@ -868,7 +910,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFEFA',
     borderColor: colors.line,
     borderWidth: 1,
     borderRadius: 13,

@@ -1,395 +1,611 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Animated,
+  AppState,
+  BackHandler,
   Modal,
   Pressable,
-  TextInput,
-  SafeAreaView,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import NotificationDrawer from './NotificationDrawer';
 import RoleDashboard from './RoleDashboard';
+import HiraHome from './HiraHome';
+import { theme as t, rolePages, bottomPages } from './hiraTheme';
 
-const dashboardRoles = {
-  student: 'Student',
+const roles = Object.keys(rolePages);
+const roleNames = {
   parent: 'Parent',
+  student: 'Student',
   finance: 'Finance',
+  teacher: 'Teacher',
+  principal: 'Principal',
+  superadmin: 'Super Admin',
+  'super admin': 'Super Admin',
+  super_admin: 'Super Admin',
 };
-const APP_BACKGROUND = '#F2F6FC';
-
-function LoadingScreen() {
+const ownedRoles = ['Parent', 'Student', 'Finance'];
+const icons = {
+  Home: '▦',
+  Progress: '↗',
+  Inbox: '◇',
+  Learning: '▤',
+  Homework: '✎',
+  Invoices: '▤',
+  Receipts: '▧',
+  Classes: '▦',
+  Reports: '▥',
+  Schools: '▦',
+};
+function getGreeting(hour = new Date().getHours()) {
+  if (hour >= 5 && hour < 12) return 'Good morning';
+  if (hour >= 12 && hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+function Button({ children, onPress, style, label }) {
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={APP_BACKGROUND} />
-      <View style={styles.centered}>
-        <ActivityIndicator
-          accessibilityLabel="Restoring your session"
-          color="#246BFD"
-        />
-        <Text style={styles.muted}>Restoring your session…</Text>
-      </View>
-    </SafeAreaView>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label || children}
+      onPress={onPress}
+      style={({ pressed }) => [
+        s.button,
+        style,
+        pressed && { opacity: 0.75, transform: [{ scale: 0.97 }] },
+      ]}
+    >
+      <Text style={s.buttonText}>{children}</Text>
+    </Pressable>
   );
 }
 
-function UnsupportedRole({ role, onLogout }) {
-  return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={APP_BACKGROUND} />
-      <View style={styles.centered}>
-        <Text style={styles.title}>Role not available in this app</Text>
-        <Text style={styles.muted}>
-          {role
-            ? `The authenticated role “${role}” has no Student, Parent, or Finance dashboard here.`
-            : 'The authenticated account has no role.'}
-        </Text>
-        {typeof onLogout === 'function' ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={onLogout}
-            style={styles.logoutButton}
-          >
-            <Text style={styles.logoutText}>Sign out</Text>
-          </Pressable>
-        ) : null}
-      </View>
-    </SafeAreaView>
-  );
-}
-
-function IntegrationPending() {
-  return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={APP_BACKGROUND} />
-      <View style={styles.centered}>
-        <Text style={styles.title}>Authentication integration pending</Text>
-        <Text style={styles.muted}>
-          This app area requires an authenticated user session from the partner
-          auth provider. Sign in through AuthNavigator, then provide that
-          verified session to MobileApp.
-        </Text>
-      </View>
-    </SafeAreaView>
-  );
-}
-
-/**
- * Post-authentication app shell. The partner auth layer must pass its trusted
- * AuthState and callbacks; this component never creates or assumes a session.
- */
+/** Authenticated production shell. Role switching is only available in explicit development preview. */
+/** @param {{authState?: any, authLoading?: boolean, onLogout?: (() => void|Promise<void>), developmentPreview?: boolean, roleScreens?: object}} props */
 export default function MobileApp({
-  authState,
+  authState = null,
   authLoading = false,
-  onLogout,
+  onLogout = undefined,
   developmentPreview = false,
+  roleScreens = {},
 }) {
-  const previewActive =
+  const previewOnly =
     developmentPreview && typeof __DEV__ !== 'undefined' && __DEV__;
-  const [previewRole, setPreviewRole] = React.useState('Student');
-  const [previewMenuOpen, setPreviewMenuOpen] = React.useState(false);
-  const [searchQuery, setSearchQuery] = React.useState('');
-  const entrance = React.useRef(new Animated.Value(0)).current;
-  React.useEffect(() => {
-    if (!previewActive) return undefined;
+  const [previewRole, setPreviewRole] = useState('Parent');
+  const [page, setPage] = useState('Home');
+  const [childId, setChildId] = useState('');
+  const [drawer, setDrawer] = useState(false);
+  const [rolePicker, setRolePicker] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const [greeting, setGreeting] = useState(() => getGreeting());
+  const user = authState?.isAuthenticated ? authState.user : null;
+  const role = previewOnly
+    ? previewRole
+    : roleNames[String(user?.role || '').toLowerCase()];
+  const { width } = useWindowDimensions();
+  const drawerWidth = Math.min(width * 0.91, 370);
+  const slide = useRef(new Animated.Value(-drawerWidth)).current;
+  const entrance = useRef(new Animated.Value(0)).current;
+  const greetingOpacity = useRef(new Animated.Value(1)).current;
+  const greetingOffset = useRef(new Animated.Value(0)).current;
+  const notificationRef = useRef(null);
+  useEffect(() => {
+    let alive = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((value) => {
+      if (alive) setReducedMotion(value);
+    });
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      setReducedMotion,
+    );
+    return () => {
+      alive = false;
+      subscription.remove();
+    };
+  }, []);
+  useEffect(() => {
+    const refreshGreeting = () => setGreeting(getGreeting());
+    refreshGreeting();
+    const interval = setInterval(refreshGreeting, 60 * 1000);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshGreeting();
+    });
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
+  }, []);
+  useEffect(() => {
+    greetingOpacity.stopAnimation();
+    greetingOffset.stopAnimation();
+    if (reducedMotion) {
+      greetingOpacity.setValue(1);
+      greetingOffset.setValue(0);
+      return undefined;
+    }
+    greetingOpacity.setValue(0);
+    greetingOffset.setValue(6);
+    Animated.parallel([
+      Animated.timing(greetingOpacity, {
+        toValue: 1,
+        duration: 360,
+        useNativeDriver: true,
+      }),
+      Animated.timing(greetingOffset, {
+        toValue: 0,
+        duration: 360,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    return undefined;
+  }, [greeting, greetingOffset, greetingOpacity, reducedMotion]);
+  useEffect(() => {
+    entrance.setValue(0);
     Animated.timing(entrance, {
       toValue: 1,
-      duration: 360,
+      duration: reducedMotion ? 0 : 300,
       useNativeDriver: true,
     }).start();
-    return () => entrance.stopAnimation();
-  }, [entrance, previewActive]);
-
-  if (previewActive) {
+  }, [page, role, entrance, reducedMotion]);
+  useEffect(() => {
+    if (!drawer) return;
+    slide.setValue(-drawerWidth);
+    Animated.timing(slide, {
+      toValue: 0,
+      duration: reducedMotion ? 0 : 240,
+      useNativeDriver: true,
+    }).start();
+  }, [drawer, drawerWidth, reducedMotion, slide]);
+  const closeDrawer = () => {
+    Animated.timing(slide, {
+      toValue: -drawerWidth,
+      duration: reducedMotion ? 0 : 180,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setDrawer(false);
+        setRolePicker(false);
+      }
+    });
+  };
+  const navigate = (next, selectedChildId) => {
+    if (selectedChildId) setChildId(selectedChildId);
+    if (next === 'Inbox' && ownedRoles.includes(role))
+      notificationRef.current?.open();
+    else setPage(next);
+    if (drawer) closeDrawer();
+  };
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (drawer) {
+        setDrawer(false);
+        return true;
+      }
+      if (page !== 'Home') {
+        setPage('Home');
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [drawer, page]);
+  if (!previewOnly && (authLoading || !user || !role)) {
     return (
-      <SafeAreaView style={styles.safe}>
-        <StatusBar barStyle="dark-content" backgroundColor={APP_BACKGROUND} />
-        <View style={styles.topBar}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open preview navigation"
-            onPress={() => setPreviewMenuOpen(true)}
-            style={styles.iconButton}
-          >
-            <Text style={styles.menuIcon}>⋮</Text>
-          </Pressable>
-          <View style={styles.identity}>
-            <Text numberOfLines={1} style={styles.name}>
-              School day
-            </Text>
-            <Text style={styles.role}>{previewRole} · UI preview</Text>
-          </View>
-          <TextInput
-            accessibilityLabel="Search preview records"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search"
-            placeholderTextColor="#69788C"
-            style={styles.search}
-          />
-          <NotificationDrawer role={previewRole} previewOnly />
+      <SafeAreaView style={s.safe}>
+        <StatusBar barStyle="dark-content" backgroundColor={t.background} />
+        <View style={s.center}>
+          {authLoading ? <ActivityIndicator color={t.primary} /> : null}
+          <Text style={s.title}>
+            {authLoading
+              ? 'Restoring your session…'
+              : !user
+              ? 'Sign in to your school workspace'
+              : 'Workspace unavailable'}
+          </Text>
+          <Text style={s.description}>
+            {authLoading
+              ? 'Your school day is almost ready.'
+              : !user
+              ? 'Connect the existing partner authentication flow to this workspace.'
+              : 'Ask your school to check your assigned role.'}
+          </Text>
+          {onLogout && user ? (
+            <Button onPress={onLogout}>Sign out</Button>
+          ) : null}
         </View>
-        <View style={styles.previewBanner}>
-          <Text style={styles.mascot}>🧑🏽‍🎓</Text>
-          <View style={styles.bannerCopy}>
-            <Text style={styles.bannerTitle}>A bright day to learn!</Text>
-            <Text style={styles.bannerSubtitle}>
-              Development preview · fictional content only
-            </Text>
-          </View>
-          <Text style={styles.bannerDecoration}>✦</Text>
-        </View>
-        <Animated.View
-          style={[
-            styles.dashboardAnimated,
-            {
-              opacity: entrance,
-              transform: [
-                {
-                  translateY: entrance.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [10, 0],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <RoleDashboard
-            role={previewRole}
-            previewOnly
-            searchQuery={searchQuery}
-          />
-        </Animated.View>
-        <PreviewDrawer
-          visible={previewMenuOpen}
-          onClose={() => setPreviewMenuOpen(false)}
-          role={previewRole}
-          onSwitch={role => {
-            setPreviewRole(role);
-            setSearchQuery('');
-            setPreviewMenuOpen(false);
-          }}
-        />
       </SafeAreaView>
     );
   }
-
-  if (authLoading) return <LoadingScreen />;
-
-  const user = authState?.isAuthenticated === true ? authState.user : null;
-  if (!user) return <IntegrationPending />;
-
-  const roleKey = typeof user.role === 'string' ? user.role.toLowerCase() : '';
-  const displayRole = dashboardRoles[roleKey];
-  if (!displayRole) {
-    return <UnsupportedRole role={user.role} onLogout={onLogout} />;
-  }
-
+  const PartnerScreen = roleScreens[role];
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={APP_BACKGROUND} />
-      <View style={styles.topBar}>
-        <View style={styles.identity}>
-          <Text numberOfLines={1} style={styles.name}>
-            {user.fullName || user.email || displayRole}
-          </Text>
-          <Text style={styles.role}>{displayRole}</Text>
-        </View>
-        <NotificationDrawer role={displayRole} />
-        {typeof onLogout === 'function' ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={onLogout}
-            style={styles.logoutButton}
+    <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
+      <StatusBar barStyle="dark-content" backgroundColor={t.background} />
+      <View style={s.header}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open left navigation"
+          hitSlop={6}
+          onPress={() => setDrawer(true)}
+          style={s.menu}
+        >
+          <Text style={s.menuText}>⋮</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Go to home"
+          onPress={() => navigate('Home')}
+          style={s.logo}
+        >
+          <Text style={s.logoText}>H</Text>
+        </Pressable>
+        <View style={s.identity}>
+          <Animated.Text
+            style={[
+              s.eyebrow,
+              {
+                opacity: greetingOpacity,
+                transform: [{ translateY: greetingOffset }],
+              },
+            ]}
           >
-            <Text style={styles.logoutText}>Sign out</Text>
-          </Pressable>
+            {greeting}
+          </Animated.Text>
+          <Text style={s.headerTitle}>
+            {page === 'Home' ? 'Overview' : page}
+          </Text>
+        </View>
+        {ownedRoles.includes(role) ? (
+          <NotificationDrawer
+            ref={notificationRef}
+            key={role}
+            role={role}
+            previewOnly={previewOnly}
+          />
         ) : null}
       </View>
-      <RoleDashboard role={displayRole} />
+      <Animated.View
+        style={[
+          s.body,
+          {
+            opacity: entrance,
+            transform: [
+              {
+                translateY: entrance.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [12, 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        {ownedRoles.includes(role) ? (
+          page === 'Home' ? (
+            <HiraHome
+              key={role}
+              role={role}
+              previewOnly={previewOnly}
+              user={user}
+              onNavigate={navigate}
+              reducedMotion={reducedMotion}
+            />
+          ) : (
+            <RoleDashboard
+              key={`${role}-${page}`}
+              role={role}
+              previewOnly={previewOnly}
+              page={page}
+              initialChildId={childId}
+              searchQuery=""
+            />
+          )
+        ) : PartnerScreen ? (
+          <PartnerScreen
+            page={page}
+            previewOnly={previewOnly}
+            onNavigate={navigate}
+          />
+        ) : (
+          <View style={s.center}>
+            <Text style={s.title}>{role} workspace</Text>
+            <Text style={s.description}>
+              This role is ready for your partner’s screens.
+            </Text>
+            <Text style={s.description}>
+              Classes, DLP, applications and reports connect through
+              roleScreens.
+            </Text>
+          </View>
+        )}
+      </Animated.View>
+      <View style={s.bottom}>
+        {bottomPages[role].map((item) => (
+          <Pressable
+            key={item}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: page === item }}
+            accessibilityLabel={item}
+            onPress={() => navigate(item)}
+            style={s.tab}
+          >
+            <View style={[s.tabIcon, page === item && s.tabIconActive]}>
+              <Text style={[s.icon, page === item && { color: t.primary }]}>
+                {icons[item] || '◇'}
+              </Text>
+            </View>
+            <Text style={[s.tabLabel, page === item && { color: t.primary }]}>
+              {item}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      <Modal
+        visible={drawer}
+        transparent
+        animationType="none"
+        onRequestClose={closeDrawer}
+        statusBarTranslucent={false}
+      >
+        <View style={s.overlay}>
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            accessibilityRole="button"
+            accessibilityLabel="Close navigation"
+            onPress={closeDrawer}
+          />
+          <Animated.View
+            style={[
+              s.drawer,
+              { width: drawerWidth, transform: [{ translateX: slide }] },
+            ]}
+          >
+            <SafeAreaView style={s.drawerSafe}>
+              <View style={s.drawerHeading}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.eyebrow}>YOUR SCHOOL WORKSPACE</Text>
+                  <Text style={s.drawerTitle}>Navigation</Text>
+                </View>
+                <Pressable
+                  onPress={closeDrawer}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close navigation"
+                  style={s.close}
+                >
+                  <Text style={s.closeText}>×</Text>
+                </Pressable>
+              </View>
+              <Pressable
+                disabled={!previewOnly}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  previewOnly ? 'Switch preview role' : `${role} account`
+                }
+                onPress={() => setRolePicker(!rolePicker)}
+                style={s.role}
+              >
+                <Text style={s.roleText}>
+                  {role === 'Parent' ? 'Parent / Guardian' : role}
+                </Text>
+                {previewOnly ? <Text style={s.roleText}>⌄</Text> : null}
+              </Pressable>
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={s.drawerContent}
+              >
+                {rolePicker && previewOnly ? (
+                  <View style={s.roleList}>
+                    <Text style={s.group}>SWITCH PREVIEW ROLE</Text>
+                    {roles.map((item) => (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Switch to ${item}`}
+                        key={item}
+                        onPress={() => {
+                          setPreviewRole(item);
+                          setChildId('');
+                          setPage('Home');
+                          closeDrawer();
+                        }}
+                        style={s.row}
+                      >
+                        <Text style={s.rowText}>{item}</Text>
+                        {item === role ? (
+                          <Text style={{ color: t.primary }}>✓</Text>
+                        ) : null}
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+                <Text style={s.group}>YOUR SCHOOL DAY</Text>
+                {rolePages[role].map((item) => (
+                    <Pressable
+                      key={item}
+                      accessibilityRole="button"
+                      onPress={() => navigate(item)}
+                      style={[s.row, page === item && s.activeRow]}
+                    >
+                      <Text style={[s.rowIcon, page === item && s.activeText]}>
+                        {icons[item] || '▤'}
+                      </Text>
+                      <Text style={[s.rowText, page === item && s.activeText]}>
+                        {item}
+                      </Text>
+                      {page === item ? (
+                        <Text style={{ color: '#FFE4AA' }}>•</Text>
+                      ) : null}
+                    </Pressable>
+                  ))}
+                {onLogout && !previewOnly ? (
+                  <Button style={{ marginTop: 20 }} onPress={onLogout}>
+                    Sign out
+                  </Button>
+                ) : null}
+              </ScrollView>
+              <Text style={s.drawerFooter}>
+                {previewOnly
+                  ? 'Design preview · local sample records'
+                  : 'Your connected school workspace'}
+              </Text>
+            </SafeAreaView>
+          </Animated.View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
-
-function PreviewDrawer({ visible, onClose, role, onSwitch }) {
-  const slide = React.useRef(new Animated.Value(-340)).current;
-  React.useEffect(() => {
-    Animated.timing(slide, {
-      toValue: visible ? 0 : -340,
-      duration: 210,
-      useNativeDriver: true,
-    }).start();
-  }, [slide, visible]);
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="none"
-      onRequestClose={onClose}
-    >
-      <View style={styles.drawerLayer}>
-        <Pressable
-          accessibilityLabel="Close preview menu"
-          onPress={onClose}
-          style={styles.drawerScrim}
-        />
-        <Animated.View
-          style={[styles.previewDrawer, { transform: [{ translateX: slide }] }]}
-        >
-          <Text style={styles.drawerTitle}>Your school</Text>
-          <Text style={styles.drawerSubtitle}>Choose a UI preview</Text>
-          {['Student', 'Parent', 'Finance'].map(item => (
-            <Pressable
-              key={item}
-              accessibilityRole="button"
-              accessibilityState={{ selected: role === item }}
-              onPress={() => onSwitch(item)}
-              style={[
-                styles.roleOption,
-                role === item && styles.roleOptionActive,
-              ]}
-            >
-              <Text style={styles.roleOptionText}>Switch to {item}</Text>
-              <Text style={styles.roleOptionArrow}>
-                {role === item ? '✓' : '›'}
-              </Text>
-            </Pressable>
-          ))}
-          <Text style={styles.drawerFoot}>
-            Preview mode only · no account is signed in
-          </Text>
-        </Animated.View>
-      </View>
-    </Modal>
-  );
-}
-
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: APP_BACKGROUND },
-  topBar: {
-    alignItems: 'center',
+const s = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: t.background },
+  body: { flex: 1 },
+  header: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
-    marginHorizontal: 16,
-    marginTop: 8,
-    minHeight: 54,
+    paddingHorizontal: 18,
+    paddingTop: 15,
+    paddingBottom: 22,
   },
-  iconButton: {
-    width: 38,
-    height: 38,
+  logo: {
+    width: 36,
+    height: 36,
     borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E3EAF3',
+    backgroundColor: t.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...t.shadow,
+  },
+  logoText: { color: '#FFF2C8', fontSize: 26, fontWeight: '900' },
+  identity: { flex: 1 },
+  eyebrow: {
+    fontSize: 9,
+    letterSpacing: 1.5,
+    fontWeight: '700',
+    color: t.muted,
+  },
+  headerTitle: { color: t.ink, fontSize: 16, fontWeight: '800', marginTop: 3 },
+  menu: {
+    width: 38,
+    height: 42,
+    borderRadius: 15,
+    backgroundColor: t.lavender,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  menuIcon: {
-    color: '#14243A',
-    fontSize: 25,
-    lineHeight: 28,
-    fontWeight: '800',
+  menuText: { color: t.primary, fontSize: 29, lineHeight: 32 },
+  bottom: {
+    flexDirection: 'row',
+    backgroundColor: t.paper,
+    borderTopWidth: 1,
+    borderTopColor: t.border,
+    paddingTop: 6,
+    paddingBottom: 5,
   },
-  search: {
-    width: 82,
-    height: 38,
-    borderRadius: 13,
-    borderWidth: 1,
-    borderColor: '#E3EAF3',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    fontSize: 12,
-    color: '#14243A',
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    minHeight: 56,
+    justifyContent: 'center',
   },
-  previewBanner: {
+  tabIcon: {
+    width: 48,
+    height: 33,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabIconActive: { backgroundColor: t.lavender },
+  icon: { color: t.muted, fontSize: 23 },
+  tabLabel: { color: t.muted, fontSize: 11, marginTop: 4 },
+  center: { flex: 1, padding: 30, justifyContent: 'center', gap: 16 },
+  title: { fontSize: 25, color: t.ink, fontWeight: '800' },
+  description: { fontSize: 14, lineHeight: 22, color: t.muted },
+  button: {
+    alignSelf: 'flex-start',
+    minHeight: 44,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 18,
+    backgroundColor: t.primary,
+    ...t.shadow,
+  },
+  buttonText: { color: 'white', fontSize: 13, fontWeight: '700' },
+  overlay: { flex: 1, backgroundColor: '#28294066' },
+  drawer: {
+    height: '100%',
+    backgroundColor: t.background,
+    borderTopRightRadius: 28,
+    borderBottomRightRadius: 28,
+    ...t.shadow,
+  },
+  drawerSafe: { flex: 1, paddingHorizontal: 20 },
+  drawerHeading: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 16,
-    marginTop: 7,
-    padding: 13,
-    backgroundColor: '#FFE9A8',
-    borderRadius: 20,
-    minHeight: 82,
-    overflow: 'hidden',
+    gap: 10,
+    marginTop: 20,
+    marginBottom: 24,
   },
-  mascot: { fontSize: 38, marginRight: 11 },
-  bannerCopy: { flex: 1 },
-  bannerTitle: { color: '#553F12', fontSize: 15, fontWeight: '900' },
-  bannerSubtitle: { color: '#755E2B', fontSize: 10, marginTop: 4 },
-  bannerDecoration: { color: '#F0A926', fontSize: 24, marginRight: 4 },
-  dashboardAnimated: { flex: 1 },
-  drawerLayer: {
-    flex: 1,
-    zIndex: 10,
-    flexDirection: 'row',
-    backgroundColor: '#14243A88',
-  },
-  drawerScrim: { ...StyleSheet.absoluteFillObject },
-  previewDrawer: {
-    width: '78%',
-    maxWidth: 310,
-    height: '100%',
-    backgroundColor: '#F2F6FC',
-    paddingTop: 30,
-    paddingHorizontal: 17,
-    elevation: 12,
-  },
-  drawerTitle: { color: '#14243A', fontSize: 21, fontWeight: '900' },
-  drawerSubtitle: {
-    color: '#69788C',
-    fontSize: 12,
-    marginTop: 5,
-    marginBottom: 21,
-  },
-  roleOption: {
-    minHeight: 51,
+  drawerTitle: { fontSize: 27, color: t.ink, fontWeight: '800', marginTop: 7 },
+  close: {
+    width: 44,
+    height: 44,
     borderRadius: 15,
-    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E3EAF3',
-    paddingHorizontal: 14,
-    marginBottom: 9,
+    borderColor: t.border,
+    backgroundColor: t.paper,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeText: { fontSize: 25, color: t.ink },
+  role: {
+    backgroundColor: t.lavender,
+    borderRadius: 17,
+    minHeight: 56,
+    paddingHorizontal: 15,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: 14,
   },
-  roleOptionActive: { backgroundColor: '#E8F0FF', borderColor: '#246BFD' },
-  roleOptionText: { color: '#14243A', fontSize: 13, fontWeight: '800' },
-  roleOptionArrow: { color: '#246BFD', fontSize: 17, fontWeight: '900' },
-  drawerFoot: { color: '#69788C', fontSize: 11, lineHeight: 16, marginTop: 10 },
-  identity: { flex: 1, minWidth: 0 },
-  name: { color: '#14243A', fontSize: 13, fontWeight: '800' },
-  role: { color: '#69788C', fontSize: 11, marginTop: 3 },
-  logoutButton: {
-    alignItems: 'center',
-    backgroundColor: '#E6EDF7',
-    borderRadius: 10,
-    justifyContent: 'center',
-    minHeight: 38,
-    paddingHorizontal: 11,
+  roleText: { color: t.ink, fontSize: 16, fontWeight: '700' },
+  drawerContent: { paddingTop: 21, paddingBottom: 20 },
+  group: {
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: t.muted,
+    fontWeight: '700',
+    marginBottom: 12,
   },
-  logoutText: { color: '#14243A', fontSize: 11, fontWeight: '700' },
-  centered: {
+  row: {
+    minHeight: 49,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
     gap: 12,
-    justifyContent: 'center',
-    padding: 26,
+    marginBottom: 5,
   },
-  title: {
-    color: '#14243A',
-    fontSize: 19,
-    fontWeight: '800',
-    textAlign: 'center',
+  rowText: { flex: 1, fontSize: 14, color: t.ink },
+  rowIcon: { color: t.primary, fontSize: 20 },
+  activeRow: { backgroundColor: t.primary, ...t.shadow },
+  activeText: { color: 'white' },
+  roleList: {
+    marginBottom: 20,
+    borderBottomWidth: 1,
+    borderColor: t.border,
+    paddingBottom: 12,
   },
-  muted: {
-    color: '#69788C',
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: 'center',
+  drawerFooter: {
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: t.border,
+    color: t.muted,
+    fontSize: 11,
   },
 });

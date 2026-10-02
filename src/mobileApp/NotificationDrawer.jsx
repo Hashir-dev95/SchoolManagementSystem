@@ -1,4 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  forwardRef,
+  useImperativeHandle,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import {
   Animated,
   ActivityIndicator,
@@ -16,11 +23,11 @@ import { studentApi } from './studentService';
 import { previewNotifications } from './previewData';
 
 const palette = {
-  ink: '#14243A',
-  muted: '#69788C',
-  blue: '#246BFD',
-  line: '#E3EAF3',
-  pale: '#F2F6FC',
+  ink: '#282940',
+  muted: '#92918A',
+  blue: '#4857B5',
+  line: '#E6E2D7',
+  pale: '#FFF9EF',
   red: '#B42318',
 };
 
@@ -62,12 +69,17 @@ function Details({ value }) {
   ));
 }
 
-export default function NotificationDrawer({ role, previewOnly = false }) {
+const NotificationDrawer = forwardRef(function NotificationDrawer(
+  { role, previewOnly = false },
+  ref,
+) {
   const [visible, setVisible] = useState(false);
   const [notifications, setNotifications] = useState(
     previewOnly ? previewNotifications : [],
   );
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(
+    previewOnly ? previewNotifications.length : 0,
+  );
   const [loading, setLoading] = useState(!previewOnly);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
@@ -117,8 +129,21 @@ export default function NotificationDrawer({ role, previewOnly = false }) {
   }, [loadNotifications, previewOnly]);
 
   const openNotification = useCallback(
-    async item => {
-      if (previewOnly) return;
+    async (item) => {
+      if (previewOnly) {
+        setSelected({ notification: item });
+        setNotifications((current) =>
+          current.map((notification) =>
+            notificationId(notification) === notificationId(item)
+              ? { ...notification, readAt: new Date().toISOString() }
+              : notification,
+          ),
+        );
+        setUnreadCount((current) =>
+          Math.max(0, current - (item.readAt ? 0 : 1)),
+        );
+        return;
+      }
       const id = notificationId(item);
       if (!id) return;
       const version = ++requestVersion.current;
@@ -130,14 +155,16 @@ export default function NotificationDrawer({ role, previewOnly = false }) {
         const record = await api.getNotification(id);
         if (version !== requestVersion.current) return;
         setSelected(record);
-        setNotifications(current =>
-          current.map(notification =>
+        setNotifications((current) =>
+          current.map((notification) =>
             notificationId(notification) === id
               ? { ...notification, readAt: new Date().toISOString() }
               : notification,
           ),
         );
-        setUnreadCount(current => Math.max(0, current - (item.readAt ? 0 : 1)));
+        setUnreadCount((current) =>
+          Math.max(0, current - (item.readAt ? 0 : 1)),
+        );
       } catch (openError) {
         if (version === requestVersion.current) setError(openError.message);
       } finally {
@@ -158,6 +185,18 @@ export default function NotificationDrawer({ role, previewOnly = false }) {
     selected?.notification?.title ||
     'Notification';
   const exactVersion = selected?.dlpVersion;
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      open() {
+        setSelected(null);
+        setVisible(true);
+        loadNotifications();
+      },
+    }),
+    [loadNotifications],
+  );
 
   return (
     <>
@@ -268,7 +307,7 @@ export default function NotificationDrawer({ role, previewOnly = false }) {
                 {!loading && !error && notifications.length === 0 ? (
                   <Text style={styles.empty}>No notifications yet.</Text>
                 ) : null}
-                {notifications.map(item => {
+                {notifications.map((item) => {
                   const id = notificationId(item);
                   return (
                     <Pressable
@@ -321,10 +360,11 @@ export default function NotificationDrawer({ role, previewOnly = false }) {
       </Modal>
     </>
   );
-}
+});
+export default NotificationDrawer;
 
 const styles = StyleSheet.create({
-  scrim: { flex: 1, flexDirection: 'row', backgroundColor: '#14243A88' },
+  scrim: { flex: 1, flexDirection: 'row', backgroundColor: '#28294088' },
   drawer: {
     width: '84%',
     maxWidth: 340,
@@ -335,12 +375,12 @@ const styles = StyleSheet.create({
   },
   dismissArea: { flex: 1 },
   trigger: {
-    width: 42,
-    height: 42,
+    width: 38,
+    height: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 13,
+    backgroundColor: '#FFFEFA',
+    borderRadius: 19,
     borderWidth: 1,
     borderColor: palette.line,
   },
@@ -358,7 +398,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '800' },
+  badgeText: { color: '#FFFEFA', fontSize: 9, fontWeight: '800' },
   header: {
     minHeight: 56,
     flexDirection: 'row',
@@ -375,7 +415,7 @@ const styles = StyleSheet.create({
     height: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFEFA',
     borderRadius: 10,
   },
   closeText: { color: palette.ink, fontSize: 24, lineHeight: 26 },
@@ -386,10 +426,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 9,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFEFA',
     borderWidth: 1,
     borderColor: palette.line,
-    borderRadius: 12,
+    borderRadius: 18,
     padding: 11,
     marginBottom: 8,
   },
@@ -412,7 +452,7 @@ const styles = StyleSheet.create({
   itemDate: { color: palette.muted, fontSize: 9, marginTop: 5 },
   empty: {
     color: palette.muted,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFEFA',
     borderRadius: 10,
     padding: 12,
     fontSize: 12,

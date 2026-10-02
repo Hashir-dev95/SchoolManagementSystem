@@ -12,11 +12,11 @@ import { parentApi } from './parentService';
 import { parentPreview, previewNotifications } from './previewData';
 
 const colors = {
-  ink: '#14243A',
-  muted: '#69788C',
-  blue: '#246BFD',
-  pale: '#F2F6FC',
-  line: '#E3EAF3',
+  ink: '#282940',
+  muted: '#92918A',
+  blue: '#4857B5',
+  pale: '#FFF9EF',
+  line: '#E6E2D7',
   green: '#168A62',
   red: '#B42318',
 };
@@ -47,7 +47,25 @@ function DataCard({ title, lines = [], status, feedback }) {
   );
 }
 
-function Section({ title, records, empty, render }) {
+function Section({ title, activePage, records, empty, render }) {
+  const sectionPage = {
+    Timetable: 'Learning',
+    Attendance: 'Attendance',
+    Homework: 'Homework',
+    'Published results': 'Results',
+    Progress: 'Progress',
+    Fees: 'Fees',
+    'Application status history': 'Applications',
+    'Application history': 'Applications',
+  }[title];
+  if (
+    activePage &&
+    activePage !== 'All' &&
+    activePage !== 'My children' &&
+    activePage !== sectionPage &&
+    !(activePage === 'Timetable' && title === 'Timetable')
+  )
+    return null;
   return (
     <View>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -63,15 +81,21 @@ function money(amount, currency = 'PKR') {
 export default function ParentDashboard({
   previewOnly = false,
   searchQuery = '',
+  page = 'All',
+  initialChildId = '',
 }) {
   const [children, setChildren] = useState(
     previewOnly ? parentPreview.children : [],
   );
   const [selectedChildId, setSelectedChildId] = useState(
-    previewOnly ? parentPreview.children[0].id : '',
+    previewOnly
+      ? initialChildId || parentPreview.children[0].id
+      : initialChildId,
   );
   const [childRecords, setChildRecords] = useState(
-    previewOnly ? parentPreview.records[parentPreview.children[0].id] : null,
+    previewOnly
+      ? parentPreview.records[initialChildId || parentPreview.children[0].id]
+      : null,
   );
   const [childrenLoading, setChildrenLoading] = useState(!previewOnly);
   const [recordsLoading, setRecordsLoading] = useState(false);
@@ -97,7 +121,7 @@ export default function ParentDashboard({
   const notificationVersion = useRef(0);
 
   const loadChild = useCallback(
-    async childId => {
+    async (childId) => {
       if (previewOnly) {
         setSelectedChildId(childId);
         setChildRecords(parentPreview.records[childId] || null);
@@ -175,7 +199,7 @@ export default function ParentDashboard({
   }, [previewOnly]);
 
   const openDlp = useCallback(
-    async notificationId => {
+    async (notificationId) => {
       if (previewOnly) return;
       const version = ++notificationVersion.current;
       setOpenedDlp(null);
@@ -227,7 +251,10 @@ export default function ParentDashboard({
       const data = await parentApi.getChildren();
       if (version !== childrenVersion.current) return;
       setChildren(data);
-      if (data.length) await loadChild(data[0].id);
+      if (data.length)
+        await loadChild(
+          data.find((child) => child.id === initialChildId)?.id || data[0].id,
+        );
       else {
         setSelectedChildId('');
         setChildRecords(null);
@@ -237,7 +264,7 @@ export default function ParentDashboard({
     } finally {
       if (version === childrenVersion.current) setChildrenLoading(false);
     }
-  }, [loadChild, previewOnly]);
+  }, [loadChild, previewOnly, initialChildId]);
 
   useEffect(() => {
     if (previewOnly) return;
@@ -250,10 +277,10 @@ export default function ParentDashboard({
     };
   }, [loadChildren, loadNotifications, previewOnly]);
 
-  const selectedChild = children.find(child => child.id === selectedChildId);
+  const selectedChild = children.find((child) => child.id === selectedChildId);
   const visibleChildren =
     previewOnly && searchQuery.trim()
-      ? children.filter(child =>
+      ? children.filter((child) =>
           JSON.stringify(child)
             .toLowerCase()
             .includes(searchQuery.trim().toLowerCase()),
@@ -263,7 +290,8 @@ export default function ParentDashboard({
     if (!previewOnly || !childRecords || !searchQuery.trim())
       return childRecords;
     const query = searchQuery.trim().toLowerCase();
-    const matches = item => JSON.stringify(item).toLowerCase().includes(query);
+    const matches = (item) =>
+      JSON.stringify(item).toLowerCase().includes(query);
     return {
       ...childRecords,
       attendance: childRecords.attendance.filter(matches),
@@ -288,8 +316,7 @@ export default function ParentDashboard({
       </Text>
       {previewOnly ? (
         <Text style={styles.previewNotice}>
-          DEVELOPMENT UI PREVIEW · Fictional child records · APIs and
-          applications are disabled
+          Design preview · sample records
         </Text>
       ) : null}
 
@@ -319,117 +346,125 @@ export default function ParentDashboard({
         <Empty>No verified children are linked to this parent account.</Empty>
       ) : null}
 
-      <View style={styles.headingRow}>
-        <Text style={styles.sectionTitle}>
-          {previewOnly ? 'Preview notifications' : 'Parent DLP notifications'}
-        </Text>
-        {!previewOnly ? (
-          <Pressable accessibilityRole="button" onPress={loadNotifications}>
-            <Text style={styles.refresh}>Refresh</Text>
-          </Pressable>
-        ) : null}
-      </View>
-      {notificationsLoading ? (
-        <View style={styles.loading}>
-          <ActivityIndicator color={colors.blue} />
-          <Text style={styles.muted}>Loading notifications…</Text>
-        </View>
-      ) : null}
-      {notificationsError ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{notificationsError}</Text>
-          <Pressable accessibilityRole="button" onPress={loadNotifications}>
-            <Text style={styles.refresh}>Retry notifications</Text>
-          </Pressable>
-        </View>
-      ) : null}
-      {!notificationsLoading &&
-      !notificationsError &&
-      notifications.length === 0 ? (
-        <Empty>No Parent DLP notifications are available.</Empty>
-      ) : null}
-      {notifications.map(item => (
-        <Pressable
-          key={item.id || item._id}
-          accessibilityRole="button"
-          disabled={!!dlpLoadingId}
-          onPress={() => openDlp(item.id || String(item._id))}
-          style={styles.childCard}
-        >
-          <Text style={styles.childName}>
-            {item.title || 'Parent DLP shared'}
-          </Text>
-          <Text style={styles.cardLine}>
-            {previewOnly
-              ? 'Fictional notification · preview only'
-              : `${
-                  item.createdAt
-                    ? new Date(item.createdAt).toLocaleString()
-                    : ''
-                } · Open shared class version`}
-          </Text>
-          {dlpLoadingId === (item.id || String(item._id)) ? (
-            <ActivityIndicator color={colors.blue} />
-          ) : null}
-        </Pressable>
-      ))}
-      {dlpError ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{dlpError}</Text>
-        </View>
-      ) : null}
-      {openedDlp ? (
-        <View style={styles.dataCard}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>
-              {openedDlp.dlpVersion.title ||
-                openedDlp.notification.title ||
-                'Parent DLP'}
+      {page === 'Inbox' && (
+        <>
+          {' '}
+          <View style={styles.headingRow}>
+            <Text style={styles.sectionTitle}>
+              {previewOnly
+                ? 'Preview notifications'
+                : 'Parent DLP notifications'}
             </Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                notificationVersion.current += 1;
-                setOpenedDlp(null);
-              }}
-            >
-              <Text style={styles.refresh}>Close</Text>
-            </Pressable>
+            {!previewOnly ? (
+              <Pressable accessibilityRole="button" onPress={loadNotifications}>
+                <Text style={styles.refresh}>Refresh</Text>
+              </Pressable>
+            ) : null}
           </View>
-          <Text style={styles.cardLine}>
-            Class:{' '}
-            {openedDlp.dlpVersion.className || openedDlp.dlpVersion.classId} ·
-            Version:{' '}
-            {openedDlp.dlpVersion.version ||
-              openedDlp.dlpVersion.versionNumber ||
-              openedDlp.dlpVersion.id}
-          </Text>
-          {typeof openedDlp.dlpVersion.content === 'string' ? (
-            <Text style={styles.cardLine}>{openedDlp.dlpVersion.content}</Text>
+          {notificationsLoading ? (
+            <View style={styles.loading}>
+              <ActivityIndicator color={colors.blue} />
+              <Text style={styles.muted}>Loading notifications…</Text>
+            </View>
           ) : null}
-          {Array.isArray(openedDlp.dlpVersion.sections)
-            ? openedDlp.dlpVersion.sections.map((section, index) => (
-                <View key={section.id || index}>
-                  <Text style={styles.childName}>
-                    {section.title || section.heading}
-                  </Text>
-                  <Text style={styles.cardLine}>
-                    {section.content || section.body || ''}
-                  </Text>
-                </View>
-              ))
-            : null}
-          {!openedDlp.dlpVersion.content &&
-          !openedDlp.dlpVersion.sections?.length ? (
-            <Text style={styles.cardLine}>
-              The published version is loaded, but has no displayable content
-              fields.
-            </Text>
+          {notificationsError ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{notificationsError}</Text>
+              <Pressable accessibilityRole="button" onPress={loadNotifications}>
+                <Text style={styles.refresh}>Retry notifications</Text>
+              </Pressable>
+            </View>
           ) : null}
-        </View>
-      ) : null}
-
-      {visibleChildren.map(child => {
+          {!notificationsLoading &&
+          !notificationsError &&
+          notifications.length === 0 ? (
+            <Empty>No Parent DLP notifications are available.</Empty>
+          ) : null}
+          {notifications.map((item) => (
+            <Pressable
+              key={item.id || item._id}
+              accessibilityRole="button"
+              disabled={!!dlpLoadingId}
+              onPress={() => openDlp(item.id || String(item._id))}
+              style={styles.childCard}
+            >
+              <Text style={styles.childName}>
+                {item.title || 'Parent DLP shared'}
+              </Text>
+              <Text style={styles.cardLine}>
+                {previewOnly
+                  ? 'Fictional notification · preview only'
+                  : `${
+                      item.createdAt
+                        ? new Date(item.createdAt).toLocaleString()
+                        : ''
+                    } · Open shared class version`}
+              </Text>
+              {dlpLoadingId === (item.id || String(item._id)) ? (
+                <ActivityIndicator color={colors.blue} />
+              ) : null}
+            </Pressable>
+          ))}
+          {dlpError ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{dlpError}</Text>
+            </View>
+          ) : null}
+          {openedDlp ? (
+            <View style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>
+                  {openedDlp.dlpVersion.title ||
+                    openedDlp.notification.title ||
+                    'Parent DLP'}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    notificationVersion.current += 1;
+                    setOpenedDlp(null);
+                  }}
+                >
+                  <Text style={styles.refresh}>Close</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.cardLine}>
+                Class:{' '}
+                {openedDlp.dlpVersion.className || openedDlp.dlpVersion.classId}{' '}
+                · Version:{' '}
+                {openedDlp.dlpVersion.version ||
+                  openedDlp.dlpVersion.versionNumber ||
+                  openedDlp.dlpVersion.id}
+              </Text>
+              {typeof openedDlp.dlpVersion.content === 'string' ? (
+                <Text style={styles.cardLine}>
+                  {openedDlp.dlpVersion.content}
+                </Text>
+              ) : null}
+              {Array.isArray(openedDlp.dlpVersion.sections)
+                ? openedDlp.dlpVersion.sections.map((section, index) => (
+                    <View key={section.id || index}>
+                      <Text style={styles.childName}>
+                        {section.title || section.heading}
+                      </Text>
+                      <Text style={styles.cardLine}>
+                        {section.content || section.body || ''}
+                      </Text>
+                    </View>
+                  ))
+                : null}
+              {!openedDlp.dlpVersion.content &&
+              !openedDlp.dlpVersion.sections?.length ? (
+                <Text style={styles.cardLine}>
+                  The published version is loaded, but has no displayable
+                  content fields.
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+        </>
+      )}
+      {visibleChildren.map((child) => {
         const selected = child.id === selectedChildId;
         return (
           <Pressable
@@ -482,10 +517,11 @@ export default function ParentDashboard({
           {!recordsLoading && !recordsError && childRecords ? (
             <>
               <Section
+                activePage={page}
                 title="Attendance"
                 records={visibleChildRecords.attendance}
                 empty="No attendance records are available."
-                render={item => (
+                render={(item) => (
                   <DataCard
                     key={item.id || item._id}
                     title={
@@ -499,10 +535,11 @@ export default function ParentDashboard({
                 )}
               />
               <Section
+                activePage={page}
                 title="Timetable"
                 records={visibleChildRecords.timetable}
                 empty="No timetable entries are available."
-                render={item => (
+                render={(item) => (
                   <DataCard
                     key={item.id || item._id}
                     title={item.subject || item.course || 'Class'}
@@ -518,10 +555,11 @@ export default function ParentDashboard({
                 )}
               />
               <Section
+                activePage={page}
                 title="Homework"
                 records={visibleChildRecords.homework}
                 empty="No published homework is assigned."
-                render={item => (
+                render={(item) => (
                   <DataCard
                     key={item.id || item._id}
                     title={item.title || item.subject || 'Homework'}
@@ -536,10 +574,11 @@ export default function ParentDashboard({
                 )}
               />
               <Section
+                activePage={page}
                 title="Published results"
                 records={visibleChildRecords.results}
                 empty="No results have been published."
-                render={item => (
+                render={(item) => (
                   <DataCard
                     key={item.id || item._id}
                     title={
@@ -555,10 +594,11 @@ export default function ParentDashboard({
                 )}
               />
               <Section
+                activePage={page}
                 title="Fees"
                 records={visibleChildRecords.fees}
                 empty="No fee records are available."
-                render={item => (
+                render={(item) => (
                   <DataCard
                     key={item.id || item._id}
                     title={item.description || item.id || 'Fee'}
@@ -575,51 +615,66 @@ export default function ParentDashboard({
                   />
                 )}
               />
-              <Text style={styles.sectionTitle}>Teacher feedback</Text>
-              {visibleChildRecords.feedback.homework.length +
-                visibleChildRecords.feedback.results.length +
-                visibleChildRecords.feedback.progress.length ===
-              0 ? (
-                <Empty>No teacher feedback is available.</Empty>
+              {(page === 'Progress' ||
+                page === 'My children' ||
+                page === 'All') && (
+                <>
+                  <Text style={styles.sectionTitle}>Teacher feedback</Text>
+                  {visibleChildRecords.feedback.homework.length +
+                    visibleChildRecords.feedback.results.length +
+                    visibleChildRecords.feedback.progress.length ===
+                  0 ? (
+                    <Empty>No teacher feedback is available.</Empty>
+                  ) : null}
+                  {visibleChildRecords.feedback.homework.map((item) => (
+                    <DataCard
+                      key={`homework-${item.id || item._id}`}
+                      title={
+                        item.homework?.title ||
+                        item.homeworkId ||
+                        'Homework feedback'
+                      }
+                      lines={[
+                        item.status,
+                        item.submittedAt &&
+                          `Submitted ${new Date(
+                            item.submittedAt,
+                          ).toLocaleDateString()}`,
+                      ].filter(Boolean)}
+                      feedback={item.teacherFeedback || item.feedback}
+                    />
+                  ))}
+                  {visibleChildRecords.feedback.results.map((item) => (
+                    <DataCard
+                      key={`result-${item.id || item._id}`}
+                      title={
+                        item.examName ||
+                        item.title ||
+                        item.subject ||
+                        'Result feedback'
+                      }
+                      feedback={item.teacherFeedback || item.feedback}
+                    />
+                  ))}
+                  {visibleChildRecords.feedback.progress.map((item) => (
+                    <DataCard
+                      key={`progress-${item.id || item._id}`}
+                      title={item.subject || item.title || 'Progress feedback'}
+                      feedback={item.teacherFeedback || item.feedback}
+                    />
+                  ))}
+                </>
+              )}
+              {previewOnly && page === 'Applications' ? (
+                <View style={styles.dataCard}>
+                  <Text style={styles.cardTitle}>Applications</Text>
+                  <Text style={styles.cardLine}>
+                    Sign in with a linked Parent account to send an application
+                    to your child’s class teacher.
+                  </Text>
+                </View>
               ) : null}
-              {visibleChildRecords.feedback.homework.map(item => (
-                <DataCard
-                  key={`homework-${item.id || item._id}`}
-                  title={
-                    item.homework?.title ||
-                    item.homeworkId ||
-                    'Homework feedback'
-                  }
-                  lines={[
-                    item.status,
-                    item.submittedAt &&
-                      `Submitted ${new Date(
-                        item.submittedAt,
-                      ).toLocaleDateString()}`,
-                  ].filter(Boolean)}
-                  feedback={item.teacherFeedback || item.feedback}
-                />
-              ))}
-              {visibleChildRecords.feedback.results.map(item => (
-                <DataCard
-                  key={`result-${item.id || item._id}`}
-                  title={
-                    item.examName ||
-                    item.title ||
-                    item.subject ||
-                    'Result feedback'
-                  }
-                  feedback={item.teacherFeedback || item.feedback}
-                />
-              ))}
-              {visibleChildRecords.feedback.progress.map(item => (
-                <DataCard
-                  key={`progress-${item.id || item._id}`}
-                  title={item.subject || item.title || 'Progress feedback'}
-                  feedback={item.teacherFeedback || item.feedback}
-                />
-              ))}
-              {!previewOnly ? (
+              {!previewOnly && (page === 'Applications' || page === 'All') ? (
                 <>
                   <Text style={styles.sectionTitle}>
                     Applications to class teacher
@@ -667,10 +722,11 @@ export default function ParentDashboard({
                     </Text>
                   )}
                   <Section
+                    activePage={page}
                     title="Application status history"
                     records={childRecords.applications}
                     empty="No applications have been sent for this child."
-                    render={item => (
+                    render={(item) => (
                       <View key={item.id || item._id} style={styles.dataCard}>
                         <View style={styles.cardHeader}>
                           <Text style={styles.cardTitle}>{item.title}</Text>
@@ -706,7 +762,7 @@ export default function ParentDashboard({
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.pale },
-  content: { padding: 20, paddingBottom: 42 },
+  content: { padding: 18, paddingBottom: 30 },
   eyebrow: {
     color: colors.blue,
     fontSize: 11,
@@ -739,21 +795,21 @@ const styles = StyleSheet.create({
   muted: { color: colors.muted, fontSize: 12 },
   errorBox: {
     backgroundColor: '#FFF0EF',
-    borderRadius: 12,
+    borderRadius: 18,
     padding: 13,
     marginVertical: 8,
   },
   errorText: { color: colors.red, fontSize: 12, lineHeight: 18 },
   empty: {
     color: colors.muted,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFEFA',
     borderRadius: 11,
     padding: 13,
     fontSize: 12,
     marginBottom: 7,
   },
   childCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFEFA',
     borderColor: colors.line,
     borderWidth: 1,
     borderRadius: 13,
@@ -772,10 +828,10 @@ const styles = StyleSheet.create({
   },
   cardLine: { color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 5 },
   dataCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFEFA',
     borderColor: colors.line,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 18,
     padding: 13,
     marginBottom: 8,
   },
@@ -794,7 +850,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   input: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFEFA',
     borderWidth: 1,
     borderColor: colors.line,
     borderRadius: 10,
@@ -820,6 +876,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 8,
   },
-  actionText: { color: '#FFFFFF', fontWeight: '800', fontSize: 12 },
+  actionText: { color: '#FFFEFA', fontWeight: '800', fontSize: 12 },
   successText: { color: colors.green, fontSize: 12, marginVertical: 7 },
 });

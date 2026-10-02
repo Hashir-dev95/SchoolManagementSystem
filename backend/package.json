@@ -5,9 +5,11 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "tsx watch src/server.ts",
+    "dev": "node src/server.js",
+    "setup:user": "node src/setup-user.js",
+    "setup:records": "node src/setup-records.js",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node src/server.js"
   },
   "keywords": [],
   "author": "",
