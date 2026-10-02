@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { financeApi } from './financeService';
+import { financePreview } from './previewData';
 
 const colors = {
   ink: '#14243A',
@@ -98,16 +99,31 @@ function financeErrorMessage(error) {
   return message;
 }
 
-export default function FinanceDashboard() {
+export default function FinanceDashboard({
+  previewOnly = false,
+  searchQuery = '',
+}) {
   const [filters, setFilters] = useState({ from: '', to: '', q: '' });
-  const [summary, setSummary] = useState(null);
-  const [invoices, setInvoices] = useState([]);
-  const [dues, setDues] = useState([]);
-  const [pendingPayments, setPendingPayments] = useState([]);
-  const [paymentHistory, setPaymentHistory] = useState([]);
-  const [receipts, setReceipts] = useState([]);
-  const [report, setReport] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState(
+    previewOnly ? financePreview.summary : null,
+  );
+  const [invoices, setInvoices] = useState(
+    previewOnly ? financePreview.invoices : [],
+  );
+  const [dues, setDues] = useState(previewOnly ? financePreview.dues : []);
+  const [pendingPayments, setPendingPayments] = useState(
+    previewOnly ? financePreview.pendingPayments : [],
+  );
+  const [paymentHistory, setPaymentHistory] = useState(
+    previewOnly ? financePreview.paymentHistory : [],
+  );
+  const [receipts, setReceipts] = useState(
+    previewOnly ? financePreview.receipts : [],
+  );
+  const [report, setReport] = useState(
+    previewOnly ? financePreview.report : null,
+  );
+  const [loading, setLoading] = useState(!previewOnly);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [voucher, setVoucher] = useState('');
@@ -126,60 +142,79 @@ export default function FinanceDashboard() {
   const [studentSearchLoading, setStudentSearchLoading] = useState(false);
   const [studentSearchError, setStudentSearchError] = useState('');
   const [verifyingPaymentId, setVerifyingPaymentId] = useState('');
+  const financeSearch = (previewOnly ? searchQuery || filters.q : filters.q)
+    .trim()
+    .toLowerCase();
+  const visibleInvoices = financeSearch
+    ? invoices.filter(item =>
+        JSON.stringify(item).toLowerCase().includes(financeSearch),
+      )
+    : invoices;
+  const visibleDues = financeSearch
+    ? dues.filter(item =>
+        JSON.stringify(item).toLowerCase().includes(financeSearch),
+      )
+    : dues;
 
-  const loadData = useCallback(async (activeFilters, refresh = false) => {
-    refresh ? setRefreshing(true) : setLoading(true);
-    setLoadError('');
-    try {
-      const [
-        summaryResult,
-        invoiceResult,
-        receiptResult,
-        reportResult,
-        duesResult,
-        pendingPaymentResult,
-        paymentHistoryResult,
-      ] = await Promise.all([
-        financeApi.getSummary({
-          from: activeFilters.from,
-          to: activeFilters.to,
-        }),
-        financeApi.searchInvoices(activeFilters),
-        financeApi.getReceipts({
-          from: activeFilters.from,
-          to: activeFilters.to,
-        }),
-        financeApi.getCollectionReport({
-          from: activeFilters.from,
-          to: activeFilters.to,
-        }),
-        financeApi.getDues({
-          from: activeFilters.from,
-          to: activeFilters.to,
-        }),
-        financeApi.getPendingPayments(),
-        financeApi.getPaymentHistory(),
-      ]);
-      setSummary(summaryResult.data);
-      setInvoices(invoiceResult.data);
-      setDues(duesResult.data);
-      setPendingPayments(pendingPaymentResult.data);
-      setPaymentHistory(paymentHistoryResult.data);
-      setReceipts(receiptResult.data);
-      setReport(reportResult.data);
-    } catch (error) {
-      setLoadError(financeErrorMessage(error));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const loadData = useCallback(
+    async (activeFilters, refresh = false) => {
+      if (previewOnly) return;
+      refresh ? setRefreshing(true) : setLoading(true);
+      setLoadError('');
+      try {
+        const [
+          summaryResult,
+          invoiceResult,
+          receiptResult,
+          reportResult,
+          duesResult,
+          pendingPaymentResult,
+          paymentHistoryResult,
+        ] = await Promise.all([
+          financeApi.getSummary({
+            from: activeFilters.from,
+            to: activeFilters.to,
+          }),
+          financeApi.searchInvoices(activeFilters),
+          financeApi.getReceipts({
+            from: activeFilters.from,
+            to: activeFilters.to,
+          }),
+          financeApi.getCollectionReport({
+            from: activeFilters.from,
+            to: activeFilters.to,
+          }),
+          financeApi.getDues({
+            from: activeFilters.from,
+            to: activeFilters.to,
+          }),
+          financeApi.getPendingPayments(),
+          financeApi.getPaymentHistory(),
+        ]);
+        setSummary(summaryResult.data);
+        setInvoices(invoiceResult.data);
+        setDues(duesResult.data);
+        setPendingPayments(pendingPaymentResult.data);
+        setPaymentHistory(paymentHistoryResult.data);
+        setReceipts(receiptResult.data);
+        setReport(reportResult.data);
+      } catch (error) {
+        setLoadError(financeErrorMessage(error));
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [previewOnly],
+  );
 
   useEffect(() => {
+    if (previewOnly) return;
     loadData({ from: '', to: '', q: '' });
-  }, [loadData]);
+  }, [loadData, previewOnly]);
 
   async function verifyVoucher() {
+    if (previewOnly) return;
     if (!voucher.trim()) {
       setVoucherError('Enter a voucher code.');
       return;
@@ -198,6 +233,7 @@ export default function FinanceDashboard() {
   }
 
   async function submitPayment() {
+    if (previewOnly) return;
     if (paymentSubmitLock.current) return;
     setPaymentError('');
     setPaymentNotice('');
@@ -283,6 +319,25 @@ export default function FinanceDashboard() {
   }
 
   async function searchStudents() {
+    if (previewOnly) {
+      const query = studentQuery.trim().toLowerCase();
+      setStudentResults(
+        query
+          ? financePreview.invoices
+              .filter(item =>
+                `${item.student} ${item.studentId}`
+                  .toLowerCase()
+                  .includes(query),
+              )
+              .map(item => ({
+                id: item.studentId,
+                fullName: item.student,
+                grade: 'Preview record',
+              }))
+          : [],
+      );
+      return;
+    }
     setStudentSearchError('');
     setStudentSearchLoading(true);
     try {
@@ -296,6 +351,7 @@ export default function FinanceDashboard() {
   }
 
   async function verifyPayment(paymentId) {
+    if (previewOnly) return;
     if (verificationLock.current) return;
     verificationLock.current = true;
     setVerifyingPaymentId(String(paymentId));
@@ -329,8 +385,16 @@ export default function FinanceDashboard() {
       <Text style={styles.eyebrow}>SCHOOL MANAGEMENT</Text>
       <Text style={styles.heading}>Finance</Text>
       <Text style={styles.subtitle}>
-        Live records from the school finance API
+        {previewOnly
+          ? 'Fictional UI preview records'
+          : 'Live records from the school finance API'}
       </Text>
+      {previewOnly ? (
+        <Text style={styles.previewNotice}>
+          DEVELOPMENT UI PREVIEW · Fictional balances · API searches,
+          verification and payment entry are disabled
+        </Text>
+      ) : null}
 
       <Text style={styles.section}>Date range</Text>
       <View style={styles.filters}>
@@ -360,11 +424,13 @@ export default function FinanceDashboard() {
         placeholder="Invoice, voucher, or student ID"
         autoCapitalize="characters"
       />
-      <Action
-        title={refreshing ? 'Refreshing…' : 'Apply filters'}
-        disabled={loading || refreshing}
-        onPress={() => loadData(filters, true)}
-      />
+      {!previewOnly ? (
+        <Action
+          title={refreshing ? 'Refreshing…' : 'Apply filters'}
+          disabled={loading || refreshing}
+          onPress={() => loadData(filters, true)}
+        />
+      ) : null}
       <Notice message={loadError} error />
 
       {loading ? (
@@ -429,7 +495,7 @@ export default function FinanceDashboard() {
           No invoices have an outstanding balance.
         </Text>
       ) : null}
-      {dues.map(invoice => (
+      {visibleDues.map(invoice => (
         <Pressable
           key={`due-${invoice.id}`}
           accessibilityRole="button"
@@ -465,7 +531,7 @@ export default function FinanceDashboard() {
       {!loading && !loadError && invoices.length === 0 ? (
         <Text style={styles.empty}>No invoices match these filters.</Text>
       ) : null}
-      {invoices.map(invoice => (
+      {visibleInvoices.map(invoice => (
         <Pressable
           key={invoice.id}
           accessibilityRole="button"
@@ -524,7 +590,7 @@ export default function FinanceDashboard() {
       />
       <Action
         title={voucherLoading ? 'Checking…' : 'Verify voucher'}
-        disabled={voucherLoading}
+        disabled={previewOnly || voucherLoading}
         onPress={verifyVoucher}
       />
       <Notice message={voucherError} error />
@@ -603,7 +669,7 @@ export default function FinanceDashboard() {
       />
       <Action
         title={paymentLoading ? 'Saving entry…' : 'Record payment entry'}
-        disabled={paymentLoading}
+        disabled={previewOnly || paymentLoading}
         onPress={submitPayment}
       />
       <Notice message={paymentError} error />
@@ -622,15 +688,21 @@ export default function FinanceDashboard() {
             {formatMoney(item.amount, item.currency)} · {item.method} ·{' '}
             {item.status}
           </Text>
-          <Action
-            title={
-              verifyingPaymentId === String(item._id)
-                ? 'Verifying…'
-                : 'Verify payment and issue receipt'
-            }
-            disabled={!!verifyingPaymentId}
-            onPress={() => verifyPayment(String(item._id))}
-          />
+          {!previewOnly ? (
+            <Action
+              title={
+                verifyingPaymentId === String(item._id)
+                  ? 'Verifying…'
+                  : 'Verify payment and issue receipt'
+              }
+              disabled={previewOnly || !!verifyingPaymentId}
+              onPress={() => verifyPayment(String(item._id))}
+            />
+          ) : (
+            <Text style={styles.muted}>
+              Preview only · no real verification
+            </Text>
+          )}
         </View>
       ))}
 
@@ -806,4 +878,14 @@ const styles = StyleSheet.create({
   cardTitle: { color: colors.ink, fontWeight: '800', fontSize: 13 },
   cardText: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 5 },
   reportLine: { color: colors.muted, fontSize: 12, paddingVertical: 5 },
+  previewNotice: {
+    color: '#8A4D00',
+    backgroundColor: '#FFF1D6',
+    borderRadius: 13,
+    padding: 11,
+    marginTop: 13,
+    fontSize: 11,
+    fontWeight: '800',
+    lineHeight: 16,
+  },
 });

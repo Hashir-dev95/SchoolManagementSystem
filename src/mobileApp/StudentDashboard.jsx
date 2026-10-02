@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { studentApi } from './studentService';
+import { studentPreview } from './previewData';
 
 const colors = {
   ink: '#14243A',
@@ -79,17 +80,24 @@ function Field({
   );
 }
 
-export default function StudentDashboard() {
-  const [records, setRecords] = useState({
-    profile: null,
-    timetable: [],
-    attendance: [],
-    results: [],
-    progress: [],
-    homework: [],
-    applications: [],
-  });
-  const [loading, setLoading] = useState(true);
+export default function StudentDashboard({
+  previewOnly = false,
+  searchQuery = '',
+}) {
+  const [records, setRecords] = useState(
+    previewOnly
+      ? studentPreview
+      : {
+          profile: null,
+          timetable: [],
+          attendance: [],
+          results: [],
+          progress: [],
+          homework: [],
+          applications: [],
+        },
+  );
+  const [loading, setLoading] = useState(!previewOnly);
   const [error, setError] = useState('');
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
   const [asset, setAsset] = useState({
@@ -105,6 +113,20 @@ export default function StudentDashboard() {
   const [applicationBusy, setApplicationBusy] = useState(false);
   const [applicationError, setApplicationError] = useState('');
   const [applicationNotice, setApplicationNotice] = useState('');
+  const visibleRecords = React.useMemo(() => {
+    if (!previewOnly || !searchQuery.trim()) return records;
+    const query = searchQuery.trim().toLowerCase();
+    const matches = item => JSON.stringify(item).toLowerCase().includes(query);
+    return {
+      ...records,
+      timetable: records.timetable.filter(matches),
+      attendance: records.attendance.filter(matches),
+      results: records.results.filter(matches),
+      progress: records.progress.filter(matches),
+      homework: records.homework.filter(matches),
+      applications: records.applications.filter(matches),
+    };
+  }, [previewOnly, records, searchQuery]);
 
   const loadDashboard = useCallback(async filters => {
     setLoading(true);
@@ -144,10 +166,12 @@ export default function StudentDashboard() {
   }, []);
 
   useEffect(() => {
+    if (previewOnly) return;
     loadDashboard({ from: '', to: '' });
-  }, [loadDashboard]);
+  }, [loadDashboard, previewOnly]);
 
   async function submit(homeworkId) {
+    if (previewOnly) return;
     setUploadError('');
     setUploadMessage('');
     if (!asset.uri.trim() || !asset.name.trim()) {
@@ -171,6 +195,7 @@ export default function StudentDashboard() {
   }
 
   async function submitApplication() {
+    if (previewOnly) return;
     setApplicationError('');
     setApplicationNotice('');
     setApplicationBusy(true);
@@ -211,6 +236,12 @@ export default function StudentDashboard() {
               .join(' · ')
           : 'Your school information'}
       </Text>
+      {previewOnly ? (
+        <Text style={styles.previewNotice}>
+          DEVELOPMENT UI PREVIEW · Fictional records · APIs and submissions are
+          disabled
+        </Text>
+      ) : null}
 
       {loading ? (
         <View style={styles.loading}>
@@ -231,33 +262,39 @@ export default function StudentDashboard() {
         </View>
       ) : null}
 
-      <Text style={styles.sectionTitle}>Attendance date range</Text>
-      <View style={styles.filters}>
-        <Field
-          label="From (YYYY-MM-DD)"
-          value={dateRange.from}
-          onChangeText={value =>
-            setDateRange(current => ({ ...current, from: value }))
-          }
-          placeholder="2026-01-01"
-        />
-        <Field
-          label="To (YYYY-MM-DD)"
-          value={dateRange.to}
-          onChangeText={value =>
-            setDateRange(current => ({ ...current, to: value }))
-          }
-          placeholder="2026-12-31"
-        />
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        disabled={loading}
-        onPress={() => loadDashboard(dateRange)}
-        style={styles.button}
-      >
-        <Text style={styles.buttonText}>Apply attendance dates</Text>
-      </Pressable>
+      {!previewOnly ? (
+        <Text style={styles.sectionTitle}>Attendance date range</Text>
+      ) : null}
+      {!previewOnly ? (
+        <>
+          <View style={styles.filters}>
+            <Field
+              label="From (YYYY-MM-DD)"
+              value={dateRange.from}
+              onChangeText={value =>
+                setDateRange(current => ({ ...current, from: value }))
+              }
+              placeholder="2026-01-01"
+            />
+            <Field
+              label="To (YYYY-MM-DD)"
+              value={dateRange.to}
+              onChangeText={value =>
+                setDateRange(current => ({ ...current, to: value }))
+              }
+              placeholder="2026-12-31"
+            />
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            disabled={loading}
+            onPress={() => loadDashboard(dateRange)}
+            style={styles.button}
+          >
+            <Text style={styles.buttonText}>Apply attendance dates</Text>
+          </Pressable>
+        </>
+      ) : null}
 
       {!loading && !error ? (
         <>
@@ -265,7 +302,7 @@ export default function StudentDashboard() {
             title="Timetable"
             empty="No timetable entries are available."
           >
-            {records.timetable.map(item => (
+            {visibleRecords.timetable.map(item => (
               <Record
                 key={
                   item.id ||
@@ -285,7 +322,7 @@ export default function StudentDashboard() {
             title="Attendance"
             empty="No attendance records found for these dates."
           >
-            {records.attendance.map(item => (
+            {visibleRecords.attendance.map(item => (
               <Record
                 key={item.id || `${item.date}-${item._id}`}
                 title={
@@ -302,7 +339,7 @@ export default function StudentDashboard() {
             title="Published results"
             empty="No results have been published for you."
           >
-            {records.results.map(item => (
+            {visibleRecords.results.map(item => (
               <Record
                 key={item.id || item._id}
                 title={item.examName || item.title || item.subject || 'Result'}
@@ -320,7 +357,7 @@ export default function StudentDashboard() {
             ))}
           </Section>
           <Section title="Progress" empty="No progress records are available.">
-            {records.progress.map(item => (
+            {visibleRecords.progress.map(item => (
               <Record
                 key={item.id || item._id}
                 title={item.subject || item.area || item.title || 'Progress'}
@@ -341,7 +378,7 @@ export default function StudentDashboard() {
             title="Homework"
             empty="No published homework is assigned to you."
           >
-            {records.homework.map(item => {
+            {visibleRecords.homework.map(item => {
               const submission = item.latestSubmission;
               const homeworkId = item.id || String(item._id);
               return (
@@ -364,124 +401,147 @@ export default function StudentDashboard() {
                       submission?.teacherFeedback || submission?.feedback
                     }
                   />
-                  <Text style={styles.uploadHint}>
-                    Submission files: PDF, JPEG, or PNG, up to 5 MB.
-                  </Text>
-                  <Field
-                    label="File URI from device"
-                    value={asset.uri}
-                    onChangeText={value =>
-                      setAsset(current => ({ ...current, uri: value }))
-                    }
-                    placeholder="Select a file in your device flow"
-                  />
-                  <Field
-                    label="Filename"
-                    value={asset.name}
-                    onChangeText={value =>
-                      setAsset(current => ({ ...current, name: value }))
-                    }
-                    placeholder="homework.pdf"
-                    autoCapitalize="none"
-                  />
-                  <Field
-                    label="MIME type"
-                    value={asset.type}
-                    onChangeText={value =>
-                      setAsset(current => ({ ...current, type: value }))
-                    }
-                    placeholder="application/pdf"
-                  />
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={uploading === homeworkId}
-                    onPress={() => submit(homeworkId)}
-                    style={[
-                      styles.button,
-                      uploading === homeworkId && styles.disabled,
-                    ]}
-                  >
-                    <Text style={styles.buttonText}>
-                      {uploading === homeworkId
-                        ? 'Uploading…'
-                        : 'Submit homework'}
+                  {!previewOnly ? (
+                    <>
+                      <Text style={styles.uploadHint}>
+                        Submission files: PDF, JPEG, or PNG, up to 5 MB.
+                      </Text>
+                      <Field
+                        label="File URI from device"
+                        value={asset.uri}
+                        onChangeText={value =>
+                          setAsset(current => ({ ...current, uri: value }))
+                        }
+                        placeholder="Select a file in your device flow"
+                      />
+                      <Field
+                        label="Filename"
+                        value={asset.name}
+                        onChangeText={value =>
+                          setAsset(current => ({ ...current, name: value }))
+                        }
+                        placeholder="homework.pdf"
+                        autoCapitalize="none"
+                      />
+                      <Field
+                        label="MIME type"
+                        value={asset.type}
+                        onChangeText={value =>
+                          setAsset(current => ({ ...current, type: value }))
+                        }
+                        placeholder="application/pdf"
+                      />
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={uploading === homeworkId}
+                        onPress={() => submit(homeworkId)}
+                        style={[
+                          styles.button,
+                          uploading === homeworkId && styles.disabled,
+                        ]}
+                      >
+                        <Text style={styles.buttonText}>
+                          {uploading === homeworkId
+                            ? 'Uploading…'
+                            : 'Submit homework'}
+                        </Text>
+                      </Pressable>
+                    </>
+                  ) : (
+                    <Text style={styles.uploadHint}>
+                      Submission controls are disabled in this preview.
                     </Text>
-                  </Pressable>
+                  )}
                 </View>
               );
             })}
           </Section>
-          <Text style={styles.sectionTitle}>Applications to class teacher</Text>
-          <Text style={styles.muted}>
-            Your application is routed using your assigned class. Status changes
-            are recorded by the school.
-          </Text>
-          <Field
-            label="Subject"
-            value={applicationTitle}
-            onChangeText={setApplicationTitle}
-            placeholder="Application subject"
-            autoCapitalize="sentences"
-          />
-          <TextInput
-            accessibilityLabel="Application message"
-            value={applicationMessage}
-            onChangeText={setApplicationMessage}
-            placeholder="Write your application"
-            multiline
-            textAlignVertical="top"
-            style={[styles.input, styles.multiline]}
-            placeholderTextColor={colors.muted}
-          />
-          <Pressable
-            accessibilityRole="button"
-            disabled={applicationBusy || loading}
-            onPress={submitApplication}
-            style={[
-              styles.button,
-              (applicationBusy || loading) && styles.disabled,
-            ]}
-          >
-            <Text style={styles.buttonText}>
-              {applicationBusy ? 'Sending…' : 'Send application'}
-            </Text>
-          </Pressable>
-          {!!applicationNotice && (
-            <Text style={styles.successText}>{applicationNotice}</Text>
-          )}
-          {!!applicationError && (
-            <Text accessibilityRole="alert" style={styles.errorText}>
-              {applicationError}
-            </Text>
-          )}
-          <Section
-            title="Application status history"
-            empty="You have no applications yet."
-          >
-            {records.applications.map(item => (
-              <View key={item.id || item._id} style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.cardTitle}>{item.title}</Text>
-                  <Text style={styles.status}>
-                    {String(item.status || '').replace(/_/g, ' ')}
-                  </Text>
-                </View>
-                <Text style={styles.cardLine}>{item.message}</Text>
-                {(item.statusHistory || []).map((entry, index) => (
-                  <Text
-                    key={`${item.id || item._id}-${index}`}
-                    style={styles.cardLine}
-                  >
-                    {String(entry.status || '').replace(/_/g, ' ')} ·{' '}
-                    {entry.changedAt
-                      ? new Date(entry.changedAt).toLocaleString()
-                      : ''}
-                    {entry.note ? ` · ${entry.note}` : ''}
-                  </Text>
+          {!previewOnly ? (
+            <>
+              <Text style={styles.sectionTitle}>
+                Applications to class teacher
+              </Text>
+              <Text style={styles.muted}>
+                Your application is routed using your assigned class. Status
+                changes are recorded by the school.
+              </Text>
+              <Field
+                label="Subject"
+                value={applicationTitle}
+                onChangeText={setApplicationTitle}
+                placeholder="Application subject"
+                autoCapitalize="sentences"
+              />
+              <TextInput
+                accessibilityLabel="Application message"
+                value={applicationMessage}
+                onChangeText={setApplicationMessage}
+                placeholder="Write your application"
+                multiline
+                textAlignVertical="top"
+                style={[styles.input, styles.multiline]}
+                placeholderTextColor={colors.muted}
+              />
+              <Pressable
+                accessibilityRole="button"
+                disabled={applicationBusy || loading}
+                onPress={submitApplication}
+                style={[
+                  styles.button,
+                  (applicationBusy || loading) && styles.disabled,
+                ]}
+              >
+                <Text style={styles.buttonText}>
+                  {applicationBusy ? 'Sending…' : 'Send application'}
+                </Text>
+              </Pressable>
+              {!!applicationNotice && (
+                <Text style={styles.successText}>{applicationNotice}</Text>
+              )}
+              {!!applicationError && (
+                <Text accessibilityRole="alert" style={styles.errorText}>
+                  {applicationError}
+                </Text>
+              )}
+              <Section
+                title="Application status history"
+                empty="You have no applications yet."
+              >
+                {records.applications.map(item => (
+                  <View key={item.id || item._id} style={styles.card}>
+                    <View style={styles.cardHeader}>
+                      <Text style={styles.cardTitle}>{item.title}</Text>
+                      <Text style={styles.status}>
+                        {String(item.status || '').replace(/_/g, ' ')}
+                      </Text>
+                    </View>
+                    <Text style={styles.cardLine}>{item.message}</Text>
+                    {(item.statusHistory || []).map((entry, index) => (
+                      <Text
+                        key={`${item.id || item._id}-${index}`}
+                        style={styles.cardLine}
+                      >
+                        {String(entry.status || '').replace(/_/g, ' ')} ·{' '}
+                        {entry.changedAt
+                          ? new Date(entry.changedAt).toLocaleString()
+                          : ''}
+                        {entry.note ? ` · ${entry.note}` : ''}
+                      </Text>
+                    ))}
+                  </View>
                 ))}
-              </View>
-            ))}
-          </Section>
+              </Section>
+            </>
+          ) : (
+            <Section
+              title="Application history"
+              empty="No preview applications."
+            >
+              {records.applications.map(item => (
+                <Record key={item.id} title={item.title} status={item.status} />
+              ))}
+            </Section>
+          )}
           <Text accessibilityRole="alert" style={styles.successText}>
             {uploadMessage}
           </Text>
@@ -599,4 +659,14 @@ const styles = StyleSheet.create({
   homeworkCard: { marginBottom: 12 },
   uploadHint: { color: colors.muted, fontSize: 11, marginBottom: 8 },
   successText: { color: colors.green, fontSize: 12, marginTop: 7 },
+  previewNotice: {
+    color: '#8A4D00',
+    backgroundColor: '#FFF1D6',
+    borderRadius: 13,
+    padding: 11,
+    marginTop: 13,
+    fontSize: 11,
+    fontWeight: '800',
+    lineHeight: 16,
+  },
 });

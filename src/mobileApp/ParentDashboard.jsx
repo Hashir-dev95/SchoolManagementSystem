@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { parentApi } from './parentService';
+import { parentPreview, previewNotifications } from './previewData';
 
 const colors = {
   ink: '#14243A',
@@ -59,16 +60,29 @@ function money(amount, currency = 'PKR') {
   return `${currency} ${Number(amount || 0).toLocaleString()}`;
 }
 
-export default function ParentDashboard() {
-  const [children, setChildren] = useState([]);
-  const [selectedChildId, setSelectedChildId] = useState('');
-  const [childRecords, setChildRecords] = useState(null);
-  const [childrenLoading, setChildrenLoading] = useState(true);
+export default function ParentDashboard({
+  previewOnly = false,
+  searchQuery = '',
+}) {
+  const [children, setChildren] = useState(
+    previewOnly ? parentPreview.children : [],
+  );
+  const [selectedChildId, setSelectedChildId] = useState(
+    previewOnly ? parentPreview.children[0].id : '',
+  );
+  const [childRecords, setChildRecords] = useState(
+    previewOnly ? parentPreview.records[parentPreview.children[0].id] : null,
+  );
+  const [childrenLoading, setChildrenLoading] = useState(!previewOnly);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [childrenError, setChildrenError] = useState('');
   const [recordsError, setRecordsError] = useState('');
-  const [notifications, setNotifications] = useState([]);
-  const [notificationsLoading, setNotificationsLoading] = useState(true);
+  const [notifications, setNotifications] = useState(
+    previewOnly ? previewNotifications : [],
+  );
+  const [notificationsLoading, setNotificationsLoading] = useState(
+    !previewOnly,
+  );
   const [notificationsError, setNotificationsError] = useState('');
   const [openedDlp, setOpenedDlp] = useState(null);
   const [dlpLoadingId, setDlpLoadingId] = useState('');
@@ -82,59 +96,68 @@ export default function ParentDashboard() {
   const childrenVersion = useRef(0);
   const notificationVersion = useRef(0);
 
-  const loadChild = useCallback(async childId => {
-    const version = ++requestVersion.current;
-    notificationVersion.current += 1;
-    setOpenedDlp(null);
-    setDlpError('');
-    setDlpLoadingId('');
-    setApplicationTitle('');
-    setApplicationMessage('');
-    setApplicationNotice('');
-    setApplicationError('');
-    setSelectedChildId(childId);
-    setChildRecords(null);
-    setRecordsError('');
-    setRecordsLoading(true);
-    try {
-      const [
-        profile,
-        attendance,
-        timetable,
-        homework,
-        results,
-        fees,
-        feedback,
-        applications,
-      ] = await Promise.all([
-        parentApi.getChild(childId),
-        parentApi.getAttendance(childId),
-        parentApi.getTimetable(childId),
-        parentApi.getHomework(childId),
-        parentApi.getResults(childId),
-        parentApi.getFees(childId),
-        parentApi.getFeedback(childId),
-        parentApi.getApplications(childId),
-      ]);
-      if (version !== requestVersion.current) return;
-      setChildRecords({
-        profile,
-        attendance,
-        timetable,
-        homework,
-        results,
-        fees,
-        feedback,
-        applications,
-      });
-    } catch (error) {
-      if (version === requestVersion.current) setRecordsError(error.message);
-    } finally {
-      if (version === requestVersion.current) setRecordsLoading(false);
-    }
-  }, []);
+  const loadChild = useCallback(
+    async childId => {
+      if (previewOnly) {
+        setSelectedChildId(childId);
+        setChildRecords(parentPreview.records[childId] || null);
+        return;
+      }
+      const version = ++requestVersion.current;
+      notificationVersion.current += 1;
+      setOpenedDlp(null);
+      setDlpError('');
+      setDlpLoadingId('');
+      setApplicationTitle('');
+      setApplicationMessage('');
+      setApplicationNotice('');
+      setApplicationError('');
+      setSelectedChildId(childId);
+      setChildRecords(null);
+      setRecordsError('');
+      setRecordsLoading(true);
+      try {
+        const [
+          profile,
+          attendance,
+          timetable,
+          homework,
+          results,
+          fees,
+          feedback,
+          applications,
+        ] = await Promise.all([
+          parentApi.getChild(childId),
+          parentApi.getAttendance(childId),
+          parentApi.getTimetable(childId),
+          parentApi.getHomework(childId),
+          parentApi.getResults(childId),
+          parentApi.getFees(childId),
+          parentApi.getFeedback(childId),
+          parentApi.getApplications(childId),
+        ]);
+        if (version !== requestVersion.current) return;
+        setChildRecords({
+          profile,
+          attendance,
+          timetable,
+          homework,
+          results,
+          fees,
+          feedback,
+          applications,
+        });
+      } catch (error) {
+        if (version === requestVersion.current) setRecordsError(error.message);
+      } finally {
+        if (version === requestVersion.current) setRecordsLoading(false);
+      }
+    },
+    [previewOnly],
+  );
 
   const loadNotifications = useCallback(async () => {
+    if (previewOnly) return;
     const version = ++notificationVersion.current;
     setNotificationsLoading(true);
     setNotificationsError('');
@@ -149,25 +172,30 @@ export default function ParentDashboard() {
       if (version === notificationVersion.current)
         setNotificationsLoading(false);
     }
-  }, []);
+  }, [previewOnly]);
 
-  const openDlp = useCallback(async notificationId => {
-    const version = ++notificationVersion.current;
-    setOpenedDlp(null);
-    setDlpError('');
-    setDlpLoadingId(notificationId);
-    try {
-      await parentApi.markNotificationRead(notificationId);
-      const data = await parentApi.openNotification(notificationId);
-      if (version === notificationVersion.current) setOpenedDlp(data);
-    } catch (error) {
-      if (version === notificationVersion.current) setDlpError(error.message);
-    } finally {
-      if (version === notificationVersion.current) setDlpLoadingId('');
-    }
-  }, []);
+  const openDlp = useCallback(
+    async notificationId => {
+      if (previewOnly) return;
+      const version = ++notificationVersion.current;
+      setOpenedDlp(null);
+      setDlpError('');
+      setDlpLoadingId(notificationId);
+      try {
+        await parentApi.markNotificationRead(notificationId);
+        const data = await parentApi.openNotification(notificationId);
+        if (version === notificationVersion.current) setOpenedDlp(data);
+      } catch (error) {
+        if (version === notificationVersion.current) setDlpError(error.message);
+      } finally {
+        if (version === notificationVersion.current) setDlpLoadingId('');
+      }
+    },
+    [previewOnly],
+  );
 
   async function submitApplication() {
+    if (previewOnly) return;
     if (!selectedChildId) return;
     setApplicationError('');
     setApplicationNotice('');
@@ -191,6 +219,7 @@ export default function ParentDashboard() {
   }
 
   const loadChildren = useCallback(async () => {
+    if (previewOnly) return;
     const version = ++childrenVersion.current;
     setChildrenLoading(true);
     setChildrenError('');
@@ -208,9 +237,10 @@ export default function ParentDashboard() {
     } finally {
       if (version === childrenVersion.current) setChildrenLoading(false);
     }
-  }, [loadChild]);
+  }, [loadChild, previewOnly]);
 
   useEffect(() => {
+    if (previewOnly) return;
     loadChildren();
     loadNotifications();
     return () => {
@@ -218,9 +248,36 @@ export default function ParentDashboard() {
       childrenVersion.current += 1;
       notificationVersion.current += 1;
     };
-  }, [loadChildren, loadNotifications]);
+  }, [loadChildren, loadNotifications, previewOnly]);
 
   const selectedChild = children.find(child => child.id === selectedChildId);
+  const visibleChildren =
+    previewOnly && searchQuery.trim()
+      ? children.filter(child =>
+          JSON.stringify(child)
+            .toLowerCase()
+            .includes(searchQuery.trim().toLowerCase()),
+        )
+      : children;
+  const visibleChildRecords = React.useMemo(() => {
+    if (!previewOnly || !childRecords || !searchQuery.trim())
+      return childRecords;
+    const query = searchQuery.trim().toLowerCase();
+    const matches = item => JSON.stringify(item).toLowerCase().includes(query);
+    return {
+      ...childRecords,
+      attendance: childRecords.attendance.filter(matches),
+      timetable: childRecords.timetable.filter(matches),
+      homework: childRecords.homework.filter(matches),
+      results: childRecords.results.filter(matches),
+      fees: childRecords.fees.filter(matches),
+      feedback: {
+        homework: childRecords.feedback.homework.filter(matches),
+        results: childRecords.feedback.results.filter(matches),
+        progress: childRecords.feedback.progress.filter(matches),
+      },
+    };
+  }, [childRecords, previewOnly, searchQuery]);
 
   return (
     <ScrollView style={styles.page} contentContainerStyle={styles.content}>
@@ -229,12 +286,20 @@ export default function ParentDashboard() {
       <Text style={styles.subtitle}>
         Only verified linked children are shown.
       </Text>
+      {previewOnly ? (
+        <Text style={styles.previewNotice}>
+          DEVELOPMENT UI PREVIEW · Fictional child records · APIs and
+          applications are disabled
+        </Text>
+      ) : null}
 
       <View style={styles.headingRow}>
         <Text style={styles.sectionTitle}>Your children</Text>
-        <Pressable accessibilityRole="button" onPress={loadChildren}>
-          <Text style={styles.refresh}>Refresh</Text>
-        </Pressable>
+        {!previewOnly ? (
+          <Pressable accessibilityRole="button" onPress={loadChildren}>
+            <Text style={styles.refresh}>Refresh</Text>
+          </Pressable>
+        ) : null}
       </View>
       {childrenLoading && children.length === 0 ? (
         <View style={styles.loading}>
@@ -255,10 +320,14 @@ export default function ParentDashboard() {
       ) : null}
 
       <View style={styles.headingRow}>
-        <Text style={styles.sectionTitle}>Parent DLP notifications</Text>
-        <Pressable accessibilityRole="button" onPress={loadNotifications}>
-          <Text style={styles.refresh}>Refresh</Text>
-        </Pressable>
+        <Text style={styles.sectionTitle}>
+          {previewOnly ? 'Preview notifications' : 'Parent DLP notifications'}
+        </Text>
+        {!previewOnly ? (
+          <Pressable accessibilityRole="button" onPress={loadNotifications}>
+            <Text style={styles.refresh}>Refresh</Text>
+          </Pressable>
+        ) : null}
       </View>
       {notificationsLoading ? (
         <View style={styles.loading}>
@@ -291,8 +360,13 @@ export default function ParentDashboard() {
             {item.title || 'Parent DLP shared'}
           </Text>
           <Text style={styles.cardLine}>
-            {item.createdAt ? new Date(item.createdAt).toLocaleString() : ''} ·
-            Open shared class version
+            {previewOnly
+              ? 'Fictional notification · preview only'
+              : `${
+                  item.createdAt
+                    ? new Date(item.createdAt).toLocaleString()
+                    : ''
+                } · Open shared class version`}
           </Text>
           {dlpLoadingId === (item.id || String(item._id)) ? (
             <ActivityIndicator color={colors.blue} />
@@ -355,7 +429,7 @@ export default function ParentDashboard() {
         </View>
       ) : null}
 
-      {children.map(child => {
+      {visibleChildren.map(child => {
         const selected = child.id === selectedChildId;
         return (
           <Pressable
@@ -409,7 +483,7 @@ export default function ParentDashboard() {
             <>
               <Section
                 title="Attendance"
-                records={childRecords.attendance}
+                records={visibleChildRecords.attendance}
                 empty="No attendance records are available."
                 render={item => (
                   <DataCard
@@ -426,7 +500,7 @@ export default function ParentDashboard() {
               />
               <Section
                 title="Timetable"
-                records={childRecords.timetable}
+                records={visibleChildRecords.timetable}
                 empty="No timetable entries are available."
                 render={item => (
                   <DataCard
@@ -445,7 +519,7 @@ export default function ParentDashboard() {
               />
               <Section
                 title="Homework"
-                records={childRecords.homework}
+                records={visibleChildRecords.homework}
                 empty="No published homework is assigned."
                 render={item => (
                   <DataCard
@@ -463,7 +537,7 @@ export default function ParentDashboard() {
               />
               <Section
                 title="Published results"
-                records={childRecords.results}
+                records={visibleChildRecords.results}
                 empty="No results have been published."
                 render={item => (
                   <DataCard
@@ -482,7 +556,7 @@ export default function ParentDashboard() {
               />
               <Section
                 title="Fees"
-                records={childRecords.fees}
+                records={visibleChildRecords.fees}
                 empty="No fee records are available."
                 render={item => (
                   <DataCard
@@ -502,13 +576,13 @@ export default function ParentDashboard() {
                 )}
               />
               <Text style={styles.sectionTitle}>Teacher feedback</Text>
-              {childRecords.feedback.homework.length +
-                childRecords.feedback.results.length +
-                childRecords.feedback.progress.length ===
+              {visibleChildRecords.feedback.homework.length +
+                visibleChildRecords.feedback.results.length +
+                visibleChildRecords.feedback.progress.length ===
               0 ? (
                 <Empty>No teacher feedback is available.</Empty>
               ) : null}
-              {childRecords.feedback.homework.map(item => (
+              {visibleChildRecords.feedback.homework.map(item => (
                 <DataCard
                   key={`homework-${item.id || item._id}`}
                   title={
@@ -526,7 +600,7 @@ export default function ParentDashboard() {
                   feedback={item.teacherFeedback || item.feedback}
                 />
               ))}
-              {childRecords.feedback.results.map(item => (
+              {visibleChildRecords.feedback.results.map(item => (
                 <DataCard
                   key={`result-${item.id || item._id}`}
                   title={
@@ -538,86 +612,90 @@ export default function ParentDashboard() {
                   feedback={item.teacherFeedback || item.feedback}
                 />
               ))}
-              {childRecords.feedback.progress.map(item => (
+              {visibleChildRecords.feedback.progress.map(item => (
                 <DataCard
                   key={`progress-${item.id || item._id}`}
                   title={item.subject || item.title || 'Progress feedback'}
                   feedback={item.teacherFeedback || item.feedback}
                 />
               ))}
-              <Text style={styles.sectionTitle}>
-                Applications to class teacher
-              </Text>
-              <Text style={styles.muted}>
-                This application is routed by the selected child’s verified
-                class assignment.
-              </Text>
-              <Text style={styles.label}>Subject</Text>
-              <TextInput
-                accessibilityLabel="Application subject"
-                value={applicationTitle}
-                onChangeText={setApplicationTitle}
-                placeholder="Application subject"
-                style={styles.input}
-                placeholderTextColor={colors.muted}
-              />
-              <Text style={styles.label}>Message</Text>
-              <TextInput
-                accessibilityLabel="Application message"
-                value={applicationMessage}
-                onChangeText={setApplicationMessage}
-                placeholder="Write your application"
-                multiline
-                textAlignVertical="top"
-                style={[styles.input, styles.multiline]}
-                placeholderTextColor={colors.muted}
-              />
-              <Pressable
-                accessibilityRole="button"
-                disabled={applicationBusy || recordsLoading}
-                onPress={submitApplication}
-                style={styles.actionButton}
-              >
-                <Text style={styles.actionText}>
-                  {applicationBusy ? 'Sending…' : 'Send application'}
-                </Text>
-              </Pressable>
-              {!!applicationNotice && (
-                <Text style={styles.successText}>{applicationNotice}</Text>
-              )}
-              {!!applicationError && (
-                <Text accessibilityRole="alert" style={styles.errorText}>
-                  {applicationError}
-                </Text>
-              )}
-              <Section
-                title="Application status history"
-                records={childRecords.applications}
-                empty="No applications have been sent for this child."
-                render={item => (
-                  <View key={item.id || item._id} style={styles.dataCard}>
-                    <View style={styles.cardHeader}>
-                      <Text style={styles.cardTitle}>{item.title}</Text>
-                      <Text style={styles.status}>
-                        {String(item.status || '').replace(/_/g, ' ')}
-                      </Text>
-                    </View>
-                    <Text style={styles.cardLine}>{item.message}</Text>
-                    {(item.statusHistory || []).map((entry, index) => (
-                      <Text
-                        key={`${item.id || item._id}-${index}`}
-                        style={styles.cardLine}
-                      >
-                        {String(entry.status || '').replace(/_/g, ' ')} ·{' '}
-                        {entry.changedAt
-                          ? new Date(entry.changedAt).toLocaleString()
-                          : ''}
-                        {entry.note ? ` · ${entry.note}` : ''}
-                      </Text>
-                    ))}
-                  </View>
-                )}
-              />
+              {!previewOnly ? (
+                <>
+                  <Text style={styles.sectionTitle}>
+                    Applications to class teacher
+                  </Text>
+                  <Text style={styles.muted}>
+                    This application is routed by the selected child’s verified
+                    class assignment.
+                  </Text>
+                  <Text style={styles.label}>Subject</Text>
+                  <TextInput
+                    accessibilityLabel="Application subject"
+                    value={applicationTitle}
+                    onChangeText={setApplicationTitle}
+                    placeholder="Application subject"
+                    style={styles.input}
+                    placeholderTextColor={colors.muted}
+                  />
+                  <Text style={styles.label}>Message</Text>
+                  <TextInput
+                    accessibilityLabel="Application message"
+                    value={applicationMessage}
+                    onChangeText={setApplicationMessage}
+                    placeholder="Write your application"
+                    multiline
+                    textAlignVertical="top"
+                    style={[styles.input, styles.multiline]}
+                    placeholderTextColor={colors.muted}
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={applicationBusy || recordsLoading}
+                    onPress={submitApplication}
+                    style={styles.actionButton}
+                  >
+                    <Text style={styles.actionText}>
+                      {applicationBusy ? 'Sending…' : 'Send application'}
+                    </Text>
+                  </Pressable>
+                  {!!applicationNotice && (
+                    <Text style={styles.successText}>{applicationNotice}</Text>
+                  )}
+                  {!!applicationError && (
+                    <Text accessibilityRole="alert" style={styles.errorText}>
+                      {applicationError}
+                    </Text>
+                  )}
+                  <Section
+                    title="Application status history"
+                    records={childRecords.applications}
+                    empty="No applications have been sent for this child."
+                    render={item => (
+                      <View key={item.id || item._id} style={styles.dataCard}>
+                        <View style={styles.cardHeader}>
+                          <Text style={styles.cardTitle}>{item.title}</Text>
+                          <Text style={styles.status}>
+                            {String(item.status || '').replace(/_/g, ' ')}
+                          </Text>
+                        </View>
+                        <Text style={styles.cardLine}>{item.message}</Text>
+                        {(item.statusHistory || []).map((entry, index) => (
+                          <Text
+                            key={`${item.id || item._id}-${index}`}
+                            style={styles.cardLine}
+                          >
+                            {String(entry.status || '').replace(/_/g, ' ')} ·{' '}
+                            {entry.changedAt
+                              ? new Date(entry.changedAt).toLocaleString()
+                              : ''}
+                            {entry.note ? ` · ${entry.note}` : ''}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
+                  />
+                </>
+              ) : null}
             </>
           ) : null}
         </>

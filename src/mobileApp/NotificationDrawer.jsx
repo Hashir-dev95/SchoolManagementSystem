@@ -13,6 +13,7 @@ import {
 import { financeApi } from './financeService';
 import { parentApi } from './parentService';
 import { studentApi } from './studentService';
+import { previewNotifications } from './previewData';
 
 const palette = {
   ink: '#14243A',
@@ -61,11 +62,13 @@ function Details({ value }) {
   ));
 }
 
-export default function NotificationDrawer({ role }) {
+export default function NotificationDrawer({ role, previewOnly = false }) {
   const [visible, setVisible] = useState(false);
-  const [notifications, setNotifications] = useState([]);
+  const [notifications, setNotifications] = useState(
+    previewOnly ? previewNotifications : [],
+  );
   const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!previewOnly);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
   const [openingId, setOpeningId] = useState('');
@@ -86,6 +89,7 @@ export default function NotificationDrawer({ role }) {
   }, [visible, drawerWidth, slideX]);
 
   const loadNotifications = useCallback(async () => {
+    if (previewOnly) return;
     const version = ++requestVersion.current;
     setLoading(true);
     setError('');
@@ -99,9 +103,10 @@ export default function NotificationDrawer({ role }) {
     } finally {
       if (version === requestVersion.current) setLoading(false);
     }
-  }, [api]);
+  }, [api, previewOnly]);
 
   useEffect(() => {
+    if (previewOnly) return;
     setSelected(null);
     setNotifications([]);
     setUnreadCount(0);
@@ -109,10 +114,11 @@ export default function NotificationDrawer({ role }) {
     return () => {
       requestVersion.current += 1;
     };
-  }, [loadNotifications]);
+  }, [loadNotifications, previewOnly]);
 
   const openNotification = useCallback(
     async item => {
+      if (previewOnly) return;
       const id = notificationId(item);
       if (!id) return;
       const version = ++requestVersion.current;
@@ -138,7 +144,7 @@ export default function NotificationDrawer({ role }) {
         if (version === requestVersion.current) setOpeningId('');
       }
     },
-    [api],
+    [api, previewOnly],
   );
 
   const detail =
@@ -165,7 +171,7 @@ export default function NotificationDrawer({ role }) {
         }}
         style={styles.trigger}
       >
-        <Text style={styles.dots}>⋮</Text>
+        <Text style={styles.bell}>🔔</Text>
         {unreadCount > 0 ? (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>
@@ -191,7 +197,8 @@ export default function NotificationDrawer({ role }) {
               <View>
                 <Text style={styles.heading}>Notifications</Text>
                 <Text style={styles.subtitle}>
-                  {unreadCount} unread · {role}
+                  {previewOnly ? 'Preview only · ' : `${unreadCount} unread · `}
+                  {role}
                 </Text>
               </View>
               <Pressable
@@ -205,13 +212,19 @@ export default function NotificationDrawer({ role }) {
             </View>
             {selected ? (
               <ScrollView contentContainerStyle={styles.body}>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setSelected(null)}
-                  style={styles.back}
-                >
-                  <Text style={styles.backText}>‹ All notifications</Text>
-                </Pressable>
+                {!previewOnly ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setSelected(null)}
+                    style={styles.back}
+                  >
+                    <Text style={styles.backText}>‹ All notifications</Text>
+                  </Pressable>
+                ) : (
+                  <Text style={styles.empty}>
+                    Local preview notification · no linked record
+                  </Text>
+                )}
                 <Text style={styles.detailTitle}>{title}</Text>
                 {exactVersion ? (
                   <Text style={styles.subtitle}>
@@ -332,6 +345,7 @@ const styles = StyleSheet.create({
     borderColor: palette.line,
   },
   dots: { color: palette.ink, fontSize: 25, lineHeight: 27, fontWeight: '800' },
+  bell: { color: palette.ink, fontSize: 19, fontWeight: '800' },
   badge: {
     position: 'absolute',
     right: -5,

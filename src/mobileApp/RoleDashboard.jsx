@@ -44,10 +44,24 @@ function Row({ title, subtitle, right, tone }) {
   );
 }
 
-export default function RoleDashboard({ role, data }) {
-  if (role === 'Finance') return <FinanceDashboard />;
-  if (role === 'Student') return <StudentDashboard />;
-  if (role === 'Parent') return <ParentDashboard />;
+export default function RoleDashboard({
+  role,
+  data,
+  previewOnly = false,
+  searchQuery = '',
+}) {
+  if (role === 'Finance')
+    return (
+      <FinanceDashboard previewOnly={previewOnly} searchQuery={searchQuery} />
+    );
+  if (role === 'Student')
+    return (
+      <StudentDashboard previewOnly={previewOnly} searchQuery={searchQuery} />
+    );
+  if (role === 'Parent')
+    return (
+      <ParentDashboard previewOnly={previewOnly} searchQuery={searchQuery} />
+    );
   const parent = role === 'Parent';
   return (
     <ScrollView style={styles.page} contentContainerStyle={styles.content}>
