@@ -127,6 +127,8 @@ export default function StudentDashboard({
   const [uploading, setUploading] = useState('');
   const [uploadMessage, setUploadMessage] = useState('');
   const [uploadError, setUploadError] = useState('');
+  const [submissionHistory, setSubmissionHistory] = useState({});
+  const [historyLoading, setHistoryLoading] = useState('');
   const [applicationTitle, setApplicationTitle] = useState('');
   const [applicationMessage, setApplicationMessage] = useState('');
   const [applicationBusy, setApplicationBusy] = useState(false);
@@ -232,6 +234,19 @@ export default function StudentDashboard({
       setApplicationError(submitError.message);
     } finally {
       setApplicationBusy(false);
+    }
+  }
+
+  async function loadSubmissionHistory(homeworkId) {
+    if (previewOnly || submissionHistory[homeworkId]) return;
+    setHistoryLoading(homeworkId);
+    try {
+      const history = await studentApi.getSubmissions(homeworkId);
+      setSubmissionHistory(current => ({ ...current, [homeworkId]: history }));
+    } catch (historyError) {
+      setUploadError(historyError.message);
+    } finally {
+      setHistoryLoading('');
     }
   }
 
@@ -430,6 +445,30 @@ export default function StudentDashboard({
                   />
                   {!previewOnly ? (
                     <>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={historyLoading === homeworkId}
+                        onPress={() => loadSubmissionHistory(homeworkId)}
+                        style={styles.historyButton}
+                      >
+                        <Text style={styles.historyButtonText}>
+                          {historyLoading === homeworkId
+                            ? 'Loading history…'
+                            : 'View submission history'}
+                        </Text>
+                      </Pressable>
+                      {submissionHistory[homeworkId]?.map((entry, index) => (
+                        <Text
+                          key={entry.id || entry._id || `${homeworkId}-${index}`}
+                          style={styles.cardLine}
+                        >
+                          {entry.status || 'submitted'} ·{' '}
+                          {entry.submittedAt
+                            ? new Date(entry.submittedAt).toLocaleString()
+                            : 'Date unavailable'}
+                          {entry.fileName ? ` · ${entry.fileName}` : ''}
+                        </Text>
+                      ))}
                       <Text style={styles.uploadHint}>
                         Submission files: PDF, JPEG, or PNG, up to 5 MB.
                       </Text>
@@ -648,6 +687,15 @@ const styles = StyleSheet.create({
   },
   buttonText: { color: '#FFFEFA', fontWeight: '800', fontSize: 12 },
   disabled: { opacity: 0.55 },
+  historyButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#EEF0FF',
+    marginBottom: 10,
+  },
+  historyButtonText: { color: colors.blue, fontWeight: '800' },
   empty: {
     backgroundColor: '#FFFEFA',
     color: colors.muted,

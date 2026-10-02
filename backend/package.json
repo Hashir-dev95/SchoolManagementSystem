@@ -7,6 +7,9 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "node src/server.js",
     "setup:user": "node src/setup-user.js",
+    "setup:student": "node src/setup-student.js",
+    "setup:parent": "node src/setup-parent.js",
+    "setup:finance": "node src/setup-finance.js",
     "setup:records": "node src/setup-records.js",
     "build": "tsc",
     "start": "node src/server.js"

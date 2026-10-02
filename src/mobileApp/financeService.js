@@ -1,10 +1,5 @@
-import { Platform } from 'react-native';
 import { getAuthHeaders } from './authSession';
-
-const API_ROOT =
-  Platform.OS === 'android'
-    ? 'http://10.0.2.2:5000/api'
-    : 'http://localhost:5000/api';
+import { API_ROOT } from './apiConfig';
 const NOTIFICATION_ROOT = `${API_ROOT}/finance/me/notifications`;
 
 async function request(path, options = {}) {
@@ -90,7 +85,11 @@ async function notificationRequest(path, options = {}) {
     response = await fetch(`${NOTIFICATION_ROOT}${path}`, {
       credentials: 'include',
       ...options,
-      headers: { 'Content-Type': 'application/json', ...options.headers },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+        ...options.headers,
+      },
     });
   } catch {
     throw new Error('Could not reach the Finance notification API.');

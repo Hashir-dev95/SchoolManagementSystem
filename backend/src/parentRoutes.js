@@ -469,14 +469,30 @@ router.get('/children/:studentId/feedback', async (req, res, next) => {
               ],
             },
           },
-          {
-            $lookup: {
-              from: 'homework',
-              localField: 'homeworkId',
-              foreignField: 'id',
-              as: 'homework',
+            {
+              $lookup: {
+                from: 'homework',
+                let: { submissionHomeworkId: '$homeworkId' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $or: [
+                          { $eq: ['$id', '$$submissionHomeworkId'] },
+                          {
+                            $eq: [
+                              { $toString: '$_id' },
+                              '$$submissionHomeworkId',
+                            ],
+                          },
+                        ],
+                      },
+                    },
+                  },
+                ],
+                as: 'homework',
+              },
             },
-          },
           { $unwind: { path: '$homework', preserveNullAndEmptyArrays: true } },
           { $project: { fileData: 0 } },
           { $sort: { submittedAt: -1 } },

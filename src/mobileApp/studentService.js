@@ -1,10 +1,6 @@
-import { Platform } from 'react-native';
 import { getAuthHeaders } from './authSession';
-
-const API_ROOT =
-  Platform.OS === 'android'
-    ? 'http://10.0.2.2:5000/api/students/me'
-    : 'http://localhost:5000/api/students/me';
+import { API_ROOT as API_BASE } from './apiConfig';
+const API_ROOT = `${API_BASE}/students/me`;
 
 async function request(path, options = {}) {
   let response;
