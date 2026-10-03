@@ -1,0 +1,1156 @@
+# SCHOOL MANAGEMENT SYSTEM
+
+## MASTER DEVELOPMENT BLUEPRINT
+
+You are working as a **Senior Full-Stack React Native + Node.js Developer** on a production-ready School Management System.
+
+Your responsibility is to design and implement the system with clean architecture, secure APIs, scalable database design, proper role-based access, branch isolation, and fully working React Native screens.
+
+---
+
+# 1. CORE TECHNOLOGY STACK
+
+## Mobile App
+
+* React Native CLI
+* TypeScript
+* React Navigation
+* Android + iOS support
+* Reusable components
+* API service layer
+* Authentication state management
+* Secure token handling
+
+## Backend
+
+* Node.js
+* Express.js
+* TypeScript
+* REST API architecture
+* JWT authentication
+* RBAC
+* Permission-based authorization
+* Middleware-based security
+* Service / Controller / Route separation
+
+## Database
+
+* MongoDB
+* Mongoose
+
+## Security
+
+* bcrypt password hashing
+* JWT access tokens
+* Role-based access control
+* Permission-based authorization
+* Branch-level data isolation
+* Input validation
+* Authentication middleware
+* Authorization middleware
+* Secure environment variables
+* Audit logging
+* Security testing
+
+## Development
+
+* Git
+* Feature branches
+* Small atomic commits
+* Build verification
+* Integration testing
+* Production build
+
+---
+
+# 2. MASTER DEVELOPMENT ORDER
+
+Development MUST follow this order:
+
+1. React Native CLI
+2. TypeScript
+3. Project Architecture
+4. Backend Architecture
+5. MongoDB
+6. User Model
+7. Authentication
+8. JWT
+9. RBAC
+10. Permissions
+11. Branch Scoping
+12. Super Admin
+13. Principal
+14. Students
+15. Admissions
+16. Academic Setup
+17. Teachers
+18. Attendance
+19. Teacher Academic Work
+20. Exams
+21. Results
+22. Finance Integration
+23. Reports
+24. Audit Logs
+25. Security Testing
+26. Integration Testing
+27. Production Build
+28. Git / PR / Release
+
+DO NOT skip steps.
+
+DO NOT start the next major feature before the current feature is completed and verified.
+
+---
+
+# 3. NON-NEGOTIABLE DEVELOPMENT RULE
+
+Every feature must be completed END-TO-END.
+
+Required flow:
+
+Feature
+↓
+MongoDB Model
+↓
+Backend Service
+↓
+Controller
+↓
+API Route
+↓
+Authentication
+↓
+RBAC
+↓
+Permissions
+↓
+Branch Scoping
+↓
+React Native Screen
+↓
+API Integration
+↓
+Loading / Error / Empty States
+↓
+Testing
+↓
+Build Verification
+↓
+Git Commit
+↓
+Git Push
+↓
+Next Feature
+
+Never create large numbers of UI screens without working backend functionality.
+
+The goal is a **fully working School Management System**, not a collection of half-built screens.
+
+---
+
+# 4. PROJECT ARCHITECTURE
+
+Current root:
+
+D:\SchoolManagementSystem
+
+Recommended structure:
+
+SchoolManagementSystem/
+│
+├── android/
+├── ios/
+├── src/
+│   ├── components/
+│   ├── constants/
+│   ├── hooks/
+│   ├── navigation/
+│   ├── screens/
+│   │   ├── admin/
+│   │   ├── auth/
+│   │   ├── principal/
+│   │   ├── student/
+│   │   └── teacher/
+│   ├── services/
+│   │   ├── api/
+│   │   └── auth/
+│   ├── types/
+│   └── utils/
+│
+├── backend/
+│   └── src/
+│       ├── config/
+│       ├── constants/
+│       ├── controllers/
+│       ├── middleware/
+│       ├── models/
+│       ├── routes/
+│       ├── services/
+│       ├── utils/
+│       ├── app.ts
+│       └── server.ts
+│
+├── package.json
+└── README.md
+
+Do not mix frontend and backend responsibilities.
+
+Backend constants belong inside:
+
+backend/src/constants/
+
+Frontend constants belong inside:
+
+src/constants/
+
+---
+
+# 5. USER SYSTEM
+
+The system supports these core roles:
+
+* Super Admin
+* Principal
+* Teacher
+* Student
+
+Current role constants:
+
+super_admin
+principal
+teacher
+student
+
+Every authenticated request must identify the current user.
+
+Core user fields:
+
+* fullName
+* email
+* phone
+* password
+* role
+* branchId
+* isActive
+* createdAt
+* updatedAt
+
+Passwords must NEVER be stored as plain text.
+
+---
+
+# 6. AUTHENTICATION ARCHITECTURE
+
+Authentication flow:
+
+React Native
+↓
+Login API
+↓
+Email + Password
+↓
+Backend
+↓
+User lookup
+↓
+bcrypt password verification
+↓
+JWT generation
+↓
+Access Token
+↓
+React Native token storage
+↓
+Authenticated API requests
+
+Protected requests use:
+
+Authorization: Bearer <token>
+
+Backend middleware:
+
+authenticateToken
+
+Responsibilities:
+
+* Extract Bearer token
+* Verify JWT
+* Decode userId
+* Decode role
+* Attach authenticated user to request
+* Reject invalid/expired tokens
+
+---
+
+# 7. RBAC ARCHITECTURE
+
+RBAC means:
+
+Role → Access
+
+Roles:
+
+Super Admin
+Principal
+Teacher
+Student
+
+Authorization middleware:
+
+requireRole(...roles)
+
+Example:
+
+Principal-only API
+↓
+authenticateToken
+↓
+requireRole('principal')
+↓
+Controller
+
+Unauthorized role:
+
+HTTP 403
+
+Unauthenticated request:
+
+HTTP 401
+
+---
+
+# 8. PERMISSION SYSTEM
+
+Permissions provide more granular authorization.
+
+Permission format:
+
+resource.action
+
+Examples:
+
+students.view
+students.create
+students.update
+students.delete
+
+teachers.view
+teachers.create
+teachers.update
+teachers.delete
+
+attendance.view
+attendance.manage
+
+exams.view
+exams.manage
+
+results.view
+results.manage
+
+finance.view
+finance.manage
+
+reports.view
+
+Architecture:
+
+permissions.ts
+↓
+Permission definitions
+
+rolePermissions.ts
+↓
+Role → Permission mapping
+
+permission.middleware.ts
+↓
+requirePermission()
+
+Authorization flow:
+
+JWT
+↓
+Authentication
+↓
+User Role
+↓
+Role Permissions
+↓
+Required Permission
+↓
+Allow / Deny
+
+---
+
+# 9. BRANCH SCOPING
+
+Branches are independent school campuses/branches.
+
+Example:
+
+Branch A
+Branch B
+Branch C
+
+A user associated with Branch A must not access Branch B data unless explicitly authorized.
+
+Branch-aware entities should contain:
+
+branchId
+
+Branch isolation must be enforced at the backend level.
+
+NEVER rely only on React Native UI hiding.
+
+Every branch-sensitive API must verify branch ownership/scope.
+
+Target architecture:
+
+Authentication
+↓
+Role
+↓
+Permission
+↓
+Branch Scope
+↓
+Controller
+↓
+Database Query
+
+---
+
+# 10. SUPER ADMIN
+
+Super Admin is the highest-level system administrator.
+
+Responsibilities:
+
+* Manage branches
+* Create/manage principals
+* Manage system users
+* Activate/deactivate accounts
+* View organization-wide data
+* Manage system configuration
+* Access cross-branch information where permitted
+* View audit logs
+* Manage permissions/system-level settings
+
+Super Admin must have carefully controlled access.
+
+---
+
+# 11. PRINCIPAL
+
+Principal manages a specific school branch.
+
+Principal responsibilities:
+
+* Dashboard
+* Students
+* Admissions
+* Teachers
+* Attendance overview
+* Exams
+* Results
+* Finance overview
+* Reports
+* Academic setup
+* Branch-level management
+
+Principal must only operate within the assigned branch unless an explicit system-level permission exists.
+
+---
+
+# 12. STUDENT MANAGEMENT
+
+Student module includes:
+
+* Student profile
+* Student ID
+* Personal information
+* Parent/guardian information
+* Contact information
+* Address
+* Branch
+* Class
+* Section
+* Admission information
+* Enrollment status
+* Academic history
+* Attendance
+* Exams
+* Results
+* Fee information
+
+Student APIs must enforce:
+
+Authentication
++
+Permission
++
+Branch Scope
+
+---
+
+# 13. ADMISSIONS
+
+Admission workflow:
+
+Applicant
+↓
+Application
+↓
+Review
+↓
+Approval / Rejection
+↓
+Student Creation
+↓
+Enrollment
+↓
+Class / Section Assignment
+
+Admission records should maintain status and timestamps.
+
+Important statuses may include:
+
+* pending
+* approved
+* rejected
+* cancelled
+
+Admission actions must be permission protected.
+
+---
+
+# 14. ACADEMIC SETUP
+
+Academic structure:
+
+Academic Year
+↓
+Classes
+↓
+Sections
+↓
+Subjects
+↓
+Teacher Assignment
+↓
+Student Enrollment
+
+Examples:
+
+Academic Year:
+2026-2027
+
+Class:
+Grade 9
+
+Section:
+A
+
+Subjects:
+Mathematics
+English
+Physics
+Computer Science
+
+All branch-sensitive academic records must contain branchId where appropriate.
+
+---
+
+# 15. TEACHER MANAGEMENT
+
+Teacher module:
+
+* Teacher profile
+* Employee ID
+* Contact information
+* Branch
+* Subjects
+* Classes
+* Sections
+* Academic assignments
+* Attendance responsibilities
+* Exam responsibilities
+
+Principal can manage teachers according to permissions.
+
+Teacher can access only the academic data assigned to them.
+
+---
+
+# 16. ATTENDANCE
+
+Attendance should support:
+
+* Student attendance
+* Teacher attendance where required
+* Date
+* Class
+* Section
+* Student
+* Status
+
+Statuses:
+
+* present
+* absent
+* late
+* leave
+
+Attendance flow:
+
+Teacher
+↓
+Assigned Class
+↓
+Select Date
+↓
+Load Students
+↓
+Mark Attendance
+↓
+Submit
+↓
+Backend Validation
+↓
+MongoDB
+
+Duplicate attendance records for the same student/date/class should be prevented.
+
+---
+
+# 17. TEACHER ACADEMIC WORK
+
+Teacher academic functionality:
+
+* Assigned classes
+* Assigned subjects
+* Lessons
+* Homework
+* Assignments
+* Notes
+* Academic activities
+
+Teacher must only manage academic work for assigned classes/subjects.
+
+---
+
+# 18. EXAMS
+
+Exam system:
+
+Exam
+↓
+Academic Year
+↓
+Class
+↓
+Section
+↓
+Subject
+↓
+Exam Schedule
+↓
+Marks
+
+Features:
+
+* Create exam
+* Exam schedule
+* Subject-wise marks
+* Maximum marks
+* Passing marks
+* Teacher mark entry
+* Validation
+* Exam status
+
+---
+
+# 19. RESULTS
+
+Result flow:
+
+Exam
+↓
+Student
+↓
+Subject Marks
+↓
+Total
+↓
+Percentage
+↓
+Grade
+↓
+Result
+
+Results should be calculated consistently on the backend.
+
+Possible result states:
+
+* pass
+* fail
+* absent
+
+Students can view their own results.
+
+Teachers can manage results only within assigned academic scope.
+
+Principals can view/manage branch-level results according to permissions.
+
+---
+
+# 20. FINANCE INTEGRATION
+
+Finance module should support:
+
+* Fee structures
+* Student fees
+* Fee invoices
+* Payments
+* Outstanding balances
+* Payment history
+* Finance reports
+
+Finance data must be branch-scoped.
+
+Financial permissions must be explicitly controlled.
+
+Example:
+
+finance.view
+finance.manage
+
+---
+
+# 21. REPORTS
+
+Reports may include:
+
+* Student reports
+* Attendance reports
+* Teacher reports
+* Exam reports
+* Result reports
+* Fee reports
+* Outstanding fee reports
+* Branch reports
+
+Reports must respect:
+
+Role
++
+Permission
++
+Branch Scope
+
+---
+
+# 22. AUDIT LOGS
+
+Important actions should be logged.
+
+Examples:
+
+* Login
+* User creation
+* User update
+* Student creation
+* Student update
+* Admission approval
+* Attendance modification
+* Marks modification
+* Fee/payment action
+* Permission-sensitive actions
+
+Audit record should contain appropriate information such as:
+
+* actor/user
+* action
+* resource
+* resource ID
+* branch
+* timestamp
+* relevant metadata
+
+Do not store passwords or sensitive secrets in audit logs.
+
+---
+
+# 23. API ARCHITECTURE
+
+Use:
+
+Route
+↓
+Middleware
+↓
+Controller
+↓
+Service
+↓
+Model
+↓
+MongoDB
+
+Controllers should remain thin.
+
+Business logic belongs in services.
+
+Database interaction belongs in services/models.
+
+Authentication belongs in middleware.
+
+Authorization belongs in middleware.
+
+---
+
+# 24. API RESPONSE STYLE
+
+Use consistent responses.
+
+Success:
+
+{
+"success": true,
+"message": "...",
+"data": {}
+}
+
+Error:
+
+{
+"success": false,
+"message": "..."
+}
+
+Common status codes:
+
+200 — Success
+201 — Created
+400 — Bad Request
+401 — Authentication required
+403 — Access forbidden
+404 — Not Found
+409 — Conflict
+500 — Server Error
+
+---
+
+# 25. REACT NATIVE ARCHITECTURE
+
+Mobile application flow:
+
+App
+↓
+Auth State
+↓
+Authentication
+↓
+Role Detection
+↓
+Role Navigator
+↓
+Feature Screens
+↓
+API Services
+
+Navigation should be role-aware.
+
+Examples:
+
+AuthNavigator
+PrincipalNavigator
+TeacherNavigator
+StudentNavigator
+
+Do not allow users to access unauthorized screens merely by manually navigating.
+
+Backend remains the final authority.
+
+---
+
+# 26. API SERVICE LAYER
+
+React Native API calls should NOT be scattered throughout screens.
+
+Use:
+
+src/services/api/
+
+Example:
+
+apiClient.ts
+
+Responsibilities:
+
+* Base URL
+* Headers
+* Authorization token
+* Request handling
+* Error handling
+
+Feature services can be added as the system grows.
+
+---
+
+# 27. UI RULES
+
+Every production screen must handle:
+
+* Loading state
+* Success state
+* Empty state
+* Error state
+* Network failure
+* Unauthorized state where relevant
+
+Use reusable components.
+
+Avoid duplicate UI logic.
+
+Do not build fake static data into production screens unless clearly marked as temporary test data.
+
+---
+
+# 28. VALIDATION
+
+Validate input on BOTH:
+
+Frontend
+AND
+Backend
+
+Never trust client-side validation alone.
+
+Examples:
+
+* Email format
+* Required fields
+* Password length
+* ObjectId validity
+* Numeric ranges
+* Marks limits
+* Duplicate records
+* Branch ownership
+
+---
+
+# 29. SECURITY RULES
+
+NEVER:
+
+* Commit `.env`
+* Expose JWT secret
+* Expose MongoDB credentials
+* Store plain passwords
+* Trust role sent from frontend
+* Trust branchId sent from frontend without authorization
+* Allow unauthorized cross-branch queries
+* Put authorization logic only in UI
+
+ALWAYS:
+
+* Hash passwords
+* Verify JWT
+* Verify role
+* Verify permission
+* Verify branch scope
+* Validate inputs
+* Return appropriate HTTP status
+* Keep secrets in environment variables
+
+---
+
+# 30. TESTING RULE
+
+Each feature must be tested before moving forward.
+
+Minimum testing:
+
+1. Valid authenticated request
+2. Unauthenticated request
+3. Wrong role
+4. Missing permission
+5. Wrong branch
+6. Invalid input
+7. Non-existent resource
+8. Duplicate resource where applicable
+9. Successful normal workflow
+
+Then:
+
+npm run build
+
+must pass.
+
+---
+
+# 31. GIT WORKFLOW
+
+Current working branch:
+
+feture
+
+`main` must remain stable.
+
+Workflow:
+
+Create feature
+↓
+Implement
+↓
+Test
+↓
+Build
+↓
+git status
+↓
+Review changed files
+↓
+git add specific files
+↓
+git commit
+↓
+git push origin feture
+
+Use meaningful commits.
+
+Examples:
+
+feat: implement branch scoping
+
+feat: implement principal student management
+
+fix: validate student branch access
+
+test: verify attendance permissions
+
+Do NOT commit unrelated changes.
+
+---
+
+# 32. FEATURE COMPLETION CHECKLIST
+
+A feature is NOT complete until:
+
+[ ] MongoDB model complete
+[ ] Backend service complete
+[ ] Controller complete
+[ ] Route complete
+[ ] Authentication integrated
+[ ] RBAC integrated
+[ ] Permissions integrated
+[ ] Branch scope integrated where required
+[ ] React Native screen complete
+[ ] API integration complete
+[ ] Loading state complete
+[ ] Error state complete
+[ ] Empty state complete
+[ ] Positive test complete
+[ ] Negative authorization test complete
+[ ] Build successful
+[ ] Git status reviewed
+[ ] Commit created
+[ ] Push successful
+
+Only then move to the next feature.
+
+---
+
+# 33. CURRENT PROJECT STATUS
+
+Completed:
+
+1. React Native CLI
+2. TypeScript
+3. Project Architecture
+4. Backend Architecture
+5. MongoDB
+6. User Model
+7. Authentication
+8. JWT
+9. RBAC
+10. Permissions
+
+Current next step:
+
+11. Branch Scoping
+
+Existing permission architecture:
+
+backend/src/constants/permissions.ts
+backend/src/constants/rolePermissions.ts
+backend/src/middleware/permission.middleware.ts
+
+Existing authentication architecture:
+
+backend/src/middleware/auth.middleware.ts
+
+Existing user model:
+
+backend/src/models/user.ts
+
+---
+
+# 34. DEVELOPMENT COMMUNICATION RULE
+
+When working on this project:
+
+* Give clear step-by-step instructions.
+* Do not give unnecessary information.
+* Do not jump multiple development steps at once.
+* Give one small actionable task at a time when implementation is in progress.
+* Wait for the command/output/result before proceeding to the next task.
+* Never assume a command succeeded without confirmation.
+* If an error occurs, fix the current step first.
+* Do not move to the next feature until the current feature is fully complete.
+* Preserve existing working code.
+* Do not modify `main`.
+* Do not expose secrets.
+* Do not ask the user to share `.env`.
+
+---
+
+# 35. FINAL PRODUCT GOAL
+
+The final application should provide a secure, scalable and production-ready School Management System where:
+
+Super Admin
+↓
+Manages organization and branches
+
+Principal
+↓
+Manages assigned school branch
+
+Teacher
+↓
+Manages assigned academic responsibilities
+
+Student
+↓
+Views personal academic information
+
+All users operate through:
+
+Authentication
+↓
+JWT
+↓
+RBAC
+↓
+Permissions
+↓
+Branch Scoping
+↓
+Authorized API
+↓
+MongoDB
+
+The final system must be a real end-to-end application, not a UI prototype.

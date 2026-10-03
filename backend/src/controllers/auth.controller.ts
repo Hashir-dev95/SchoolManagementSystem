@@ -6,12 +6,12 @@ import { AuthenticatedRequest } from '../middleware/auth.middleware';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { fullName, email, phone, password, role, branchId } = req.body;
+    const { fullName, email, phone, password, branchId} = req.body;
 
-    if (!fullName || !email || !password || !role) {
+    if (!fullName || !email || !password) {
       res.status(400).json({
         success: false,
-        message: 'Full name, email, password and role are required',
+        message: 'Full name, email, password and branch are required'
       });
       return;
     }
@@ -21,7 +21,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       email,
       phone,
       password,
-      role: role as UserRole,
+      role: 'student',
       branchId,
     });
 
