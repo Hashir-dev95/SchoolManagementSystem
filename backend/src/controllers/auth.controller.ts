@@ -122,3 +122,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     });
   }
 };
+export const rbacTest = (
+  _req: AuthenticatedRequest,
+  res: Response,
+): void => {
+  res.status(200).json({
+    success: true,
+    message: 'RBAC access granted',
+  });
+};
