@@ -2,6 +2,7 @@ const express = require('express');
 const { ObjectId } = require('mongodb');
 const { getDatabase } = require('./database');
 const { createClassTeacherApplication } = require('./applicationService');
+const parentPaymentRoutes = require('./parentPaymentRoutes');
 
 const router = express.Router();
 
@@ -92,6 +93,7 @@ function publishedFilter() {
 }
 
 router.use(requireParentContext);
+router.use('/payments', parentPaymentRoutes);
 
 router.get('/notifications', async (req, res, next) => {
   try {
@@ -181,7 +183,12 @@ router.post('/notifications/:notificationId/read', async (req, res, next) => {
     }
 
     await collection.updateOne(
-      { _id: notification._id, parentUserId: req.parentUserId },
+      {
+        _id: notification._id,
+        parentUserId: req.parentUserId,
+        type: 'parent_dlp_shared',
+        classId: notification.classId,
+      },
       { $set: { readAt: new Date() } },
     );
     return res.json({ success: true, data: { read: true } });
@@ -423,12 +430,59 @@ router.get('/children/:studentId/fees', async (req, res, next) => {
                     $and: [
                       { $eq: ['$invoiceId', '$$invoiceId'] },
                       { $eq: ['$studentId', req.parentChild.id] },
-                      { $eq: ['$status', 'confirmed'] },
+                      { $in: ['$status', ['confirmed', 'pending_verification']] },
                     ],
                   },
                 },
               },
-              { $group: { _id: null, paidAmount: { $sum: '$amount' } } },
+              {
+                $group: {
+                  _id: null,
+                  paidAmount: {
+                    $sum: {
+                      $cond: [{ $eq: ['$status', 'confirmed'] }, '$amount', 0],
+                    },
+                  },
+                  pendingAmount: {
+                    $sum: {
+                      $cond: [
+                        { $eq: ['$status', 'pending_verification'] },
+                        '$amount',
+                        0,
+                      ],
+                    },
+                  },
+                  confirmedReceipts: {
+                    $push: {
+                      $cond: [
+                        { $eq: ['$status', 'confirmed'] },
+                        {
+                          paymentId: { $toString: '$_id' },
+                          receiptNumber: '$receiptNumber',
+                          amount: '$amount',
+                          currency: '$currency',
+                          method: '$method',
+                          confirmedAt: '$confirmedAt',
+                        },
+                        null,
+                      ],
+                    },
+                  },
+                },
+              },
+              {
+                $project: {
+                  paidAmount: 1,
+                  pendingAmount: 1,
+                  confirmedReceipts: {
+                    $filter: {
+                      input: '$confirmedReceipts',
+                      as: 'receipt',
+                      cond: { $ne: ['$$receipt', null] },
+                    },
+                  },
+                },
+              },
             ],
             as: 'confirmedPayments',
           },
@@ -438,6 +492,60 @@ router.get('/children/:studentId/fees', async (req, res, next) => {
             confirmedPaidAmount: {
               $ifNull: [
                 { $arrayElemAt: ['$confirmedPayments.paidAmount', 0] },
+                0,
+              ],
+            },
+            pendingAmount: {
+              $ifNull: [
+                { $arrayElemAt: ['$confirmedPayments.pendingAmount', 0] },
+                0,
+              ],
+            },
+            confirmedReceipts: {
+              $ifNull: [
+                { $arrayElemAt: ['$confirmedPayments.confirmedReceipts', 0] },
+                [],
+              ],
+            },
+            balanceDue: {
+              $max: [
+                {
+                  $subtract: [
+                    { $ifNull: ['$amount', 0] },
+                    {
+                      $ifNull: [
+                        { $arrayElemAt: ['$confirmedPayments.paidAmount', 0] },
+                        0,
+                      ],
+                    },
+                  ],
+                },
+                0,
+              ],
+            },
+            availableBalance: {
+              $max: [
+                {
+                  $subtract: [
+                    { $ifNull: ['$amount', 0] },
+                    {
+                      $add: [
+                        {
+                          $ifNull: [
+                            { $arrayElemAt: ['$confirmedPayments.paidAmount', 0] },
+                            0,
+                          ],
+                        },
+                        {
+                          $ifNull: [
+                            { $arrayElemAt: ['$confirmedPayments.pendingAmount', 0] },
+                            0,
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
                 0,
               ],
             },

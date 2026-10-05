@@ -18,6 +18,7 @@ export const studentApi = {
   getAttendance: filters => request(`/attendance${dateQuery(filters)}`),
   getResults: () => request('/results'),
   getProgress: () => request('/progress'),
+  getFees: () => request('/fees'),
   getHomework: () => request('/homework'),
   getApplications: () => request('/applications'),
   getNotifications: () => request('/notifications'),

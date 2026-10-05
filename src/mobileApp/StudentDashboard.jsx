@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Pressable,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -22,7 +24,7 @@ const colors = {
   amber: '#B66A0A',
 };
 
-function Section({ title, activePage, children, empty }) {
+function Section({ title, activePage, children, empty, error, onRetry }) {
   const sectionPage = {
     Timetable: 'Learning',
     Attendance: 'Attendance',
@@ -44,7 +46,14 @@ function Section({ title, activePage, children, empty }) {
   return (
     <View>
       <Text style={styles.sectionTitle}>{title}</Text>
-      {children.length === 0 ? (
+      {error ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+          <Pressable accessibilityRole="button" onPress={onRetry} style={styles.retry}>
+            <Text style={styles.retryText}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : children.length === 0 ? (
         <Text style={styles.empty}>{empty}</Text>
       ) : (
         children
@@ -306,11 +315,17 @@ export default function StudentDashboard({
   const profileName =
     records.profile?.fullName || records.profile?.name || 'Student';
   return (
-    <ScrollView
-      style={styles.page}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
+    <KeyboardAvoidingView
+      style={styles.keyboard}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
     >
+      <ScrollView
+        style={styles.page}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
       <Text style={styles.eyebrow}>STUDENT PORTAL</Text>
       <Text style={styles.heading}>{profileName}</Text>
       <Text style={styles.subtitle}>
@@ -405,8 +420,9 @@ export default function StudentDashboard({
             activePage={page}
             title="Timetable"
             empty="No timetable entries are available."
+            error={resourceErrors.timetable}
+            onRetry={() => loadDashboard(dateRange)}
           >
-            {resourceErrors.timetable ? <Text style={styles.errorText}>{resourceErrors.timetable}</Text> : null}
             {visibleRecords.timetable.map((item) => (
               <Record
                 key={
@@ -427,8 +443,9 @@ export default function StudentDashboard({
             activePage={page}
             title="Attendance"
             empty="No attendance records found for these dates."
+            error={resourceErrors.attendance}
+            onRetry={() => loadDashboard(dateRange)}
           >
-            {resourceErrors.attendance ? <Text style={styles.errorText}>{resourceErrors.attendance}</Text> : null}
             {visibleRecords.attendance.map((item) => (
               <Record
                 key={item.id || `${item.date}-${item._id}`}
@@ -446,8 +463,9 @@ export default function StudentDashboard({
             activePage={page}
             title="Published results"
             empty="No results have been published for you."
+            error={resourceErrors.results}
+            onRetry={() => loadDashboard(dateRange)}
           >
-            {resourceErrors.results ? <Text style={styles.errorText}>{resourceErrors.results}</Text> : null}
             {visibleRecords.results.map((item) => (
               <Record
                 key={item.id || item._id}
@@ -469,8 +487,9 @@ export default function StudentDashboard({
             activePage={page}
             title="Progress"
             empty="No progress records are available."
+            error={resourceErrors.progress}
+            onRetry={() => loadDashboard(dateRange)}
           >
-            {resourceErrors.progress ? <Text style={styles.errorText}>{resourceErrors.progress}</Text> : null}
             {visibleRecords.progress.map((item) => (
               <Record
                 key={item.id || item._id}
@@ -712,11 +731,13 @@ export default function StudentDashboard({
           </Text>
         </>
       ) : null}
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboard: { flex: 1 },
   page: { flex: 1, backgroundColor: colors.pale },
   content: { padding: 18, paddingBottom: 30 },
   eyebrow: {

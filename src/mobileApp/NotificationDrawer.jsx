@@ -8,15 +8,16 @@ import React, {
   useState,
 } from 'react';
 import {
+  AccessibilityInfo,
   Animated,
   ActivityIndicator,
-  Dimensions,
   Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { financeApi } from './financeService';
 import { parentApi } from './parentService';
@@ -85,21 +86,38 @@ const NotificationDrawer = forwardRef(function NotificationDrawer(
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
   const [openingId, setOpeningId] = useState('');
+  const [reducedMotion, setReducedMotion] = useState(false);
   const requestVersion = useRef(0);
-  const drawerWidth = Math.min(Dimensions.get('window').width * 0.84, 340);
+  const { width } = useWindowDimensions();
+  const drawerWidth = Math.min(width * 0.84, 340);
   const slideX = useRef(new Animated.Value(-drawerWidth)).current;
   const api = apiForRole[role];
+
+  useEffect(() => {
+    let alive = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (alive) setReducedMotion(enabled);
+    });
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      setReducedMotion,
+    );
+    return () => {
+      alive = false;
+      subscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (visible) {
       slideX.setValue(-drawerWidth);
       Animated.timing(slideX, {
         toValue: 0,
-        duration: 210,
+        duration: reducedMotion ? 0 : 210,
         useNativeDriver: true,
       }).start();
     }
-  }, [visible, drawerWidth, slideX]);
+  }, [visible, drawerWidth, reducedMotion, slideX]);
 
   const loadNotifications = useCallback(async () => {
     if (previewOnly) return;
@@ -153,19 +171,21 @@ const NotificationDrawer = forwardRef(function NotificationDrawer(
       setError('');
       try {
         await api.markNotificationRead(id);
+        if (version !== requestVersion.current) return;
+        if (!item.readAt) {
+          const readAt = new Date().toISOString();
+          setNotifications((current) =>
+            current.map((notification) =>
+              notificationId(notification) === id
+                ? { ...notification, readAt }
+                : notification,
+            ),
+          );
+          setUnreadCount((current) => Math.max(0, current - 1));
+        }
         const record = await api.getNotification(id);
         if (version !== requestVersion.current) return;
         setSelected(record);
-        setNotifications((current) =>
-          current.map((notification) =>
-            notificationId(notification) === id
-              ? { ...notification, readAt: new Date().toISOString() }
-              : notification,
-          ),
-        );
-        setUnreadCount((current) =>
-          Math.max(0, current - (item.readAt ? 0 : 1)),
-        );
       } catch (openError) {
         if (version === requestVersion.current) setError(openError.message);
       } finally {
@@ -224,7 +244,10 @@ const NotificationDrawer = forwardRef(function NotificationDrawer(
         visible={visible}
         transparent
         animationType="none"
-        onRequestClose={() => setVisible(false)}
+        onRequestClose={() => {
+          if (selected) setSelected(null);
+          else setVisible(false);
+        }}
       >
         <View style={styles.scrim}>
           <Animated.View

@@ -1,32 +1,15 @@
-import { getAuthHeaders } from './authSession';
+import { authRequest } from './authRequest';
 import { API_ROOT } from './apiConfig';
 const NOTIFICATION_ROOT = `${API_ROOT}/finance/me/notifications`;
 
 async function request(path, options = {}) {
-  let response;
-  try {
-    response = await fetch(`${API_ROOT}${path}`, {
-      credentials: 'include',
-      ...options,
-      headers: { 'Content-Type': 'application/json', ...getAuthHeaders(), ...options.headers },
-    });
-  } catch {
-    throw new Error(
-      `Could not reach the school API at ${API_ROOT}. Check that the backend is running and reachable from this device.`,
-    );
+  try { return await authRequest(path, options, true, true); }
+  catch (error) {
+    if (error.message?.startsWith('Could not reach the school API')) {
+      throw new Error(`Could not reach the school API at ${API_ROOT}. Check that the backend is running and reachable from this device.`);
+    }
+    throw error;
   }
-  let payload;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new Error(
-      `The API returned an unreadable response (${response.status}).`,
-    );
-  }
-  if (!response.ok || payload.success !== true) {
-    throw new Error(payload.error || `Request failed (${response.status}).`);
-  }
-  return payload;
 }
 
 function queryString(filters = {}) {
@@ -65,9 +48,10 @@ export const financeApi = {
       headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(payment),
     }),
-  getPendingPayments: () =>
-    request('/finance/payments?status=pending_verification'),
-  getPaymentHistory: () => request('/finance/payments?status=confirmed'),
+  getPendingPayments: filters =>
+    request(`/finance/payments?status=pending_verification${queryString(filters)}`),
+  getPaymentHistory: filters =>
+    request(`/finance/payments?status=confirmed${queryString(filters)}`),
   verifyPayment: paymentId =>
     request(`/finance/payments/${encodeURIComponent(paymentId)}/verify`, {
       method: 'POST',
@@ -80,30 +64,9 @@ export const financeApi = {
 };
 
 async function notificationRequest(path, options = {}) {
-  let response;
-  try {
-    response = await fetch(`${NOTIFICATION_ROOT}${path}`, {
-      credentials: 'include',
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-        ...options.headers,
-      },
-    });
-  } catch {
-    throw new Error('Could not reach the Finance notification API.');
+  try { return await authRequest(`${NOTIFICATION_ROOT.slice(API_ROOT.length)}${path}`, options, true, true); }
+  catch (error) {
+    if (error.message?.startsWith('Could not reach the school API')) throw new Error('Could not reach the Finance notification API.');
+    throw error;
   }
-  let payload;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new Error(
-      `The API returned an unreadable response (${response.status}).`,
-    );
-  }
-  if (!response.ok || payload.success !== true) {
-    throw new Error(payload.error || `Request failed (${response.status}).`);
-  }
-  return payload;
 }

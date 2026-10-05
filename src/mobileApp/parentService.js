@@ -1,32 +1,14 @@
-import { getAuthHeaders } from './authSession';
-import { API_ROOT as API_BASE } from './apiConfig';
-const API_ROOT = `${API_BASE}/parents/me`;
+import { authRequest } from './authRequest';
 
 async function request(path, options = {}) {
-  let response;
   try {
-    response = await fetch(`${API_ROOT}${path}`, {
-      credentials: 'include',
-      ...options,
-      headers: { ...getAuthHeaders(), ...options.headers },
-    });
-  } catch {
-    throw new Error(
-      'Could not reach the Parent API. Check that the backend is running and reachable from this device.',
-    );
+    return await authRequest(`/parents/me${path}`, options);
+  } catch (error) {
+    if (error.message?.startsWith('Could not reach the school API')) {
+      throw new Error('Could not reach the Parent API. Check that the backend is running and reachable from this device.');
+    }
+    throw error;
   }
-  let payload;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new Error(
-      `The API returned an unreadable response (${response.status}).`,
-    );
-  }
-  if (!response.ok || payload.success !== true) {
-    throw new Error(payload.error || `Request failed (${response.status}).`);
-  }
-  return payload.data;
 }
 
 export const parentApi = {
@@ -41,8 +23,15 @@ export const parentApi = {
   getNotification: notificationId =>
     request(`/notifications/${encodeURIComponent(notificationId)}`),
   getChild: childId => request(`/children/${encodeURIComponent(childId)}`),
-  getAttendance: childId =>
-    request(`/children/${encodeURIComponent(childId)}/attendance`),
+  getAttendance: (childId, filters = {}) => {
+    const query = new URLSearchParams();
+    if (filters.from) query.set('from', filters.from);
+    if (filters.to) query.set('to', filters.to);
+    const suffix = query.toString();
+    return request(
+      `/children/${encodeURIComponent(childId)}/attendance${suffix ? `?${suffix}` : ''}`,
+    );
+  },
   getTimetable: childId =>
     request(`/children/${encodeURIComponent(childId)}/timetable`),
   getHomework: childId =>
@@ -50,6 +39,14 @@ export const parentApi = {
   getResults: childId =>
     request(`/children/${encodeURIComponent(childId)}/results`),
   getFees: childId => request(`/children/${encodeURIComponent(childId)}/fees`),
+  getFeeCheckoutConfig: () => request('/payments/checkout/config'),
+  createFeeCheckout: (childId, invoiceId, method) =>
+    request(
+      `/payments/children/${encodeURIComponent(childId)}/invoices/${encodeURIComponent(invoiceId)}/checkout`,
+      { method: 'POST', body: JSON.stringify({ method }) },
+    ),
+  getFeePaymentStatus: paymentId =>
+    request(`/payments/transactions/${encodeURIComponent(paymentId)}/status`),
   getFeedback: childId =>
     request(`/children/${encodeURIComponent(childId)}/feedback`),
   getApplications: childId =>

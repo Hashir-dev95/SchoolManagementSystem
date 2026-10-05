@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Pressable,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -104,7 +106,13 @@ export default function FinanceDashboard({
   searchQuery = '',
   page = 'All',
 }) {
-  const [filters, setFilters] = useState({ from: '', to: '', q: '' });
+  const [filters, setFilters] = useState({
+    from: '',
+    to: '',
+    q: '',
+    studentId: '',
+    method: '',
+  });
   const [summary, setSummary] = useState(
     previewOnly ? financePreview.summary : null,
   );
@@ -175,22 +183,25 @@ export default function FinanceDashboard({
           financeApi.getSummary({
             from: activeFilters.from,
             to: activeFilters.to,
+            studentId: activeFilters.studentId,
+            method: activeFilters.method,
           }),
           financeApi.searchInvoices(activeFilters),
           financeApi.getReceipts({
             from: activeFilters.from,
             to: activeFilters.to,
+            studentId: activeFilters.studentId,
+            method: activeFilters.method,
           }),
           financeApi.getCollectionReport({
             from: activeFilters.from,
             to: activeFilters.to,
+            studentId: activeFilters.studentId,
+            method: activeFilters.method,
           }),
-          financeApi.getDues({
-            from: activeFilters.from,
-            to: activeFilters.to,
-          }),
-          financeApi.getPendingPayments(),
-          financeApi.getPaymentHistory(),
+          financeApi.getDues(activeFilters),
+          financeApi.getPendingPayments(activeFilters),
+          financeApi.getPaymentHistory(activeFilters),
         ]);
         setSummary(summaryResult.data);
         setInvoices(invoiceResult.data);
@@ -378,11 +389,17 @@ export default function FinanceDashboard({
   }
 
   return (
-    <ScrollView
-      style={styles.page}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
+    <KeyboardAvoidingView
+      style={styles.keyboard}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
     >
+      <ScrollView
+        style={styles.page}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
       <Text style={styles.eyebrow}>SCHOOL MANAGEMENT</Text>
       <Text style={styles.heading}>Finance</Text>
       <Text style={styles.subtitle}>
@@ -423,6 +440,24 @@ export default function FinanceDashboard({
         }
         placeholder="Invoice, voucher, or student ID"
         autoCapitalize="characters"
+      />
+      <Field
+        label="Student ID"
+        value={filters.studentId}
+        onChangeText={(value) =>
+          setFilters((current) => ({ ...current, studentId: value }))
+        }
+        placeholder="Filter by student ID"
+        autoCapitalize="characters"
+      />
+      <Field
+        label="Payment method (cash, bank_transfer, card, cheque, other)"
+        value={filters.method}
+        onChangeText={(value) =>
+          setFilters((current) => ({ ...current, method: value }))
+        }
+        placeholder="Any method"
+        autoCapitalize="none"
       />
       {!previewOnly ? (
         <Action
@@ -779,6 +814,7 @@ export default function FinanceDashboard({
               </Text>
               <Text style={styles.cardText}>
                 {formatMoney(receipt.amount, receipt.currency)} ·{' '}
+                {receipt.method || 'Method unavailable'} ·{' '}
                 {receipt.confirmedAt
                   ? new Date(receipt.confirmedAt).toLocaleDateString()
                   : 'Date unavailable'}
@@ -809,17 +845,20 @@ export default function FinanceDashboard({
           ))}
           {report?.byMethod?.map((item) => (
             <Text key={item._id || 'method'} style={styles.reportLine}>
-              {item._id || 'Unspecified'}: {formatMoney(item.total)} (
+              {item._id || 'Unspecified'} · {item.currency || 'PKR'}:{' '}
+              {formatMoney(item.total, item.currency)} (
               {item.count})
             </Text>
           ))}
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboard: { flex: 1 },
   page: { flex: 1, backgroundColor: colors.pale },
   content: { padding: 20, paddingBottom: 44 },
   eyebrow: {

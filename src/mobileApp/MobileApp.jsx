@@ -1,5 +1,5 @@
 import PageIcon from './PageIcon';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -17,9 +17,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import NotificationDrawer from './NotificationDrawer';
+import MessagesInbox from './MessagesInbox';
 import RoleDashboard from './RoleDashboard';
 import HiraHome from './HiraHome';
 import FeaturePage from './FeaturePage';
+import TeacherApplicationsPage from './TeacherApplicationsPage';
 import { features, staffFeatures } from './featureScreens';
 import { theme as t, rolePages, bottomPages } from './hiraTheme';
 import { checkSessionExpiry, subscribeSessionExpiry } from './authSession';
@@ -88,7 +90,6 @@ export default function MobileApp({
   const entrance = useRef(new Animated.Value(0)).current;
   const greetingOpacity = useRef(new Animated.Value(1)).current;
   const greetingOffset = useRef(new Animated.Value(0)).current;
-  const notificationRef = useRef(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   useEffect(() => {
     if (previewOnly || !user) return undefined;
@@ -175,7 +176,7 @@ export default function MobileApp({
       useNativeDriver: true,
     }).start();
   }, [drawer, drawerWidth, reducedMotion, slide]);
-  const closeDrawer = () => {
+  const closeDrawer = useCallback(() => {
     Animated.timing(slide, {
       toValue: -drawerWidth,
       duration: reducedMotion ? 0 : 180,
@@ -186,18 +187,23 @@ export default function MobileApp({
         setRolePicker(false);
       }
     });
-  };
+  }, [drawerWidth, reducedMotion, slide]);
+  useEffect(() => {
+    if (!role) return;
+    setPage((currentPage) =>
+      rolePages[role]?.includes(currentPage) ? currentPage : 'Home',
+    );
+    setChildId('');
+  }, [role]);
   const navigate = (next, selectedChildId) => {
     if (selectedChildId) setChildId(selectedChildId);
-    if (next === 'Inbox' && ownedRoles.includes(role))
-      notificationRef.current?.open();
-    else setPage(next);
+    setPage(next);
     if (drawer) closeDrawer();
   };
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (drawer) {
-        setDrawer(false);
+        closeDrawer();
         return true;
       }
       if (page !== 'Home') {
@@ -207,7 +213,7 @@ export default function MobileApp({
       return false;
     });
     return () => sub.remove();
-  }, [drawer, page]);
+  }, [drawer, page, closeDrawer]);
   if (!previewOnly && (sessionExpired || authLoading || !user || !role)) {
     return (
       <SafeAreaView style={s.safe}>
@@ -247,7 +253,7 @@ export default function MobileApp({
           onPress={() => setDrawer(true)}
           style={s.menu}
         >
-          <PageIcon name="more" size={25} color={t.primary} />
+          <PageIcon name="menu" size={25} color={t.primary} />
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -270,13 +276,12 @@ export default function MobileApp({
             {greeting}
           </Animated.Text>
           <Text style={s.headerTitle}>
-            {page === 'Home' ? 'Overview' : page}
+            {page === 'Home' ? 'Overview' : page === 'Inbox' ? 'Messages' : page}
           </Text>
         </View>
         {ownedRoles.includes(role) ? (
           <NotificationDrawer
-            ref={notificationRef}
-            key={role}
+            key={`${role}-${previewOnly ? 'preview' : 'live'}`}
             role={role}
             previewOnly={previewOnly}
           />
@@ -298,12 +303,21 @@ export default function MobileApp({
           },
         ]}
       >
-        {page === 'Teachers DLP' &&
+        {page === 'Inbox' && ownedRoles.includes(role) ? (
+          <MessagesInbox
+            key={`${role}-${previewOnly ? 'preview' : 'live'}`}
+            role={role}
+            previewOnly={previewOnly}
+            onNavigate={navigate}
+          />
+        ) : page === 'Applications' && role === 'Teacher' ? (
+          <TeacherApplicationsPage />
+        ) : page === 'Teachers DLP' &&
         ['Teacher', 'Principal', 'Super Admin'].includes(role) ? (
           <RoleDashboard role={role} page={page} previewOnly={previewOnly} />
         ) : features[page] && ownedRoles.includes(role) ? (
           <FeaturePage
-            key={`${role}-${page}`}
+            key={`${role}-${page}-${previewOnly ? 'preview' : 'live'}`}
             role={role}
             page={page}
             previewOnly={previewOnly}
@@ -314,7 +328,7 @@ export default function MobileApp({
         ) : ownedRoles.includes(role) ? (
           page === 'Home' ? (
             <HiraHome
-              key={role}
+              key={`${role}-${previewOnly ? 'preview' : 'live'}`}
               role={role}
               previewOnly={previewOnly}
               user={user}
@@ -323,7 +337,7 @@ export default function MobileApp({
             />
           ) : (
             <RoleDashboard
-              key={`${role}-${page}`}
+              key={`${role}-${page}-${previewOnly ? 'preview' : 'live'}`}
               role={role}
               previewOnly={previewOnly}
               page={page}
@@ -333,7 +347,7 @@ export default function MobileApp({
           )
         ) : staffFeatures[role]?.[page] ? (
           <FeaturePage
-            key={`${role}-${page}`}
+            key={`${role}-${page}-${previewOnly ? 'preview' : 'live'}`}
             role={role}
             page={page}
             definition={staffFeatures[role][page]}

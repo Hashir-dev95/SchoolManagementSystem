@@ -244,6 +244,138 @@ router.get('/progress', async (req, res, next) => {
   }
 });
 
+router.get('/fees', async (req, res, next) => {
+  try {
+    const student = req.studentRecord;
+    const match = { studentId: student.id };
+    if (student.branchId) match.branchId = student.branchId;
+    const data = await getDatabase()
+      .collection('invoices')
+      .aggregate([
+        { $match: match },
+        {
+          $lookup: {
+            from: 'payments',
+            let: { invoiceId: '$id', invoiceBranchId: '$branchId' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$invoiceId', '$$invoiceId'] },
+                      { $eq: ['$studentId', student.id] },
+                      ...(student.branchId
+                        ? [{ $eq: ['$branchId', '$$invoiceBranchId'] }]
+                        : []),
+                      {
+                        $in: ['$status', ['confirmed', 'pending_verification']],
+                      },
+                    ],
+                  },
+                },
+              },
+              {
+                $group: {
+                  _id: null,
+                  confirmedPaidAmount: {
+                    $sum: {
+                      $cond: [{ $eq: ['$status', 'confirmed'] }, '$amount', 0],
+                    },
+                  },
+                  pendingAmount: {
+                    $sum: {
+                      $cond: [
+                        { $eq: ['$status', 'pending_verification'] },
+                        '$amount',
+                        0,
+                      ],
+                    },
+                  },
+                  confirmedReceipts: {
+                    $push: {
+                      $cond: [
+                        { $eq: ['$status', 'confirmed'] },
+                        {
+                          paymentId: { $toString: '$_id' },
+                          receiptNumber: '$receiptNumber',
+                          amount: '$amount',
+                          currency: '$currency',
+                          method: '$method',
+                          confirmedAt: '$confirmedAt',
+                        },
+                        null,
+                      ],
+                    },
+                  },
+                },
+              },
+              {
+                $project: {
+                  confirmedPaidAmount: 1,
+                  pendingAmount: 1,
+                  confirmedReceipts: {
+                    $filter: {
+                      input: '$confirmedReceipts',
+                      as: 'receipt',
+                      cond: { $ne: ['$$receipt', null] },
+                    },
+                  },
+                },
+              },
+            ],
+            as: 'paymentTotals',
+          },
+        },
+        {
+          $addFields: {
+            confirmedPaidAmount: {
+              $ifNull: [
+                { $arrayElemAt: ['$paymentTotals.confirmedPaidAmount', 0] },
+                0,
+              ],
+            },
+            pendingAmount: {
+              $ifNull: [
+                { $arrayElemAt: ['$paymentTotals.pendingAmount', 0] },
+                0,
+              ],
+            },
+            confirmedReceipts: {
+              $ifNull: [
+                { $arrayElemAt: ['$paymentTotals.confirmedReceipts', 0] },
+                [],
+              ],
+            },
+          },
+        },
+        {
+          $addFields: {
+            balanceDue: {
+              $max: [{ $subtract: ['$amount', '$confirmedPaidAmount'] }, 0],
+            },
+            availableBalance: {
+              $max: [
+                {
+                  $subtract: [
+                    '$amount',
+                    { $add: ['$confirmedPaidAmount', '$pendingAmount'] },
+                  ],
+                },
+                0,
+              ],
+            },
+          },
+        },
+        { $project: { paymentTotals: 0, voucherCode: 0 } },
+        { $sort: { dueDate: -1 } },
+      ])
+      .toArray();
+    return res.json({ success: true, data });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.get('/homework', async (req, res, next) => {
   try {
     const data = await getDatabase()

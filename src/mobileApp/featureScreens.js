@@ -5,7 +5,7 @@ export const features = {
     subtitle: 'Published academic progress',
     type: 'report',
     filters: ['Subject', 'Term', 'Session'],
-    metrics: ['Overall score', 'Attendance', 'Completed work'],
+    metrics: [],
     icon: '📊',
   },
   'Personal & Behaviour Report': {
@@ -29,7 +29,7 @@ export const features = {
     subtitle: 'Student record and progress history',
     type: 'report',
     filters: ['Subject', 'Period'],
-    metrics: ['Attendance', 'Assignments', 'Latest result'],
+    metrics: [],
     icon: '🌟',
   },
   'Academic Calendar': {
@@ -129,8 +129,8 @@ export const features = {
     icon: '⚙',
   },
   'Online Payment': {
-    title: 'A simpler way to settle up.',
-    subtitle: 'Invoice payment and provider confirmation',
+    title: 'Online payment unavailable.',
+    subtitle: 'A school payment provider is not connected yet.',
     type: 'form',
     fields: ['Invoice ID', 'Amount', 'Payment method'],
     action: 'Continue to payment',
@@ -214,7 +214,7 @@ export const features = {
     title: 'Every balance tells a clear story.',
     subtitle: 'Branch-scoped student transactions',
     type: 'report',
-    filters: ['Student ID', 'From date', 'To date'],
+    filters: ['Student ID', 'From date', 'To date', 'Payment method'],
     metrics: ['Confirmed paid', 'Pending', 'Balance due'],
     icon: '▥',
   },
@@ -274,6 +274,7 @@ export const extraPages = {
     'Pickup & Early Exit',
     'PTM & Appointments',
     'Documents & Consent',
+    'Student Fees',
     'Online Payment',
     'Installment Requests',
     'Receipt Details',
@@ -437,7 +438,7 @@ features['Student Fees'] = {
   title: 'Your fees, clearly explained.',
   subtitle: 'Your invoices, confirmed payments and due balance',
   type: 'report',
-  metrics: ['Confirmed paid', 'Pending', 'Due'],
+  metrics: ['Confirmed paid', 'Pending verification', 'Due (pending unpaid)'],
   icon: '▤',
 };
 features['Travel Status'] = {
@@ -449,14 +450,15 @@ features['Finance Reports'] = {
   title: 'Find the report you actually need.',
   subtitle: 'Permitted branch collection reports',
   type: 'report',
-  filters: ['From date', 'To date'],
-  metrics: ['Confirmed collection', 'Outstanding', 'Pending'],
+  filters: ['From date', 'To date', 'Student ID', 'Payment method'],
+  metrics: [],
   icon: '▥',
 };
 features['Attendance Calendar'] = {
   title: 'Every school day counts.',
   subtitle: 'Confirmed attendance by date',
   type: 'calendar',
+  filters: ['From date', 'To date'],
   icon: '✓',
 };
 features['Leave Request'] = {

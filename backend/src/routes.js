@@ -7,6 +7,7 @@ const parentRoutes = require('./parentRoutes');
 const { createUserNotificationRouter } = require('./userNotificationRoutes');
 const { authenticateRequest } = require('./auth');
 const authRoutes = require('./authRoutes');
+const applicationReviewRoutes = require('./applicationReviewRoutes');
 
 const router = express.Router();
 let paymentIdempotencyIndexPromise;
@@ -92,6 +93,7 @@ router.use('/auth', authRoutes);
 router.use(authenticateRequest);
 router.use('/students/me', studentRoutes);
 router.use('/parents/me', parentRoutes);
+router.use('/applications', applicationReviewRoutes);
 router.use('/finance', requireFinanceContext);
 router.use(
   '/finance/me/notifications',
@@ -127,6 +129,28 @@ function dateRange(query) {
 
 function escapedRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const FINANCE_PAYMENT_METHODS = [
+  'cash',
+  'bank_transfer',
+  'card',
+  'cheque',
+  'other',
+];
+
+function financeListFilters(query) {
+  const range = dateRange(query);
+  if (range.error) return { error: range.error };
+  const studentId = String(query.studentId || '').trim();
+  const method = String(query.method || '').trim().toLowerCase();
+  if (studentId.length > 120)
+    return { error: 'Student ID filter is too long.' };
+  if (method && !FINANCE_PAYMENT_METHODS.includes(method))
+    return {
+      error: `method must be one of: ${FINANCE_PAYMENT_METHODS.join(', ')}.`,
+    };
+  return { range, studentId, method };
 }
 
 router.get('/students', async (req, res, next) => {
@@ -255,12 +279,14 @@ router.get('/finance/students', async (req, res, next) => {
 
 router.get('/finance/summary', async (req, res, next) => {
   try {
-    const range = dateRange(req.query);
-    if (range.error)
-      return res.status(400).json({ success: false, error: range.error });
+    const filters = financeListFilters(req.query);
+    if (filters.error)
+      return res.status(400).json({ success: false, error: filters.error });
+    const { range, studentId, method } = filters;
     const invoices = getDatabase().collection('invoices');
     const payments = getDatabase().collection('payments');
     const invoiceFilter = { branchId: req.financeContext.branchId };
+    if (studentId) invoiceFilter.studentId = studentId;
     if (range.from || range.to) {
       invoiceFilter.dueDate = {};
       if (range.from) invoiceFilter.dueDate.$gte = range.from;
@@ -270,6 +296,8 @@ router.get('/finance/summary', async (req, res, next) => {
       branchId: req.financeContext.branchId,
       status: 'confirmed',
     };
+    if (studentId) collectionFilter.studentId = studentId;
+    if (method) collectionFilter.method = method;
     if (range.filter) collectionFilter.confirmedAt = range.filter;
     const [collected, unpaid, invoiceCount] = await Promise.all([
       payments
@@ -281,6 +309,38 @@ router.get('/finance/summary', async (req, res, next) => {
       invoices
         .aggregate([
           { $match: invoiceFilter },
+          ...(method
+            ? [
+                {
+                  $lookup: {
+                    from: 'payments',
+                    let: { invoiceId: '$id', branchId: '$branchId' },
+                    pipeline: [
+                      {
+                        $match: {
+                          $expr: {
+                            $and: [
+                              { $eq: ['$invoiceId', '$$invoiceId'] },
+                              { $eq: ['$branchId', '$$branchId'] },
+                              { $eq: ['$method', method] },
+                              {
+                                $in: [
+                                  '$status',
+                                  ['confirmed', 'pending_verification'],
+                                ],
+                              },
+                            ],
+                          },
+                        },
+                      },
+                      { $limit: 1 },
+                    ],
+                    as: 'methodPayments',
+                  },
+                },
+                { $match: { 'methodPayments.0': { $exists: true } } },
+              ]
+            : []),
           {
             $lookup: {
               from: 'payments',
@@ -320,7 +380,43 @@ router.get('/finance/summary', async (req, res, next) => {
           { $group: { _id: null, total: { $sum: '$balanceDue' } } },
         ])
         .toArray(),
-      invoices.countDocuments(invoiceFilter),
+      method
+        ? invoices
+            .aggregate([
+              { $match: invoiceFilter },
+              {
+                $lookup: {
+                  from: 'payments',
+                  let: { invoiceId: '$id', branchId: '$branchId' },
+                  pipeline: [
+                    {
+                      $match: {
+                        $expr: {
+                          $and: [
+                            { $eq: ['$invoiceId', '$$invoiceId'] },
+                            { $eq: ['$branchId', '$$branchId'] },
+                            { $eq: ['$method', method] },
+                            {
+                              $in: [
+                                '$status',
+                                ['confirmed', 'pending_verification'],
+                              ],
+                            },
+                          ],
+                        },
+                      },
+                    },
+                    { $limit: 1 },
+                  ],
+                  as: 'methodPayments',
+                },
+              },
+              { $match: { 'methodPayments.0': { $exists: true } } },
+              { $count: 'count' },
+            ])
+            .toArray()
+            .then((counts) => counts[0]?.count || 0)
+        : invoices.countDocuments(invoiceFilter),
     ]);
     return res.json({
       success: true,
@@ -338,6 +434,10 @@ router.get('/finance/summary', async (req, res, next) => {
 
 router.get('/finance/invoices', async (req, res, next) => {
   try {
+    const filters = financeListFilters(req.query);
+    if (filters.error)
+      return res.status(400).json({ success: false, error: filters.error });
+    const { range, studentId, method } = filters;
     const status = String(req.query.status || '')
       .trim()
       .toLowerCase();
@@ -347,9 +447,6 @@ router.get('/finance/invoices', async (req, res, next) => {
         error: 'status must be due, overdue, partial, or paid',
       });
     }
-    const range = dateRange(req.query);
-    if (range.error)
-      return res.status(400).json({ success: false, error: range.error });
     const query = String(req.query.q || '').trim();
     if (query.length > 100) {
       return res
@@ -359,6 +456,7 @@ router.get('/finance/invoices', async (req, res, next) => {
     const match = {
       branchId: req.financeContext.branchId,
       ...(status ? { status } : {}),
+      ...(studentId ? { studentId } : {}),
     };
     if (range.from || range.to) {
       match.dueDate = {};
@@ -370,6 +468,38 @@ router.get('/finance/invoices', async (req, res, next) => {
       .collection('invoices')
       .aggregate([
         { $match: match },
+        ...(method
+          ? [
+              {
+                $lookup: {
+                  from: 'payments',
+                  let: { invoiceId: '$id', branchId: '$branchId' },
+                  pipeline: [
+                    {
+                      $match: {
+                        $expr: {
+                          $and: [
+                            { $eq: ['$invoiceId', '$$invoiceId'] },
+                            { $eq: ['$branchId', '$$branchId'] },
+                            { $eq: ['$method', method] },
+                            {
+                              $in: [
+                                '$status',
+                                ['confirmed', 'pending_verification'],
+                              ],
+                            },
+                          ],
+                        },
+                      },
+                    },
+                    { $limit: 1 },
+                  ],
+                  as: 'methodPayments',
+                },
+              },
+              { $match: { 'methodPayments.0': { $exists: true } } },
+            ]
+          : []),
         {
           $lookup: {
             from: 'students',
@@ -421,7 +551,7 @@ router.get('/finance/invoices', async (req, res, next) => {
             },
           },
         },
-        { $project: { studentRecord: 0 } },
+        { $project: { studentRecord: 0, methodPayments: 0 } },
         { $sort: { dueDate: 1 } },
         { $limit: 500 },
       ])
@@ -438,11 +568,18 @@ router.get('/finance/dues', async (req, res, next) => {
     if (range.error)
       return res.status(400).json({ success: false, error: range.error });
     const studentId = String(req.query.studentId || '').trim();
+    const method = String(req.query.method || '').trim().toLowerCase();
     const query = String(req.query.q || '').trim();
     if (studentId.length > 120 || query.length > 100) {
       return res
         .status(400)
         .json({ success: false, error: 'Search filter is too long.' });
+    }
+    if (method && !FINANCE_PAYMENT_METHODS.includes(method)) {
+      return res.status(400).json({
+        success: false,
+        error: `method must be one of: ${FINANCE_PAYMENT_METHODS.join(', ')}.`,
+      });
     }
     const match = { branchId: req.financeContext.branchId };
     if (studentId) match.studentId = studentId;
@@ -491,12 +628,16 @@ router.get('/finance/dues', async (req, res, next) => {
                       ],
                     },
                   },
+                  methods: { $addToSet: '$method' },
                 },
               },
             ],
             as: 'paymentTotals',
           },
         },
+        ...(method
+          ? [{ $match: { 'paymentTotals.methods': method } }]
+          : []),
         {
           $lookup: {
             from: 'students',
@@ -529,6 +670,12 @@ router.get('/finance/dues', async (req, res, next) => {
               $ifNull: [
                 { $arrayElemAt: ['$paymentTotals.pendingAmount', 0] },
                 0,
+              ],
+            },
+            paymentMethods: {
+              $ifNull: [
+                { $arrayElemAt: ['$paymentTotals.methods', 0] },
+                [],
               ],
             },
             student: {
@@ -665,10 +812,19 @@ router.get('/finance/payments', async (req, res, next) => {
         error: 'status must be pending_verification, confirmed, or rejected.',
       });
     }
+    const filters = financeListFilters(req.query);
+    if (filters.error)
+      return res.status(400).json({ success: false, error: filters.error });
+    const { range, studentId, method } = filters;
+    const match = { branchId: req.financeContext.branchId, status };
+    if (studentId) match.studentId = studentId;
+    if (method) match.method = method;
+    if (range.filter)
+      match[status === 'confirmed' ? 'confirmedAt' : 'createdAt'] = range.filter;
     const data = await getDatabase()
       .collection('payments')
       .find(
-        { branchId: req.financeContext.branchId, status },
+        match,
         { projection: { requestHash: 0, idempotencyKey: 0 } },
       )
       .sort({ createdAt: -1 })
@@ -1090,13 +1246,16 @@ router.post('/finance/payments', async (req, res, next) => {
 
 router.get('/finance/receipts', async (req, res, next) => {
   try {
-    const range = dateRange(req.query);
-    if (range.error)
-      return res.status(400).json({ success: false, error: range.error });
+    const filters = financeListFilters(req.query);
+    if (filters.error)
+      return res.status(400).json({ success: false, error: filters.error });
+    const { range, studentId, method } = filters;
     const match = {
       branchId: req.financeContext.branchId,
       status: 'confirmed',
     };
+    if (studentId) match.studentId = studentId;
+    if (method) match.method = method;
     if (range.filter) match.confirmedAt = range.filter;
     const data = await getDatabase()
       .collection('payments')
@@ -1220,13 +1379,16 @@ router.get('/finance/receipts/:paymentId', async (req, res, next) => {
 
 router.get('/finance/reports/collections', async (req, res, next) => {
   try {
-    const range = dateRange(req.query);
-    if (range.error)
-      return res.status(400).json({ success: false, error: range.error });
+    const filters = financeListFilters(req.query);
+    if (filters.error)
+      return res.status(400).json({ success: false, error: filters.error });
+    const { range, studentId, method } = filters;
     const match = {
       branchId: req.financeContext.branchId,
       status: 'confirmed',
     };
+    if (studentId) match.studentId = studentId;
+    if (method) match.method = method;
     if (range.filter) match.confirmedAt = range.filter;
     const [totals, byMethod] = await Promise.all([
       getDatabase()
@@ -1249,12 +1411,20 @@ router.get('/finance/reports/collections', async (req, res, next) => {
           { $match: match },
           {
             $group: {
-              _id: '$method',
+              _id: { method: '$method', currency: '$currency' },
               total: { $sum: '$amount' },
               count: { $sum: 1 },
             },
           },
-          { $sort: { _id: 1 } },
+          {
+            $project: {
+              _id: '$_id.method',
+              currency: '$_id.currency',
+              total: 1,
+              count: 1,
+            },
+          },
+          { $sort: { currency: 1, _id: 1 } },
         ])
         .toArray(),
     ]);

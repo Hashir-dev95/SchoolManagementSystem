@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
+  KeyboardAvoidingView,
+  Modal,
   Pressable,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -49,7 +53,7 @@ function DataCard({ title, lines = [], status, feedback }) {
   );
 }
 
-function Section({ title, activePage, records, empty, render }) {
+function Section({ title, activePage, records, empty, render, error, onRetry }) {
   const sectionPage = {
     Timetable: 'Learning',
     Attendance: 'Attendance',
@@ -71,7 +75,14 @@ function Section({ title, activePage, records, empty, render }) {
   return (
     <View>
       <Text style={styles.sectionTitle}>{title}</Text>
-      {records.length ? records.map(render) : <Empty>{empty}</Empty>}
+      {error ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+          <Pressable accessibilityRole="button" onPress={onRetry}>
+            <Text style={styles.refresh}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : records.length ? records.map(render) : <Empty>{empty}</Empty>}
     </View>
   );
 }
@@ -107,6 +118,9 @@ export default function ParentDashboard({
   const [notifications, setNotifications] = useState(
     previewOnly ? previewNotifications : [],
   );
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(
+    previewOnly ? previewNotifications.length : 0,
+  );
   const [notificationsLoading, setNotificationsLoading] = useState(
     !previewOnly,
   );
@@ -119,6 +133,17 @@ export default function ParentDashboard({
   const [applicationBusy, setApplicationBusy] = useState(false);
   const [applicationError, setApplicationError] = useState('');
   const [applicationNotice, setApplicationNotice] = useState('');
+  const [feeGateway, setFeeGateway] = useState(null);
+  const [feeGatewayLoading, setFeeGatewayLoading] = useState(!previewOnly);
+  const [feeGatewayError, setFeeGatewayError] = useState('');
+  const [feeInvoice, setFeeInvoice] = useState(null);
+  const [feeFlowStep, setFeeFlowStep] = useState('invoice');
+  const [feeMethod, setFeeMethod] = useState('card');
+  const [feeCheckoutLoading, setFeeCheckoutLoading] = useState(false);
+  const [feePaymentId, setFeePaymentId] = useState('');
+  const [feePaymentState, setFeePaymentState] = useState('idle');
+  const [feePaymentError, setFeePaymentError] = useState('');
+  const [feePaymentReceipt, setFeePaymentReceipt] = useState(null);
   const requestVersion = useRef(0);
   const childrenVersion = useRef(0);
   const notificationVersion = useRef(0);
@@ -128,6 +153,9 @@ export default function ParentDashboard({
       if (previewOnly) {
         setSelectedChildId(childId);
         setChildRecords(parentPreview.records[childId] || null);
+        setFeeInvoice(null);
+        setFeePaymentId('');
+        setFeePaymentState('idle');
         return;
       }
       const version = ++requestVersion.current;
@@ -139,6 +167,11 @@ export default function ParentDashboard({
       setApplicationMessage('');
       setApplicationNotice('');
       setApplicationError('');
+      setFeeInvoice(null);
+      setFeePaymentId('');
+      setFeePaymentState('idle');
+      setFeePaymentError('');
+      setFeePaymentReceipt(null);
       setSelectedChildId(childId);
       setChildRecords(null);
       setRecordsError('');
@@ -188,8 +221,10 @@ export default function ParentDashboard({
     setNotificationsError('');
     try {
       const data = await parentApi.getNotifications();
-      if (version === notificationVersion.current)
+      if (version === notificationVersion.current) {
         setNotifications(asList(data?.notifications));
+        setNotificationUnreadCount(Number(data?.unreadCount) || 0);
+      }
     } catch (error) {
       if (version === notificationVersion.current)
         setNotificationsError(error.message);
@@ -199,15 +234,48 @@ export default function ParentDashboard({
     }
   }, [previewOnly]);
 
+  const loadFeeGateway = useCallback(async () => {
+    if (previewOnly) {
+      setFeeGateway({ enabled: false, message: 'Payments are disabled in Developer Preview.' });
+      setFeeGatewayError('');
+      setFeeGatewayLoading(false);
+      return;
+    }
+    setFeeGatewayLoading(true);
+    setFeeGatewayError('');
+    try {
+      setFeeGateway(await parentApi.getFeeCheckoutConfig());
+    } catch (error) {
+      setFeeGateway(null);
+      setFeeGatewayError(error.message || 'Could not check online payment availability.');
+    } finally {
+      setFeeGatewayLoading(false);
+    }
+  }, [previewOnly]);
+
   const openDlp = useCallback(
-    async (notificationId) => {
+    async (notification) => {
       if (previewOnly) return;
+      const notificationId = notification.id || String(notification._id || '');
+      if (!notificationId) return;
       const version = ++notificationVersion.current;
       setOpenedDlp(null);
       setDlpError('');
       setDlpLoadingId(notificationId);
       try {
         await parentApi.markNotificationRead(notificationId);
+        if (version !== notificationVersion.current) return;
+        if (!notification.readAt) {
+          const readAt = new Date().toISOString();
+          setNotifications((current) =>
+            current.map((item) =>
+              (item.id || String(item._id || '')) === notificationId
+                ? { ...item, readAt }
+                : item,
+            ),
+          );
+          setNotificationUnreadCount((count) => Math.max(0, count - 1));
+        }
         const data = await parentApi.openNotification(notificationId);
         if (version === notificationVersion.current) setOpenedDlp(data);
       } catch (error) {
@@ -246,6 +314,13 @@ export default function ParentDashboard({
   const loadChildren = useCallback(async () => {
     if (previewOnly) return;
     const version = ++childrenVersion.current;
+    requestVersion.current += 1;
+    setChildren([]);
+    setSelectedChildId('');
+    setChildRecords(null);
+    setRecordsLoading(false);
+    setRecordsError('');
+    setRecordErrors({});
     setChildrenLoading(true);
     setChildrenError('');
     try {
@@ -260,9 +335,20 @@ export default function ParentDashboard({
       else {
         setSelectedChildId('');
         setChildRecords(null);
+        setRecordsLoading(false);
+        setRecordsError('');
+        setRecordErrors({});
       }
     } catch (error) {
-      if (version === childrenVersion.current) setChildrenError(error.message);
+      if (version === childrenVersion.current) {
+        setChildren([]);
+        setSelectedChildId('');
+        setChildRecords(null);
+        setRecordsLoading(false);
+        setRecordsError('');
+        setRecordErrors({});
+        setChildrenError(error.message || 'Could not load verified children.');
+      }
     } finally {
       if (version === childrenVersion.current) setChildrenLoading(false);
     }
@@ -272,12 +358,67 @@ export default function ParentDashboard({
     if (previewOnly) return;
     loadChildren();
     loadNotifications();
+    loadFeeGateway();
     return () => {
       requestVersion.current += 1;
       childrenVersion.current += 1;
       notificationVersion.current += 1;
     };
-  }, [loadChildren, loadNotifications, previewOnly]);
+  }, [loadChildren, loadNotifications, loadFeeGateway, previewOnly]);
+
+  useEffect(() => {
+    if (!feePaymentId || feePaymentState !== 'pending' || previewOnly) return undefined;
+    let active = true;
+    const checkStatus = async () => {
+      try {
+        const status = await parentApi.getFeePaymentStatus(feePaymentId);
+        if (!active) return;
+        if (status?.status === 'confirmed') {
+          if (selectedChildId) {
+            const fees = await parentApi.getFees(selectedChildId);
+            if (active) setChildRecords((current) => current
+              ? { ...current, fees: asList(fees) }
+              : current);
+          }
+          if (active) {
+            setFeePaymentReceipt(status.receipt || null);
+            setFeePaymentState('confirmed');
+          }
+        } else if (['failed', 'cancelled'].includes(status?.status)) {
+          setFeePaymentState(status.status);
+        }
+      } catch (error) {
+        if (active) setFeePaymentError(error.message || 'Could not refresh payment status.');
+      }
+    };
+    checkStatus();
+    const interval = setInterval(checkStatus, 5000);
+    return () => { active = false; clearInterval(interval); };
+  }, [feePaymentId, feePaymentState, previewOnly, selectedChildId]);
+
+  async function beginFeeCheckout() {
+    if (!feeInvoice || !selectedChildId || !feeGateway?.enabled || previewOnly) return;
+    setFeeCheckoutLoading(true);
+    setFeePaymentError('');
+    setFeePaymentState('creating');
+    try {
+      const invoiceId = String(feeInvoice.id || '');
+      if (!invoiceId) throw new Error('This invoice is missing its server invoice ID.');
+      const checkout = await parentApi.createFeeCheckout(selectedChildId, invoiceId, feeMethod);
+      const checkoutUrl = typeof checkout?.checkoutUrl === 'string' ? checkout.checkoutUrl.trim() : '';
+      if (!/^https:\/\/[^/\s]+(?:[/?#]|$)/i.test(checkoutUrl)) {
+        throw new Error('The payment service did not return a secure checkout URL.');
+      }
+      setFeePaymentId(String(checkout.paymentId || ''));
+      setFeePaymentState('pending');
+      await Linking.openURL(checkoutUrl);
+    } catch (error) {
+      setFeePaymentState('idle');
+      setFeePaymentError(error.message || 'Secure checkout could not be started.');
+    } finally {
+      setFeeCheckoutLoading(false);
+    }
+  }
 
   const selectedChild = children.find((child) => child.id === selectedChildId);
   const visibleChildren =
@@ -310,7 +451,17 @@ export default function ParentDashboard({
   }, [childRecords, previewOnly, searchQuery]);
 
   return (
-    <ScrollView style={styles.page} contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView
+      style={styles.keyboard}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+    >
+      <ScrollView
+        style={styles.page}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
       <Text style={styles.eyebrow}>FAMILY PORTAL</Text>
       <Text style={styles.heading}>Parent dashboard</Text>
       <Text style={styles.subtitle}>
@@ -355,7 +506,7 @@ export default function ParentDashboard({
             <Text style={styles.sectionTitle}>
               {previewOnly
                 ? 'Preview notifications'
-                : 'Parent DLP notifications'}
+                : `Parent DLP notifications · ${notificationUnreadCount} unread`}
             </Text>
             {!previewOnly ? (
               <Pressable accessibilityRole="button" onPress={loadNotifications}>
@@ -387,7 +538,7 @@ export default function ParentDashboard({
               key={item.id || item._id}
               accessibilityRole="button"
               disabled={!!dlpLoadingId}
-              onPress={() => openDlp(item.id || String(item._id))}
+              onPress={() => openDlp(item)}
               style={styles.childCard}
             >
               <Text style={styles.childName}>
@@ -402,6 +553,7 @@ export default function ParentDashboard({
                         : ''
                     } · Open shared class version`}
               </Text>
+              <Text style={styles.cardLine}>{item.readAt ? 'Read' : 'Unread'}</Text>
               {dlpLoadingId === (item.id || String(item._id)) ? (
                 <ActivityIndicator color={colors.blue} />
               ) : null}
@@ -473,6 +625,7 @@ export default function ParentDashboard({
             key={child.id}
             accessibilityRole="button"
             accessibilityState={{ selected }}
+            disabled={childrenLoading}
             onPress={() => (selected ? null : loadChild(child.id))}
             style={[styles.childCard, selected && styles.selectedChild]}
           >
@@ -531,6 +684,8 @@ export default function ParentDashboard({
                 title="Attendance"
                 records={visibleChildRecords.attendance}
                 empty="No attendance records are available."
+                error={recordErrors.attendance}
+                onRetry={() => loadChild(selectedChild.id)}
                 render={(item) => (
                   <DataCard
                     key={item.id || item._id}
@@ -577,7 +732,7 @@ export default function ParentDashboard({
                       item.description,
                       item.subject,
                       item.dueDate &&
-                        `Due ${String(item.dueDate).slice(0, 10)}`,
+                        `Payment date ${String(item.dueDate).slice(0, 10)}`,
                     ].filter(Boolean)}
                     status="Published"
                   />
@@ -588,6 +743,8 @@ export default function ParentDashboard({
                 title="Published results"
                 records={visibleChildRecords.results}
                 empty="No results have been published."
+                error={recordErrors.results}
+                onRetry={() => loadChild(selectedChild.id)}
                 render={(item) => (
                   <DataCard
                     key={item.id || item._id}
@@ -608,21 +765,34 @@ export default function ParentDashboard({
                 title="Fees"
                 records={visibleChildRecords.fees}
                 empty="No fee records are available."
+                error={recordErrors.fees}
+                onRetry={() => loadChild(selectedChild.id)}
                 render={(item) => (
-                  <DataCard
+                  <Pressable
                     key={item.id || item._id}
-                    title={item.description || item.id || 'Fee'}
-                    lines={[
-                      `Amount: ${money(item.amount, item.currency)}`,
-                      `Confirmed paid: ${money(
-                        item.confirmedPaidAmount,
-                        item.currency,
-                      )}`,
-                      item.dueDate &&
-                        `Due ${String(item.dueDate).slice(0, 10)}`,
-                    ].filter(Boolean)}
-                    status={item.status}
-                  />
+                    accessibilityRole="button"
+                    accessibilityLabel={`View invoice ${item.description || item.id || ''}`}
+                    onPress={() => {
+                      setFeeInvoice(item);
+                      setFeeFlowStep('invoice');
+                      setFeeMethod('card');
+                      setFeePaymentId('');
+                      setFeePaymentState('idle');
+                      setFeePaymentError('');
+                      setFeePaymentReceipt(null);
+                    }}
+                    style={styles.dataCard}
+                  >
+                    <View style={styles.cardHeader}>
+                      <Text style={styles.cardTitle}>{item.description || item.invoiceNumber || item.id || 'Fee invoice'}</Text>
+                      <Text style={styles.status}>{item.status || 'Invoice'}</Text>
+                    </View>
+                    <Text style={styles.cardLine}>Amount: {money(item.amount, item.currency)}</Text>
+                    <Text style={styles.cardLine}>Confirmed paid: {money(item.confirmedPaidAmount, item.currency)}</Text>
+                    <Text style={styles.cardLine}>Pending verification (not paid): {money(item.pendingAmount, item.currency)}</Text>
+                    <Text style={styles.cardLine}>Due: {money(item.balanceDue, item.currency)}</Text>
+                    <Text style={styles.invoiceAction}>Invoice details · Pay Fee ›</Text>
+                  </Pressable>
                 )}
               />
               {(page === 'Progress' ||
@@ -630,13 +800,21 @@ export default function ParentDashboard({
                 page === 'All') && (
                 <>
                   <Text style={styles.sectionTitle}>Teacher feedback</Text>
-                  {visibleChildRecords.feedback.homework.length +
+                  {recordErrors.feedback ? (
+                    <View style={styles.errorBox}>
+                      <Text style={styles.errorText}>{recordErrors.feedback}</Text>
+                      <Pressable accessibilityRole="button" onPress={() => loadChild(selectedChild.id)}>
+                        <Text style={styles.refresh}>Retry feedback</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+                  {!recordErrors.feedback && visibleChildRecords.feedback.homework.length +
                     visibleChildRecords.feedback.results.length +
                     visibleChildRecords.feedback.progress.length ===
                   0 ? (
                     <Empty>No teacher feedback is available.</Empty>
                   ) : null}
-                  {visibleChildRecords.feedback.homework.map((item) => (
+                  {!recordErrors.feedback && visibleChildRecords.feedback.homework.map((item) => (
                     <DataCard
                       key={`homework-${item.id || item._id}`}
                       title={
@@ -654,7 +832,7 @@ export default function ParentDashboard({
                       feedback={item.teacherFeedback || item.feedback}
                     />
                   ))}
-                  {visibleChildRecords.feedback.results.map((item) => (
+                  {!recordErrors.feedback && visibleChildRecords.feedback.results.map((item) => (
                     <DataCard
                       key={`result-${item.id || item._id}`}
                       title={
@@ -666,7 +844,7 @@ export default function ParentDashboard({
                       feedback={item.teacherFeedback || item.feedback}
                     />
                   ))}
-                  {visibleChildRecords.feedback.progress.map((item) => (
+                  {!recordErrors.feedback && visibleChildRecords.feedback.progress.map((item) => (
                     <DataCard
                       key={`progress-${item.id || item._id}`}
                       title={item.subject || item.title || 'Progress feedback'}
@@ -764,13 +942,148 @@ export default function ParentDashboard({
               ) : null}
             </>
           ) : null}
-        </>
+      </>
       ) : null}
-    </ScrollView>
+      </ScrollView>
+      <Modal
+        visible={!!feeInvoice}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFeeInvoice(null)}
+      >
+        <View style={styles.paymentOverlay}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close invoice details"
+            onPress={() => setFeeInvoice(null)}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={styles.paymentSheet}>
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.paymentContent}>
+              <View style={styles.cardHeader}>
+                <View style={styles.grow}>
+                  <Text style={styles.eyebrow}>PARENT FEES · INVOICE DETAIL</Text>
+                  <Text style={styles.paymentTitle}>{feeInvoice?.description || feeInvoice?.invoiceNumber || 'Fee invoice'}</Text>
+                </View>
+                <Pressable accessibilityRole="button" accessibilityLabel="Close invoice details" onPress={() => setFeeInvoice(null)} style={styles.paymentClose}>
+                  <Text style={styles.paymentCloseText}>×</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.paymentLine}>Invoice total · {money(feeInvoice?.amount, feeInvoice?.currency)}</Text>
+              <Text style={styles.paymentLine}>Confirmed paid · {money(feeInvoice?.confirmedPaidAmount, feeInvoice?.currency)}</Text>
+              <Text style={styles.paymentLine}>Pending verification · {money(feeInvoice?.pendingAmount, feeInvoice?.currency)}</Text>
+              <Text style={styles.paymentDue}>Balance due · {money(feeInvoice?.balanceDue, feeInvoice?.currency)}</Text>
+              {feeInvoice?.dueDate ? <Text style={styles.muted}>Due {String(feeInvoice.dueDate).slice(0, 10)}</Text> : null}
+
+              {feeFlowStep === 'invoice' ? (
+                <>
+                  <Text style={styles.sectionTitle}>Payment history</Text>
+                  {!asList(feeInvoice?.confirmedReceipts).length ? <Text style={styles.muted}>No confirmed receipts for this invoice.</Text> : null}
+                  {asList(feeInvoice?.confirmedReceipts).map((receipt) => (
+                    <View key={receipt.paymentId || receipt.receiptNumber} style={styles.receiptRow}>
+                      <Text style={styles.paymentMethodTitle}>{receipt.receiptNumber || 'Confirmed receipt'}</Text>
+                      <Text style={styles.cardLine}>{money(receipt.amount, receipt.currency || feeInvoice.currency)} · {receipt.method || 'Payment'}</Text>
+                      <Text style={styles.muted}>{receipt.confirmedAt ? new Date(receipt.confirmedAt).toLocaleString() : ''}</Text>
+                    </View>
+                  ))}
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={Number(feeInvoice?.availableBalance ?? feeInvoice?.balanceDue ?? 0) <= 0}
+                    onPress={() => setFeeFlowStep('method')}
+                    style={[styles.actionButton, Number(feeInvoice?.availableBalance ?? feeInvoice?.balanceDue ?? 0) <= 0 && styles.paymentDisabled]}
+                  >
+                    <Text style={styles.actionText}>Pay Fee</Text>
+                  </Pressable>
+                </>
+              ) : null}
+
+              {feeFlowStep === 'method' ? (
+                <>
+                  <Pressable accessibilityRole="button" onPress={() => setFeeFlowStep('invoice')} style={styles.paymentBack}>
+                    <Text style={styles.refresh}>‹ Invoice details</Text>
+                  </Pressable>
+                  <Text style={styles.sectionTitle}>Choose payment method</Text>
+              {[
+                ['card', 'Card', 'Debit or credit card through the merchant’s secure checkout'],
+                ['easypaisa', 'Easypaisa', 'Pay using the Easypaisa merchant channel'],
+              ].map(([method, title, description]) => (
+                <Pressable
+                  key={method}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: feeMethod === method, disabled: previewOnly }}
+                  disabled={previewOnly}
+                  onPress={() => setFeeMethod(method)}
+                  style={[styles.paymentMethod, feeMethod === method && styles.paymentMethodSelected, previewOnly && styles.paymentDisabled]}
+                >
+                  <View style={styles.paymentRadio}>{feeMethod === method ? <View style={styles.paymentRadioDot} /> : null}</View>
+                  <View style={styles.grow}>
+                    <Text style={styles.paymentMethodTitle}>{title}</Text>
+                    <Text style={styles.muted}>{description}</Text>
+                  </View>
+                </Pressable>
+              ))}
+
+              {feeGatewayLoading ? <ActivityIndicator color={colors.blue} /> : null}
+              {feeGatewayError ? (
+                <View accessibilityRole="alert" style={styles.errorBox}>
+                  <Text style={styles.errorText}>{feeGatewayError}</Text>
+                  <Pressable accessibilityRole="button" onPress={loadFeeGateway}><Text style={styles.refresh}>Retry payment availability</Text></Pressable>
+                </View>
+              ) : null}
+              {!feeGatewayLoading && !feeGatewayError && !feeGateway?.enabled ? (
+                <View style={styles.gatewayUnavailable}>
+                  <Text style={styles.paymentMethodTitle}>Secure checkout isn’t configured</Text>
+                  <Text style={styles.cardLine}>{feeGateway?.message || 'The school has not connected a verified merchant checkout. No payment has been started.'}</Text>
+                  {previewOnly ? <Text style={styles.previewNotice}>Developer Preview · payments are disabled.</Text> : null}
+                </View>
+              ) : null}
+
+              {feePaymentState === 'pending' ? (
+                <View style={styles.paymentStatus}>
+                  <ActivityIndicator color={colors.blue} />
+                  <Text style={styles.paymentMethodTitle}>Checking payment status</Text>
+                  <Text style={styles.muted}>The invoice changes only after the gateway confirms payment.</Text>
+                </View>
+              ) : null}
+              {feePaymentState === 'confirmed' ? (
+                <View style={styles.paymentReceipt}>
+                  <Text style={styles.paymentMethodTitle}>Payment confirmed</Text>
+                  {feePaymentReceipt?.receiptNumber ? <Text style={styles.cardLine}>Receipt {feePaymentReceipt.receiptNumber}</Text> : null}
+                  {feePaymentReceipt?.amount != null ? <Text style={styles.cardLine}>{money(feePaymentReceipt.amount, feePaymentReceipt.currency || feeInvoice?.currency)}</Text> : null}
+                  <Text style={styles.cardLine}>{feePaymentReceipt?.confirmedAt ? new Date(feePaymentReceipt.confirmedAt).toLocaleString() : 'Confirmed by the payment service'}</Text>
+                </View>
+              ) : null}
+              {['failed', 'cancelled'].includes(feePaymentState) ? (
+                <View accessibilityRole="alert" style={styles.errorBox}>
+                  <Text style={styles.errorText}>
+                    Gateway status: {feePaymentState}. The invoice remains unpaid unless a verified status confirms payment.
+                  </Text>
+                </View>
+              ) : null}
+              {feePaymentError ? <Text accessibilityRole="alert" style={styles.errorText}>{feePaymentError}</Text> : null}
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: !feeGateway?.enabled || feeGatewayLoading || feeCheckoutLoading || previewOnly }}
+                disabled={!feeGateway?.enabled || feeGatewayLoading || feeCheckoutLoading || previewOnly}
+                onPress={beginFeeCheckout}
+                style={[styles.actionButton, (!feeGateway?.enabled || feeGatewayLoading || feeCheckoutLoading || previewOnly) && styles.paymentDisabled]}
+              >
+                {feeCheckoutLoading ? <ActivityIndicator color="#FFFEFA" /> : <Text style={styles.actionText}>Pay Fee securely</Text>}
+              </Pressable>
+                </>
+              ) : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  grow: { flex: 1 },
+  keyboard: { flex: 1 },
   page: { flex: 1, backgroundColor: colors.pale },
   content: { padding: 18, paddingBottom: 30 },
   eyebrow: {
@@ -845,6 +1158,26 @@ const styles = StyleSheet.create({
     padding: 13,
     marginBottom: 8,
   },
+  invoiceAction: { color: colors.blue, fontSize: 11, fontWeight: '800', marginTop: 11 },
+  paymentOverlay: { flex: 1, justifyContent: 'center', padding: 18, backgroundColor: '#28294088' },
+  paymentSheet: { maxHeight: '88%', borderRadius: 24, backgroundColor: colors.pale, overflow: 'hidden' },
+  paymentContent: { padding: 19, paddingBottom: 24 },
+  paymentTitle: { color: colors.ink, fontSize: 20, lineHeight: 26, fontWeight: '900', marginTop: 7 },
+  paymentClose: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFEFA', borderWidth: 1, borderColor: colors.line },
+  paymentCloseText: { color: colors.ink, fontSize: 24, lineHeight: 27 },
+  paymentLine: { color: colors.muted, fontSize: 12, lineHeight: 19, marginTop: 5 },
+  paymentDue: { color: colors.ink, fontSize: 15, lineHeight: 22, fontWeight: '900', marginTop: 9 },
+  paymentMethod: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 13, marginBottom: 9, backgroundColor: '#FFFEFA', borderWidth: 1, borderColor: colors.line, borderRadius: 15 },
+  paymentMethodSelected: { borderColor: colors.blue, backgroundColor: '#EEEDFF' },
+  paymentRadio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
+  paymentRadioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.blue },
+  paymentMethodTitle: { color: colors.ink, fontSize: 13, fontWeight: '800' },
+  gatewayUnavailable: { padding: 13, marginVertical: 9, backgroundColor: '#FFF0CF', borderRadius: 15, borderWidth: 1, borderColor: '#E9D6AD' },
+  paymentStatus: { alignItems: 'center', gap: 8, padding: 14, marginVertical: 8, backgroundColor: '#FFFEFA', borderRadius: 15 },
+  paymentReceipt: { padding: 13, marginVertical: 8, backgroundColor: '#E7F5EE', borderRadius: 15, borderWidth: 1, borderColor: '#B8E0C8' },
+  receiptRow: { padding: 12, marginTop: 7, backgroundColor: '#FFFEFA', borderRadius: 14, borderWidth: 1, borderColor: colors.line },
+  paymentBack: { alignSelf: 'flex-start', paddingVertical: 9 },
+  paymentDisabled: { opacity: 0.5 },
   cardTitle: { color: colors.ink, fontSize: 13, fontWeight: '800', flex: 1 },
   feedback: {
     borderTopWidth: 1,

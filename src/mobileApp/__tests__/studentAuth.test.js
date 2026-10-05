@@ -1,6 +1,8 @@
 jest.mock('../apiConfig', () => ({ API_ROOT: 'http://school.test/api' }));
 import { login, logout, validateSession } from '../authService';
 import { studentApi } from '../studentService';
+import { parentApi } from '../parentService';
+import { financeApi } from '../financeService';
 import { clearAccessToken, setAccessToken, getAuthHeaders, subscribeSessionExpiry, checkSessionExpiry } from '../authSession';
 
 const reply = (status, data) => ({ ok: status < 400, status, json: async () => data });
@@ -41,6 +43,20 @@ test('403 does not expire a valid session', async () => {
   fetch.mockResolvedValue(reply(403, { success: false, error: 'Forbidden' }));
   await expect(studentApi.getProfile()).rejects.toThrow('Forbidden');
   expect(getAuthHeaders().Authorization).toBe('Bearer valid');
+});
+
+test.each([
+  ['Parent', () => parentApi.getChildren()],
+  ['Finance', () => financeApi.searchStudents('student')],
+  ['Finance notifications', () => financeApi.getNotifications()],
+])('%s 401 immediately expires the shared session', async (_role, request) => {
+  setAccessToken('expired');
+  const listener = jest.fn(); const unsubscribe = subscribeSessionExpiry(listener);
+  fetch.mockResolvedValue(reply(401, { success: false, error: 'Session is invalid or expired.' }));
+  await expect(request()).rejects.toThrow('expired');
+  expect(listener).toHaveBeenCalledTimes(1);
+  expect(getAuthHeaders()).toEqual({});
+  unsubscribe();
 });
 
 test('delayed old-session 401 does not clear a newer login', async () => {

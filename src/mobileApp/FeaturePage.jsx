@@ -25,6 +25,7 @@ import {
 import { theme as t } from './hiraTheme';
 import { features } from './featureScreens';
 import { getFeatureProvider } from './featureProviders';
+import { parentApi } from './parentService';
 
 const exampleEvents = [
   {
@@ -149,9 +150,24 @@ export default function FeaturePage({
   definition,
   onNavigate,
 }) {
+  const [selectedParentChildId, setSelectedParentChildId] = useState(childId || '');
+  const [parentChildren, setParentChildren] = useState([]);
+  const [parentChildrenLoading, setParentChildrenLoading] = useState(false);
+  const [parentChildrenError, setParentChildrenError] = useState('');
+  const [parentChildrenRetry, setParentChildrenRetry] = useState(0);
+  const parentScopedPage = role === 'Parent' && [
+    'Academic Report',
+    'Monthly Feedback',
+    'Student Progress Tracking',
+    'Student Fees',
+    'Receipt Details',
+  ].includes(page);
+  const parentReceiptPage = role === 'Parent' && page === 'Receipt Details';
   const provider = useMemo(
-    () => customProvider || getFeatureProvider(role, page, childId),
-    [customProvider, role, page, childId],
+    () => parentScopedPage
+      ? getFeatureProvider(role, page, selectedParentChildId)
+      : customProvider || getFeatureProvider(role, page, selectedParentChildId),
+    [customProvider, role, page, selectedParentChildId, parentScopedPage],
   );
   const config = definition || features[page];
   const [data, setData] = useState({ records: [] });
@@ -169,6 +185,36 @@ export default function FeaturePage({
   const [quizChoice, setQuizChoice] = useState('');
   const version = useRef(0);
   const appear = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    setSelectedParentChildId(childId || '');
+  }, [childId, page, role]);
+  useEffect(() => {
+    if (role !== 'Parent' || previewOnly) return undefined;
+    let active = true;
+    setParentChildrenLoading(true);
+    setParentChildrenError('');
+    parentApi.getChildren().then((children) => {
+      if (!active) return;
+      const linked = Array.isArray(children) ? children : [];
+      setParentChildren(linked);
+      const preferred = childId || selectedParentChildId;
+      const nextId = linked.some((child) => child.id === preferred)
+        ? preferred
+        : linked[0]?.id || '';
+      setSelectedParentChildId(nextId);
+    }).catch((failure) => {
+      if (!active) return;
+      setParentChildren([]);
+      setSelectedParentChildId('');
+      setParentChildrenError(failure.message || 'Could not load linked children.');
+    }).finally(() => {
+      if (active) setParentChildrenLoading(false);
+    });
+    return () => { active = false; };
+  }, [role, page, previewOnly, childId, parentChildrenRetry, selectedParentChildId]);
+  useEffect(() => {
+    if (parentScopedPage) setData({ records: [] });
+  }, [selectedParentChildId, parentScopedPage]);
   const load = useCallback(
     async (filters = {}) => {
       const current = ++version.current;
@@ -217,7 +263,7 @@ export default function FeaturePage({
           );
       } catch (failure) {
         if (version.current === current) {
-          setData({ records: [] });
+          setData({ records: [], metrics: null });
           setError(failure.message || 'Could not load this page.');
         }
       } finally {
@@ -316,16 +362,21 @@ export default function FeaturePage({
           </View>
         ) : null}
       </View>
-      <Text style={s.status}>{item.status || 'View'} ↗</Text>
+      <View style={s.recordAction}>
+        <Text numberOfLines={1} style={s.status}>{item.status || 'View'}</Text>
+        <PageIcon name="chevron" size={15} />
+      </View>
     </Pressable>
   );
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={s.keyboard}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
     >
       <ScrollView
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         contentContainerStyle={s.page}
         refreshControl={
           <RefreshControl
@@ -348,20 +399,19 @@ export default function FeaturePage({
             ],
           }}
         >
-          <Text style={s.eyebrow}>
-            {role.toUpperCase()} · {page.toUpperCase()}
-          </Text>
-          <Text style={[s.title, largeText && { fontSize: 32 }]}>
-            {config.title}
-          </Text>
-          <Text style={s.subtitle}>{config.subtitle}</Text>
-          <View style={s.hero}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.heroTag}>YOUR SCHOOL, A LITTLE CLOSER</Text>
-              <Text style={s.heroTitle}>{page}</Text>
-              <Text style={s.bodyText}>{config.subtitle}</Text>
+          <View style={s.pageHeader}>
+            <View style={s.headerCopy}>
+              <Text style={s.eyebrow}>
+                {role.toUpperCase()} · {page.toUpperCase()}
+              </Text>
+              <Text style={[s.title, largeText && { fontSize: 32 }]}>
+                {config.title}
+              </Text>
+              <Text style={s.subtitle}>{config.subtitle}</Text>
             </View>
-            <PageIcon name={page} size={60} />
+            <View style={s.headerIcon}>
+              <PageIcon name={page} size={34} />
+            </View>
           </View>
           <View style={s.tabs}>
             {['Overview', 'History'].map((item) => (
@@ -378,12 +428,12 @@ export default function FeaturePage({
               </Pressable>
             ))}
           </View>
-          {!previewOnly && !provider?.load ? (
+          {!previewOnly && !provider?.load && !provider?.submit ? (
             <View style={s.info}>
-              <Text style={s.infoTitle}>School service not connected</Text>
+              <Text style={s.infoTitle}>Not available yet</Text>
               <Text style={s.muted}>
-                This page is ready. Its authorized data service still needs
-                integration; no school records have been loaded.
+                This page does not have a connected school API yet. No school
+                records are shown here.
               </Text>
             </View>
           ) : null}
@@ -401,6 +451,44 @@ export default function FeaturePage({
             </Text>
           ) : null}
           {loading ? <ActivityIndicator color={t.primary} /> : null}
+          {parentScopedPage && !previewOnly ? (
+            <View style={s.panel}>
+              <Text style={s.section}>Linked child</Text>
+              {parentChildrenLoading ? <ActivityIndicator color={t.primary} /> : null}
+              {parentChildrenError ? (
+                <View accessibilityRole="alert" style={s.error}>
+                  <Text style={{ color: '#A13B42' }}>{parentChildrenError}</Text>
+                  <Button secondary onPress={() => setParentChildrenRetry((count) => count + 1)}>Retry linked children</Button>
+                </View>
+              ) : null}
+              {parentChildren.map((child) => (
+                <Pressable
+                  key={child.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: child.id === selectedParentChildId }}
+                  disabled={loading || parentChildrenLoading}
+                  onPress={() => {
+                    setSelectedParentChildId(child.id);
+                    setData({ records: [] });
+                    setError('');
+                  }}
+                  style={s.setting}
+                >
+                  <Text style={s.recordTitle}>{child.fullName || child.name || 'Child'}</Text>
+                  <Text style={s.muted}>{[child.grade, child.section && `Section ${child.section}`].filter(Boolean).join(' · ')}</Text>
+                  {child.id === selectedParentChildId ? <Text style={s.status}>Selected</Text> : null}
+                </Pressable>
+              ))}
+              {!parentChildrenLoading && !parentChildrenError && !parentChildren.length ? (
+                <Text style={s.muted}>No verified children are linked to this account.</Text>
+              ) : null}
+            </View>
+          ) : null}
+          {error && provider?.load ? (
+            <Button secondary disabled={loading} onPress={() => load(form)}>
+              Retry loading records
+            </Button>
+          ) : null}
           {config.filters && tab === 'Overview' ? (
             <View style={s.panel}>
               <Text style={s.section}>Find what you need</Text>
@@ -611,7 +699,16 @@ export default function FeaturePage({
               ) : null}
             </View>
           ) : null}
-          {config.fields && tab === 'Overview' ? (
+          {role === 'Parent' && page === 'Online Payment' ? (
+            <View style={s.info}>
+              <Text style={s.infoTitle}>Online payment is not available yet</Text>
+              <Text style={s.muted}>
+                No payment provider is connected. This screen will not start, record, or simulate a payment. You can still review invoices and confirmed receipts.
+              </Text>
+              <Button secondary onPress={() => onNavigate('Student Fees')}>View invoices</Button>
+            </View>
+          ) : null}
+          {config.fields && tab === 'Overview' && !parentReceiptPage && !(role === 'Parent' && page === 'Online Payment') ? (
             <View style={s.panel}>
               <Text style={s.section}>
                 {config.type === 'messages'
@@ -655,6 +752,8 @@ export default function FeaturePage({
               ? 'Record history'
               : config.type === 'calendar'
               ? 'Upcoming dates'
+              : parentReceiptPage
+              ? 'Confirmed receipts'
               : 'Your records'}
           </Text>
           {(tab === 'History'
@@ -668,7 +767,7 @@ export default function FeaturePage({
             : config.type === 'calendar'
             ? eventRecords
             : records
-          ).length === 0 && !loading ? (
+          ).length === 0 && !loading && !error ? (
             <View style={s.empty}>
               <PageIcon name={page} size={34} />
               <Text style={s.recordTitle}>No records to show yet</Text>
@@ -719,19 +818,38 @@ export default function FeaturePage({
   );
 }
 const s = StyleSheet.create({
-  page: { padding: 18, paddingBottom: 35 },
+  keyboard: { flex: 1 },
+  page: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 35 },
+  pageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 14,
+    marginBottom: 20,
+  },
+  headerCopy: { flex: 1 },
+  headerIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 21,
+    backgroundColor: t.lavender,
+    borderWidth: 1,
+    borderColor: '#DFDCF9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   eyebrow: {
-    color: t.muted,
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 1.4,
+    color: t.primary,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
   },
   title: {
     color: t.ink,
     fontSize: 27,
     lineHeight: 34,
     fontWeight: '900',
-    marginTop: 10,
+    marginTop: 8,
   },
   subtitle: {
     color: t.muted,
@@ -740,58 +858,32 @@ const s = StyleSheet.create({
     marginTop: 8,
     marginBottom: 18,
   },
-  hero: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderRadius: 25,
-    padding: 22,
-    minHeight: 160,
-    backgroundColor: '#FFE6AF',
-    borderWidth: 1,
-    borderColor: '#E9D6AD',
-    ...t.shadow,
-    marginBottom: 20,
-  },
-  heroTag: {
-    color: '#927847',
-    fontSize: 8,
-    letterSpacing: 1.2,
-    fontWeight: '800',
-  },
-  heroTitle: {
-    fontSize: 22,
-    color: t.ink,
-    fontWeight: '800',
-    marginVertical: 10,
-  },
-  heroIcon: { fontSize: 58 },
-  bodyText: { color: '#77757D', fontSize: 13, lineHeight: 21, marginTop: 7 },
+  bodyText: { color: '#77757D', fontSize: 13, lineHeight: 20, marginTop: 5 },
   tabs: {
     flexDirection: 'row',
-    backgroundColor: '#F0ECDf',
-    borderRadius: 16,
+    backgroundColor: '#F0ECDF',
+    borderRadius: 15,
     padding: 4,
-    marginBottom: 20,
+    marginBottom: 18,
   },
-  tab: { flex: 1, padding: 12, alignItems: 'center', borderRadius: 13 },
-  activeTab: { backgroundColor: t.primary },
-  tabText: { color: t.primary, fontSize: 12, fontWeight: '700' },
+  tab: { flex: 1, minHeight: 42, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  activeTab: { backgroundColor: t.primary, ...t.shadow },
+  tabText: { color: '#68677A', fontSize: 12, fontWeight: '700' },
   panel: {
     backgroundColor: t.paper,
     borderWidth: 1,
     borderColor: t.border,
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 19,
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
     ...t.shadow,
   },
   section: {
     fontSize: 17,
     fontWeight: '800',
     color: t.ink,
-    marginBottom: 14,
-    marginTop: 10,
+    marginBottom: 12,
+    marginTop: 4,
   },
   fields: {
     flexDirection: 'row',
@@ -832,15 +924,15 @@ const s = StyleSheet.create({
     gap: 10,
     marginBottom: 18,
   },
-  metric: { flexGrow: 1, minWidth: '30%', padding: 14, borderRadius: 19 },
+  metric: { flexGrow: 1, minWidth: '46%', padding: 15, borderRadius: 17, borderWidth: 1, borderColor: '#E8E4EE' },
   metricValue: { color: t.primary, fontSize: 22, fontWeight: '800' },
-  metricLabel: { color: '#817D88', fontSize: 11, marginTop: 9 },
+  metricLabel: { color: '#817D88', fontSize: 11, lineHeight: 16, marginTop: 7 },
   record: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 16,
-    borderRadius: 21,
+    alignItems: 'flex-start',
+    gap: 11,
+    padding: 14,
+    borderRadius: 18,
     backgroundColor: t.paper,
     borderWidth: 1,
     borderColor: t.border,
@@ -848,17 +940,18 @@ const s = StyleSheet.create({
     ...t.shadow,
   },
   recordIcon: {
-    width: 43,
-    height: 47,
+    width: 42,
+    height: 42,
     backgroundColor: t.lavender,
     borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },
   emoji: { fontSize: 25 },
-  recordTitle: { color: t.ink, fontWeight: '700', fontSize: 15 },
+  recordTitle: { color: t.ink, fontWeight: '800', fontSize: 14, lineHeight: 20 },
   muted: { color: t.muted, fontSize: 12, lineHeight: 19, marginTop: 5 },
-  status: { color: t.primary, fontSize: 10, fontWeight: '700', maxWidth: 76 },
+  recordAction: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingTop: 4, maxWidth: 92 },
+  status: { color: t.primary, fontSize: 10, fontWeight: '800', maxWidth: 68 },
   track: {
     height: 8,
     borderRadius: 5,

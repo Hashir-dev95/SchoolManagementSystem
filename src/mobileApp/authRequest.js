@@ -1,7 +1,7 @@
 import { API_ROOT } from './apiConfig';
 import { expireSession, getAuthHeaders } from './authSession';
 
-export async function authRequest(path, options = {}, authenticated = true) {
+export async function authRequest(path, options = {}, authenticated = true, returnEnvelope = false) {
   const authorization = authenticated ? getAuthHeaders().Authorization : undefined;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -20,7 +20,7 @@ export async function authRequest(path, options = {}, authenticated = true) {
     if (!response.ok || payload?.success !== true) {
       throw new Error(payload?.error || `School API request failed (${response.status}).`);
     }
-    return payload.data;
+    return returnEnvelope ? payload : payload.data;
   } catch (error) {
     if (error.name === 'AbortError') throw new Error('The school API timed out. Check your connection and try again.');
     if (error instanceof TypeError) throw new Error('Could not reach the school API. Check your connection and try again.');
