@@ -1,14 +1,15 @@
-import {Router} from 'express';
+import { Router } from 'express';
 
 import {
   createBranchController,
   getBranches,
+  getBranchByIdController,
 } from '../controllers/branch.controller';
 
-import {authenticateToken} from '../middleware/auth.middleware';
-import {requireRole} from '../middleware/rbac.middleware';
-import {requireBranchScope} from '../middleware/branch.middleware';
-import {getMyBranch} from '../controllers/branch.controller';
+import { authenticateToken } from '../middleware/auth.middleware';
+import { requireRole } from '../middleware/rbac.middleware';
+import { requireBranchScope } from '../middleware/branch.middleware';
+import { getMyBranch } from '../controllers/branch.controller';
 
 const router = Router();
 
@@ -19,16 +20,12 @@ router.post(
   createBranchController,
 );
 
+router.get('/', authenticateToken, requireRole('super_admin'), getBranches);
+router.get('/my-branch', authenticateToken, requireBranchScope, getMyBranch);
 router.get(
-  '/',
+  '/:branchId',
   authenticateToken,
   requireRole('super_admin'),
-  getBranches,
-);
-router.get(
-  '/my-branch',
-  authenticateToken,
-  requireBranchScope,
-  getMyBranch,
+  getBranchByIdController,
 );
 export default router;

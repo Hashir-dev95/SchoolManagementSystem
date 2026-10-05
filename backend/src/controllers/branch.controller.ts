@@ -47,6 +47,59 @@ export const createBranchController = async (
     });
   }
 };
+export const getBranchByIdController = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const branchIdParam = req.params.branchId;
+    const branchId = Array.isArray(branchIdParam)
+      ? branchIdParam[0]
+      : branchIdParam;
+
+    if (!branchId) {
+      res.status(400).json({
+        success: false,
+        message: 'Branch ID is required',
+      });
+      return;
+    }
+
+    const branch = await getBranchById(branchId);
+
+    if (!branch) {
+      res.status(404).json({
+        success: false,
+        message: 'Branch not found',
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Branch fetched successfully',
+      data: branch,
+    });
+  } catch (error) {
+    console.error('Get branch error:', error);
+
+    const message =
+      error instanceof Error ? error.message : 'Failed to fetch branch';
+
+    if (message === 'Invalid branch ID') {
+      res.status(400).json({
+        success: false,
+        message,
+      });
+      return;
+    }
+
+    res.status(500).json({
+      success: false,
+      message,
+    });
+  }
+};
 
 export const getBranches = async (
   _req: Request,

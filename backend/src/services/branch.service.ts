@@ -1,4 +1,5 @@
 import Branch, { IBranch } from '../models/branch';
+import { Types } from 'mongoose';
 
 interface CreateBranchInput {
   name: string;
@@ -41,5 +42,9 @@ export const getAllBranches = async (): Promise<IBranch[]> => {
 export const getBranchById = async (
   branchId: string,
 ): Promise<IBranch | null> => {
+  if (!Types.ObjectId.isValid(branchId)) {
+    throw new Error('Invalid branch ID');
+  }
+
   return Branch.findById(branchId);
 };

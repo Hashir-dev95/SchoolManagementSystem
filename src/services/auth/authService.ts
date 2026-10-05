@@ -1,3 +1,24 @@
+import {apiClient} from '../api/apiClient';
+import {User} from '../../types/auth';
+
+interface LoginResponse {
+  success: boolean;
+  message: string;
+  accessToken: string;
+  user: User;
+}
+
 export const authService = {
-  // Authentication methods will be implemented in Step 07.
+  login: async (
+    email: string,
+    password: string,
+  ): Promise<LoginResponse> => {
+    return apiClient.request<LoginResponse>('/auth/login', {
+      method: 'POST',
+      body: {
+        email,
+        password,
+      },
+    });
+  },
 };

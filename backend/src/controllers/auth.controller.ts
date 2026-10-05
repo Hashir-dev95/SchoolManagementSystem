@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { generateAccessToken } from '../services/jwt.service';
 import { authenticateUser, createUser } from '../services/auth.service';
+import { registerSession } from '../services/session.service';
 import User, { UserRole } from '../models/user';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
 
@@ -98,6 +99,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     const user = await authenticateUser(email, password);
     const accessToken = generateAccessToken(user._id.toString(), user.role);
+
+    await registerSession(user._id.toString(), accessToken, user.role);
 
     res.status(200).json({
       success: true,
