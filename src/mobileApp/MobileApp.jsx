@@ -1,3 +1,4 @@
+import PageIcon from './PageIcon';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
@@ -18,7 +19,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import NotificationDrawer from './NotificationDrawer';
 import RoleDashboard from './RoleDashboard';
 import HiraHome from './HiraHome';
+import FeaturePage from './FeaturePage';
+import { features, staffFeatures } from './featureScreens';
 import { theme as t, rolePages, bottomPages } from './hiraTheme';
+import { checkSessionExpiry, subscribeSessionExpiry } from './authSession';
+import { validateSession } from './authService';
 
 const roles = Object.keys(rolePages);
 const roleNames = {
@@ -32,18 +37,6 @@ const roleNames = {
   super_admin: 'Super Admin',
 };
 const ownedRoles = ['Parent', 'Student', 'Finance'];
-const icons = {
-  Home: '▦',
-  Progress: '↗',
-  Inbox: '◇',
-  Learning: '▤',
-  Homework: '✎',
-  Invoices: '▤',
-  Receipts: '▧',
-  Classes: '▦',
-  Reports: '▥',
-  Schools: '▦',
-};
 function getGreeting(hour = new Date().getHours()) {
   if (hour >= 5 && hour < 12) return 'Good morning';
   if (hour >= 12 && hour < 17) return 'Good afternoon';
@@ -67,13 +60,14 @@ function Button({ children, onPress, style, label }) {
 }
 
 /** Authenticated production shell. Role switching is only available in explicit development preview. */
-/** @param {{authState?: any, authLoading?: boolean, onLogout?: (() => void|Promise<void>), developmentPreview?: boolean, roleScreens?: object}} props */
+/** @param {{authState?: any, authLoading?: boolean, onLogout?: (() => void|Promise<void>), developmentPreview?: boolean, roleScreens?: object, featureProviders?: object}} props */
 export default function MobileApp({
   authState = null,
   authLoading = false,
   onLogout = undefined,
   developmentPreview = false,
   roleScreens = {},
+  featureProviders = {},
 }) {
   const previewOnly =
     developmentPreview && typeof __DEV__ !== 'undefined' && __DEV__;
@@ -95,6 +89,25 @@ export default function MobileApp({
   const greetingOpacity = useRef(new Animated.Value(1)).current;
   const greetingOffset = useRef(new Animated.Value(0)).current;
   const notificationRef = useRef(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  useEffect(() => {
+    if (previewOnly || !user) return undefined;
+    const unsubscribe = subscribeSessionExpiry(() => {
+      setSessionExpired(true);
+      if (onLogout) Promise.resolve(onLogout()).catch(() => {});
+    });
+    const check = () => {
+      checkSessionExpiry();
+      // Network failures keep the session; only a server 401 expires it.
+      validateSession().catch(() => {});
+    };
+    check();
+    const interval = setInterval(checkSessionExpiry, 30000);
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') check();
+    });
+    return () => { unsubscribe(); clearInterval(interval); subscription.remove(); };
+  }, [previewOnly, user, onLogout]);
   useEffect(() => {
     let alive = true;
     AccessibilityInfo.isReduceMotionEnabled().then((value) => {
@@ -195,14 +208,14 @@ export default function MobileApp({
     });
     return () => sub.remove();
   }, [drawer, page]);
-  if (!previewOnly && (authLoading || !user || !role)) {
+  if (!previewOnly && (sessionExpired || authLoading || !user || !role)) {
     return (
       <SafeAreaView style={s.safe}>
         <StatusBar barStyle="dark-content" backgroundColor={t.background} />
         <View style={s.center}>
           {authLoading ? <ActivityIndicator color={t.primary} /> : null}
           <Text style={s.title}>
-            {authLoading
+            {sessionExpired ? 'Your session expired. Please sign in again.' : authLoading
               ? 'Restoring your session…'
               : !user
               ? 'Sign in to your school workspace'
@@ -234,7 +247,7 @@ export default function MobileApp({
           onPress={() => setDrawer(true)}
           style={s.menu}
         >
-          <Text style={s.menuText}>⋮</Text>
+          <PageIcon name="more" size={25} color={t.primary} />
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -285,7 +298,20 @@ export default function MobileApp({
           },
         ]}
       >
-        {ownedRoles.includes(role) ? (
+        {page === 'Teachers DLP' &&
+        ['Teacher', 'Principal', 'Super Admin'].includes(role) ? (
+          <RoleDashboard role={role} page={page} previewOnly={previewOnly} />
+        ) : features[page] && ownedRoles.includes(role) ? (
+          <FeaturePage
+            key={`${role}-${page}`}
+            role={role}
+            page={page}
+            previewOnly={previewOnly}
+            childId={childId}
+            provider={featureProviders[role]?.[page]}
+            onNavigate={navigate}
+          />
+        ) : ownedRoles.includes(role) ? (
           page === 'Home' ? (
             <HiraHome
               key={role}
@@ -305,6 +331,16 @@ export default function MobileApp({
               searchQuery=""
             />
           )
+        ) : staffFeatures[role]?.[page] ? (
+          <FeaturePage
+            key={`${role}-${page}`}
+            role={role}
+            page={page}
+            definition={staffFeatures[role][page]}
+            previewOnly={previewOnly}
+            provider={featureProviders[role]?.[page]}
+            onNavigate={navigate}
+          />
         ) : PartnerScreen ? (
           <PartnerScreen
             page={page}
@@ -335,9 +371,11 @@ export default function MobileApp({
             style={s.tab}
           >
             <View style={[s.tabIcon, page === item && s.tabIconActive]}>
-              <Text style={[s.icon, page === item && { color: t.primary }]}>
-                {icons[item] || '◇'}
-              </Text>
+              <PageIcon
+                name={item}
+                size={24}
+                color={page === item ? t.primary : t.muted}
+              />
             </View>
             <Text style={[s.tabLabel, page === item && { color: t.primary }]}>
               {item}
@@ -377,7 +415,7 @@ export default function MobileApp({
                   accessibilityLabel="Close navigation"
                   style={s.close}
                 >
-                  <Text style={s.closeText}>×</Text>
+                  <PageIcon name="close" size={22} color={t.ink} />
                 </Pressable>
               </View>
               <Pressable
@@ -392,7 +430,7 @@ export default function MobileApp({
                 <Text style={s.roleText}>
                   {role === 'Parent' ? 'Parent / Guardian' : role}
                 </Text>
-                {previewOnly ? <Text style={s.roleText}>⌄</Text> : null}
+                {previewOnly ? <PageIcon name="chevron-down" size={20} /> : null}
               </Pressable>
               <ScrollView
                 keyboardShouldPersistTaps="handled"
@@ -430,9 +468,11 @@ export default function MobileApp({
                       onPress={() => navigate(item)}
                       style={[s.row, page === item && s.activeRow]}
                     >
-                      <Text style={[s.rowIcon, page === item && s.activeText]}>
-                        {icons[item] || '▤'}
-                      </Text>
+                      <PageIcon
+                        name={item}
+                        size={23}
+                        color={page === item ? '#FFFFFF' : t.primary}
+                      />
                       <Text style={[s.rowText, page === item && s.activeText]}>
                         {item}
                       </Text>

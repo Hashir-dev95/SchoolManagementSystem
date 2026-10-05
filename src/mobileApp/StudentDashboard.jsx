@@ -53,6 +53,10 @@ function Section({ title, activePage, children, empty }) {
   );
 }
 
+function asList(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function Record({ title, lines = [], status, feedback }) {
   return (
     <View style={styles.card}>
@@ -118,17 +122,20 @@ export default function StudentDashboard({
   );
   const [loading, setLoading] = useState(!previewOnly);
   const [error, setError] = useState('');
+  const [resourceErrors, setResourceErrors] = useState({});
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
   const [asset, setAsset] = useState({
     uri: '',
     name: '',
     type: 'application/pdf',
   });
+  const [submissionText, setSubmissionText] = useState('');
   const [uploading, setUploading] = useState('');
   const [uploadMessage, setUploadMessage] = useState('');
   const [uploadError, setUploadError] = useState('');
   const [submissionHistory, setSubmissionHistory] = useState({});
   const [historyLoading, setHistoryLoading] = useState('');
+  const [historyErrors, setHistoryErrors] = useState({});
   const [applicationTitle, setApplicationTitle] = useState('');
   const [applicationMessage, setApplicationMessage] = useState('');
   const [applicationBusy, setApplicationBusy] = useState(false);
@@ -153,16 +160,18 @@ export default function StudentDashboard({
   const loadDashboard = useCallback(async (filters) => {
     setLoading(true);
     setError('');
+    setResourceErrors({});
     try {
-      const [
-        profile,
-        timetable,
-        attendance,
-        results,
-        progress,
-        homework,
-        applications,
-      ] = await Promise.all([
+      const names = [
+        'profile',
+        'timetable',
+        'attendance',
+        'results',
+        'progress',
+        'homework',
+        'applications',
+      ];
+      const requests = [
         studentApi.getProfile(),
         studentApi.getTimetable(),
         studentApi.getAttendance(filters),
@@ -170,16 +179,31 @@ export default function StudentDashboard({
         studentApi.getProgress(),
         studentApi.getHomework(),
         studentApi.getApplications(),
-      ]);
-      setRecords({
-        profile,
-        timetable,
-        attendance,
-        results,
-        progress,
-        homework,
-        applications,
+      ];
+      const settled = await Promise.allSettled(requests);
+      const nextRecords = {
+        profile: null,
+        timetable: [],
+        attendance: [],
+        results: [],
+        progress: [],
+        homework: [],
+        applications: [],
+      };
+      const failures = {};
+      settled.forEach((result, index) => {
+        const name = names[index];
+        if (result.status === 'fulfilled') {
+          nextRecords[name] = name === 'profile' ? result.value : asList(result.value);
+        } else {
+          failures[name] = result.reason?.message || 'Could not load this section.';
+        }
       });
+      setRecords(nextRecords);
+      setResourceErrors(failures);
+      if (Object.keys(failures).length === names.length) {
+        setError('Could not load your school records. Check your connection and retry.');
+      }
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -196,18 +220,42 @@ export default function StudentDashboard({
     if (previewOnly) return;
     setUploadError('');
     setUploadMessage('');
-    if (!asset.uri.trim() || !asset.name.trim()) {
-      setUploadError('Provide the selected file URI and filename.');
+    const text = submissionText.trim();
+    const hasFile = asset.uri.trim() || asset.name.trim();
+    if (!text && !(asset.uri.trim() && asset.name.trim())) {
+      setUploadError('Enter submission text or provide both a file URI and filename.');
       return;
+    }
+    if (text.length > 10000) {
+      setUploadError('Submission text must be 10,000 characters or fewer.');
+      return;
+    }
+    if (hasFile) {
+      const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+      const extension = asset.name.trim().toLowerCase().match(/\.[^.]+$/)?.[0];
+      const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png'];
+      if (!allowedTypes.includes(asset.type) || !allowedExtensions.includes(extension)) {
+        setUploadError('Files must be PDF, JPEG, or PNG with a matching filename and MIME type.');
+        return;
+      }
+      if (asset.size != null && Number(asset.size) > 5 * 1024 * 1024) {
+        setUploadError('Files must be 5 MB or smaller.');
+        return;
+      }
     }
     setUploading(homeworkId);
     try {
       const result = await studentApi.submitHomework(homeworkId, {
         ...asset,
+        text,
         uri: asset.uri.trim(),
         name: asset.name.trim(),
       });
       setUploadMessage(`Submission saved. Status: ${result.status}.`);
+      setSubmissionHistory(current => ({ ...current, [homeworkId]: undefined }));
+      setSubmissionText('');
+      setAsset({ uri: '', name: '', type: 'application/pdf' });
+      await loadSubmissionHistory(homeworkId, true);
       await loadDashboard(dateRange);
     } catch (submitError) {
       setUploadError(submitError.message);
@@ -237,14 +285,19 @@ export default function StudentDashboard({
     }
   }
 
-  async function loadSubmissionHistory(homeworkId) {
-    if (previewOnly || submissionHistory[homeworkId]) return;
+  async function loadSubmissionHistory(homeworkId, force = false) {
+    if (previewOnly || (!force && submissionHistory[homeworkId])) return;
     setHistoryLoading(homeworkId);
     try {
       const history = await studentApi.getSubmissions(homeworkId);
-      setSubmissionHistory(current => ({ ...current, [homeworkId]: history }));
+      setSubmissionHistory(current => ({ ...current, [homeworkId]: asList(history) }));
+      setHistoryErrors(current => {
+        const next = { ...current };
+        delete next[homeworkId];
+        return next;
+      });
     } catch (historyError) {
-      setUploadError(historyError.message);
+      setHistoryErrors(current => ({ ...current, [homeworkId]: historyError.message }));
     } finally {
       setHistoryLoading('');
     }
@@ -271,6 +324,14 @@ export default function StudentDashboard({
               .join(' · ')
           : 'Your school information'}
       </Text>
+      {resourceErrors.profile ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{resourceErrors.profile}</Text>
+          <Pressable onPress={() => loadDashboard(dateRange)} style={styles.retry}>
+            <Text style={styles.retryText}>Retry profile</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {previewOnly ? (
         <Text style={styles.previewNotice}>
           Design preview · sample records
@@ -292,6 +353,14 @@ export default function StudentDashboard({
             style={styles.retry}
           >
             <Text style={styles.retryText}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {!loading && !error && Object.keys(resourceErrors).length > 0 ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>Some school records could not be loaded.</Text>
+          <Pressable onPress={() => loadDashboard(dateRange)} style={styles.retry}>
+            <Text style={styles.retryText}>Retry failed sections</Text>
           </Pressable>
         </View>
       ) : null}
@@ -330,13 +399,14 @@ export default function StudentDashboard({
         </>
       ) : null}
 
-      {!loading && !error ? (
+      {!loading ? (
         <>
           <Section
             activePage={page}
             title="Timetable"
             empty="No timetable entries are available."
           >
+            {resourceErrors.timetable ? <Text style={styles.errorText}>{resourceErrors.timetable}</Text> : null}
             {visibleRecords.timetable.map((item) => (
               <Record
                 key={
@@ -358,6 +428,7 @@ export default function StudentDashboard({
             title="Attendance"
             empty="No attendance records found for these dates."
           >
+            {resourceErrors.attendance ? <Text style={styles.errorText}>{resourceErrors.attendance}</Text> : null}
             {visibleRecords.attendance.map((item) => (
               <Record
                 key={item.id || `${item.date}-${item._id}`}
@@ -376,6 +447,7 @@ export default function StudentDashboard({
             title="Published results"
             empty="No results have been published for you."
           >
+            {resourceErrors.results ? <Text style={styles.errorText}>{resourceErrors.results}</Text> : null}
             {visibleRecords.results.map((item) => (
               <Record
                 key={item.id || item._id}
@@ -398,6 +470,7 @@ export default function StudentDashboard({
             title="Progress"
             empty="No progress records are available."
           >
+            {resourceErrors.progress ? <Text style={styles.errorText}>{resourceErrors.progress}</Text> : null}
             {visibleRecords.progress.map((item) => (
               <Record
                 key={item.id || item._id}
@@ -420,6 +493,7 @@ export default function StudentDashboard({
             title="Homework"
             empty="No published homework is assigned to you."
           >
+            {resourceErrors.homework ? <Text style={styles.errorText}>{resourceErrors.homework}</Text> : null}
             {visibleRecords.homework.map((item) => {
               const submission = item.latestSubmission;
               const homeworkId = item.id || String(item._id);
@@ -469,9 +543,27 @@ export default function StudentDashboard({
                           {entry.fileName ? ` · ${entry.fileName}` : ''}
                         </Text>
                       ))}
+                      {historyErrors[homeworkId] ? (
+                        <View style={styles.historyError}>
+                          <Text style={styles.errorText}>{historyErrors[homeworkId]}</Text>
+                          <Pressable onPress={() => loadSubmissionHistory(homeworkId)} style={styles.retry}>
+                            <Text style={styles.retryText}>Retry history</Text>
+                          </Pressable>
+                        </View>
+                      ) : null}
                       <Text style={styles.uploadHint}>
-                        Submission files: PDF, JPEG, or PNG, up to 5 MB.
+                        Submit text, or one PDF, JPEG, or PNG file up to 5 MB.
                       </Text>
+                      <TextInput
+                        accessibilityLabel="Submission text"
+                        value={submissionText}
+                        onChangeText={setSubmissionText}
+                        placeholder="Write your submission"
+                        multiline
+                        textAlignVertical="top"
+                        style={[styles.input, styles.multiline]}
+                        placeholderTextColor={colors.muted}
+                      />
                       <Field
                         label="File URI from device"
                         value={asset.uri}
@@ -499,7 +591,7 @@ export default function StudentDashboard({
                       />
                       <Pressable
                         accessibilityRole="button"
-                        disabled={uploading === homeworkId}
+                        disabled={uploading === homeworkId || !!submission}
                         onPress={() => submit(homeworkId)}
                         style={[
                           styles.button,
@@ -509,6 +601,8 @@ export default function StudentDashboard({
                         <Text style={styles.buttonText}>
                           {uploading === homeworkId
                             ? 'Uploading…'
+                            : submission
+                            ? 'Already submitted'
                             : 'Submit homework'}
                         </Text>
                       </Pressable>
@@ -736,6 +830,7 @@ const styles = StyleSheet.create({
   homeworkCard: { marginBottom: 12 },
   uploadHint: { color: colors.muted, fontSize: 11, marginBottom: 8 },
   successText: { color: colors.green, fontSize: 12, marginTop: 7 },
+  historyError: { marginBottom: 8 },
   previewNotice: {
     color: '#8A4D00',
     backgroundColor: '#FFF1D6',

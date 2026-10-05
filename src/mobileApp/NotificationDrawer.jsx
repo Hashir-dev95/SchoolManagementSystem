@@ -1,3 +1,4 @@
+import PageIcon from './PageIcon';
 import React, {
   forwardRef,
   useImperativeHandle,
@@ -210,7 +211,7 @@ const NotificationDrawer = forwardRef(function NotificationDrawer(
         }}
         style={styles.trigger}
       >
-        <Text style={styles.bell}>🔔</Text>
+      <PageIcon name="Notifications" size={23} />
         {unreadCount > 0 ? (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>

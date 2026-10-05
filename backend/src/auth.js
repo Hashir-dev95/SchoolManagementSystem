@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const { Buffer } = require('node:buffer');
 const { getDatabase } = require('./database');
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
@@ -51,8 +52,9 @@ async function login(email, password) {
   if (!user || !passwordMatches(password, user)) return null;
   const token = crypto.randomBytes(32).toString('base64url');
   const now = new Date();
+  const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
   await getDatabase().collection('refreshTokens').insertOne({ tokenHash: tokenHash(token), type: 'access', userId: String(user.id), createdAt: now, expiresAt: new Date(now.getTime() + SESSION_TTL_MS), revokedAt: null });
-  return { token, user: { id: String(user.id), fullName: user.fullName || user.name || '', email: user.email, role: String(user.role).toLowerCase(), ...(user.branchId ? { branchId: String(user.branchId) } : {}) } };
+  return { token, expiresAt: expiresAt.toISOString(), user: { id: String(user.id), fullName: user.fullName || user.name || '', email: user.email, role: String(user.role).toLowerCase(), ...(user.branchId ? { branchId: String(user.branchId) } : {}) } };
 }
 
 async function logout(token) {

@@ -25,6 +25,8 @@ function Empty({ children }) {
   return <Text style={styles.empty}>{children}</Text>;
 }
 
+const asList = value => (Array.isArray(value) ? value : []);
+
 function DataCard({ title, lines = [], status, feedback }) {
   return (
     <View style={styles.dataCard}>
@@ -101,6 +103,7 @@ export default function ParentDashboard({
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [childrenError, setChildrenError] = useState('');
   const [recordsError, setRecordsError] = useState('');
+  const [recordErrors, setRecordErrors] = useState({});
   const [notifications, setNotifications] = useState(
     previewOnly ? previewNotifications : [],
   );
@@ -139,18 +142,11 @@ export default function ParentDashboard({
       setSelectedChildId(childId);
       setChildRecords(null);
       setRecordsError('');
+      setRecordErrors({});
       setRecordsLoading(true);
       try {
-        const [
-          profile,
-          attendance,
-          timetable,
-          homework,
-          results,
-          fees,
-          feedback,
-          applications,
-        ] = await Promise.all([
+        const names = ['profile', 'attendance', 'timetable', 'homework', 'results', 'fees', 'feedback', 'applications'];
+        const requests = [
           parentApi.getChild(childId),
           parentApi.getAttendance(childId),
           parentApi.getTimetable(childId),
@@ -159,20 +155,25 @@ export default function ParentDashboard({
           parentApi.getFees(childId),
           parentApi.getFeedback(childId),
           parentApi.getApplications(childId),
-        ]);
+        ];
+        const settled = await Promise.allSettled(requests);
         if (version !== requestVersion.current) return;
-        setChildRecords({
-          profile,
-          attendance,
-          timetable,
-          homework,
-          results,
-          fees,
-          feedback,
-          applications,
+        const nextRecords = { profile: null, attendance: [], timetable: [], homework: [], results: [], fees: [], feedback: { homework: [], results: [], progress: [] }, applications: [] };
+        const failures = {};
+        settled.forEach((result, index) => {
+          const name = names[index];
+          if (result.status === 'fulfilled') {
+            nextRecords[name] = name === 'profile' ? result.value : name === 'feedback'
+              ? { homework: asList(result.value?.homework), results: asList(result.value?.results), progress: asList(result.value?.progress) }
+              : asList(result.value);
+          } else failures[name] = result.reason?.message || 'Could not load this section.';
         });
+        setChildRecords(nextRecords);
+        setRecordErrors(failures);
+        if (Object.keys(failures).length === names.length) setRecordsError('Could not load this child’s records.');
       } catch (error) {
-        if (version === requestVersion.current) setRecordsError(error.message);
+        if (version === requestVersion.current)
+          setRecordsError(error.message || 'Could not load this child’s records.');
       } finally {
         if (version === requestVersion.current) setRecordsLoading(false);
       }
@@ -188,7 +189,7 @@ export default function ParentDashboard({
     try {
       const data = await parentApi.getNotifications();
       if (version === notificationVersion.current)
-        setNotifications(data.notifications || []);
+        setNotifications(asList(data?.notifications));
     } catch (error) {
       if (version === notificationVersion.current)
         setNotificationsError(error.message);
@@ -250,10 +251,11 @@ export default function ParentDashboard({
     try {
       const data = await parentApi.getChildren();
       if (version !== childrenVersion.current) return;
-      setChildren(data);
-      if (data.length)
+      const linkedChildren = asList(data);
+      setChildren(linkedChildren);
+      if (linkedChildren.length)
         await loadChild(
-          data.find((child) => child.id === initialChildId)?.id || data[0].id,
+          linkedChildren.find((child) => child.id === initialChildId)?.id || linkedChildren[0].id,
         );
       else {
         setSelectedChildId('');
@@ -514,8 +516,16 @@ export default function ParentDashboard({
               </Pressable>
             </View>
           ) : null}
-          {!recordsLoading && !recordsError && childRecords ? (
+          {!recordsLoading && childRecords ? (
             <>
+              {Object.keys(recordErrors).length > 0 ? (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorText}>Some records could not be loaded.</Text>
+                  <Pressable onPress={() => loadChild(selectedChild.id)}>
+                    <Text style={styles.refresh}>Retry failed sections</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               <Section
                 activePage={page}
                 title="Attendance"

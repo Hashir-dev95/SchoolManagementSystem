@@ -1,3 +1,5 @@
+import { extraPages } from './featureScreens';
+
 export const theme = {
   background: '#FFF9EF',
   paper: '#FFFEFA',
@@ -79,3 +81,11 @@ export const bottomPages = {
   Principal: ['Home', 'Reports', 'Inbox'],
   'Super Admin': ['Home', 'Schools', 'Inbox'],
 };
+
+Object.entries(extraPages).forEach(([role, pages]) => {
+  rolePages[role] = [
+    ...rolePages[role].filter((page) => page !== 'Inbox'),
+    ...pages,
+    'Inbox',
+  ];
+});

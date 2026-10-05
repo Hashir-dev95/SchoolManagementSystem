@@ -1,5 +1,28 @@
-import { setAccessToken, clearAccessToken, getAuthHeaders } from './authSession';
-import { API_ROOT } from './apiConfig';
-async function request(path, options = {}) { const response = await fetch(`${API_ROOT}${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...getAuthHeaders(), ...options.headers } }); const payload = await response.json().catch(() => null); if (!response.ok || payload?.success !== true) throw new Error(payload?.error || `Authentication request failed (${response.status}).`); return payload.data; }
-export async function login(email, password) { const data = await request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }); setAccessToken(data.token); return data.user; }
-export async function logout() { try { await request('/auth/logout', { method: 'POST' }); } finally { clearAccessToken(); } }
+import { setAccessToken, clearAccessToken } from './authSession';
+import { authRequest } from './authRequest';
+
+export async function login(email, password) {
+  if (!email?.trim() || !password) throw new Error('Enter your email and password.');
+  const data = await authRequest('/auth/login', {
+    method: 'POST', body: JSON.stringify({ email: email.trim(), password }),
+  }, false);
+  if (!data?.token || !data?.user?.id) throw new Error('The school API returned an invalid session.');
+  setAccessToken(data.token, data.expiresAt);
+  try {
+    if (data.user.role === 'student') await authRequest('/students/me');
+    return data.user;
+  } catch (error) {
+    await logout();
+    throw error;
+  }
+}
+
+export async function validateSession() { return authRequest('/auth/me'); }
+
+export async function logout() {
+  // Capture the bearer header before clearing locally, including when offline.
+  const pending = authRequest('/auth/logout', { method: 'POST' });
+  clearAccessToken();
+  try { await pending; return { revoked: true }; }
+  catch { return { revoked: false }; }
+}

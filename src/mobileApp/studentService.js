@@ -1,39 +1,8 @@
-import { getAuthHeaders } from './authSession';
+import { authRequest } from './authRequest';
 import { API_ROOT as API_BASE } from './apiConfig';
 const API_ROOT = `${API_BASE}/students/me`;
 
-async function request(path, options = {}) {
-  let response;
-  try {
-    response = await fetch(`${API_ROOT}${path}`, {
-      credentials: 'include',
-      ...options,
-      headers: {
-        ...getAuthHeaders(),
-        ...(options.headers ||
-          (options.body instanceof FormData
-            ? {}
-            : { 'Content-Type': 'application/json' })),
-      },
-    });
-  } catch {
-    throw new Error(
-      'Could not reach the student API. Check that the backend is running and reachable from this device.',
-    );
-  }
-  let payload;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new Error(
-      `The API returned an unreadable response (${response.status}).`,
-    );
-  }
-  if (!response.ok || payload.success !== true) {
-    throw new Error(payload.error || `Request failed (${response.status}).`);
-  }
-  return payload.data;
-}
+const request = (path, options) => authRequest('/students/me' + path, options);
 
 function dateQuery(filters = {}) {
   const params = new URLSearchParams();
@@ -65,9 +34,16 @@ export const studentApi = {
     }),
   getSubmissions: homeworkId =>
     request(`/homework/${encodeURIComponent(homeworkId)}/submissions`),
-  submitHomework: (homeworkId, asset) => {
+  submitHomework: (homeworkId, submission = {}) => {
     const body = new FormData();
-    body.append('file', { uri: asset.uri, name: asset.name, type: asset.type });
+    if (submission.text?.trim()) body.append('text', submission.text.trim());
+    if (submission.uri && submission.name) {
+      body.append('file', {
+        uri: submission.uri,
+        name: submission.name,
+        type: submission.type,
+      });
+    }
     return request(`/homework/${encodeURIComponent(homeworkId)}/submissions`, {
       method: 'POST',
       body,

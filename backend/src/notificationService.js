@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const { Buffer } = require('node:buffer');
 const { getDatabase } = require('./database');
 
 const RECIPIENT_ROLES = new Set(['student', 'parent', 'finance']);

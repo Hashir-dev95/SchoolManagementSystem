@@ -1,6 +1,10 @@
 const express = require('express');
-const { login, logout } = require('./auth');
+const { login, logout, authenticateRequest } = require('./auth');
 const router = express.Router();
+
+router.get('/me', authenticateRequest, (req, res) => {
+  res.json({ success: true, data: req.user });
+});
 
 router.post('/login', async (req, res, next) => {
   try {

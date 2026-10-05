@@ -1,3 +1,4 @@
+import PageIcon from './PageIcon';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -362,9 +363,7 @@ export default function HiraHome({
               onPress={() => onNavigate(route)}
               style={[s.metric, { backgroundColor: color }]}
             >
-              <Text style={s.metricIcon}>
-                {label === 'Homework' ? '✎' : '✦'}
-              </Text>
+              <PageIcon name={label} size={25} style={{ marginBottom: 13 }} />
               <Text style={s.metricValue}>{value}</Text>
               <Text style={s.metricLabel}>{label} ↗</Text>
             </Pressable>

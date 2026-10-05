@@ -403,6 +403,18 @@ router.post(
         });
       }
 
+      const homeworkId = homework.id || String(homework._id);
+      const existingSubmission = await db.collection('submissions').findOne({
+        homeworkId,
+        studentId: req.studentRecord.id,
+      });
+      if (existingSubmission) {
+        return res.status(409).json({
+          success: false,
+          error: 'A submission already exists for this homework.',
+        });
+      }
+
       let type = null;
       let safeFileName = null;
       if (req.file) {
@@ -446,7 +458,7 @@ router.post(
 
       const submission = {
         id: crypto.randomUUID(),
-        homeworkId: homework.id || String(homework._id),
+        homeworkId,
         studentId: req.studentRecord.id,
         ...(submissionText ? { text: submissionText } : {}),
         ...(req.file
