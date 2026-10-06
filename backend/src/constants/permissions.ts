@@ -3,6 +3,7 @@ export const PERMISSIONS = {
   STUDENTS_CREATE: 'students.create',
   STUDENTS_UPDATE: 'students.update',
   STUDENTS_DELETE: 'students.delete',
+  PRINCIPALS_MANAGE: 'principals.manage',
 
   TEACHERS_VIEW: 'teachers.view',
   TEACHERS_CREATE: 'teachers.create',
@@ -24,5 +25,4 @@ export const PERMISSIONS = {
   REPORTS_VIEW: 'reports.view',
 } as const;
 
-export type Permission =
-  (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

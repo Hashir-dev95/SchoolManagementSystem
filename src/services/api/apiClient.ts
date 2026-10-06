@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://192.168.18.32:5000/api';
+const API_BASE_URL = 'http://192.168.1.25:5000/api';
 const DEFAULT_TIMEOUT_MS = 10000;
 
 interface ApiOptions {
@@ -13,7 +13,7 @@ export const apiClient = {
     endpoint: string,
     options: ApiOptions = {},
   ): Promise<T> => {
-    const {method = 'GET', body, token, timeoutMs = DEFAULT_TIMEOUT_MS} = options;
+    const { method = 'GET', body, token, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
@@ -25,16 +25,16 @@ export const apiClient = {
         method,
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? {Authorization: `Bearer ${token}`} : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        ...(body !== undefined ? {body: JSON.stringify(body)} : {}),
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
         signal: controller.signal as any,
       });
 
-      const data = (await response.json()) as T & {message?: string};
+      const data = (await response.json()) as T & { message?: string };
 
       if (!response.ok) {
-        throw new Error((data as {message?: string}).message || 'API request failed');
+        throw new Error((data as { message?: string }).message || 'API request failed');
       }
 
       return data;

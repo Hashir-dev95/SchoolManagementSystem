@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  ImageBackground,
   ScrollView,
   StyleSheet,
   Text,
@@ -24,9 +25,11 @@ import {
   UserSession,
 } from '../../services/admin/adminService';
 import { SuperAdminStackParamList } from '../../navigation/SuperAdminNavigator';
+import {HiraHeader, StatCard, StatusPill} from '../../components/ui/HiraUI';
+import {colors, fonts, shadow} from '../../theme/hiraTheme';
 
 const SuperAdminDashboardScreen = () => {
-  const { user, accessToken } = useAuth();
+  const { user, accessToken, logout } = useAuth();
 
   const navigation =
     useNavigation<NativeStackNavigationProp<SuperAdminStackParamList>>();
@@ -59,6 +62,15 @@ const SuperAdminDashboardScreen = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const scrollViewRef = useRef<ScrollView>(null);
+  const branchesSectionYRef = useRef(0);
+
+  const scrollToBranches = () => {
+    scrollViewRef.current?.scrollTo({
+      y: Math.max(0, branchesSectionYRef.current - 10),
+      animated: true,
+    });
+  };
 
   const loadDashboard = useCallback(async () => {
     if (!accessToken) {
@@ -299,8 +311,31 @@ const SuperAdminDashboardScreen = () => {
   });
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Super Admin Dashboard</Text>
+    <ScrollView ref={scrollViewRef} contentContainerStyle={styles.container}>
+      <HiraHeader onLogout={logout} />
+
+      <View style={styles.nextStepsCard}>
+        <Text style={styles.nextStepsTitle}>Your next steps</Text>
+        <View style={styles.nextStepsActions}>
+          <View style={styles.attentionButton}>
+            <Text style={styles.attentionButtonText}>
+              {privilegedRequests.length} {privilegedRequests.length === 1 ? 'item needs' : 'items need'} attention
+            </Text>
+          </View>
+          <View style={styles.outlineAction}><Text style={styles.outlineActionText}>Branches</Text></View>
+        </View>
+        <View style={styles.nextStepsLowerRow}>
+          <View style={styles.outlineAction}><Text style={styles.outlineActionText}>System health</Text></View>
+        </View>
+      </View>
+
+      <View style={styles.greetingRow}>
+        <View>
+          <Text style={styles.greeting}>Hello, {user?.fullName?.split(' ')[0] ?? 'Admin'}!</Text>
+          <Text style={styles.greetingCaption}>Here’s your school network at a glance.</Text>
+        </View>
+        <View style={styles.dateChip}><Text style={styles.dateChipText}>TODAY</Text></View>
+      </View>
 
       {error !== '' && dashboard !== null && (
         <View style={styles.errorBanner}>
@@ -319,27 +354,40 @@ const SuperAdminDashboardScreen = () => {
         </View>
       )}
 
-      {/* Branch Statistics */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Total Branches</Text>
-        <Text style={styles.value}>{branches.total}</Text>
-        <Text style={styles.label}>All registered branches</Text>
-      </View>
+      <ImageBackground
+        style={styles.heroCard}
+        imageStyle={styles.heroBackgroundImage}
+        source={require('../../assets/images/school-art.webp')}>
+        <View style={styles.heroImageFade} />
+        <View style={styles.heroContent}>
+          <View>
+            <Text style={styles.heroKicker}>A BRIGHT DAY TO GROW</Text>
+            <Text style={styles.heroTitle}>Your school network{`\n`}is in good hands.</Text>
+        <Text style={styles.heroCopy}>Review today’s essentials and keep every branch moving forward.</Text>
+          </View>
+          <TouchableOpacity
+            accessibilityRole="button"
+            style={styles.heroPrimaryAction}
+            onPress={scrollToBranches}>
+            <Text style={styles.heroPrimaryActionText}>Explore branches</Text>
+          </TouchableOpacity>
+        </View>
+      </ImageBackground>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Active Branches</Text>
-        <Text style={styles.value}>{branches.active}</Text>
-        <Text style={styles.label}>Currently active</Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Inactive Branches</Text>
-        <Text style={styles.value}>{branches.inactive}</Text>
-        <Text style={styles.label}>Currently inactive</Text>
+      <Text style={styles.overviewTitle}>Your overview</Text>
+      <View style={styles.statsGrid}>
+        <StatCard label="All branches" value={branches.total} hint="Registered schools" tone="blue" />
+        <StatCard label="Active today" value={branches.active} hint="Ready to learn" tone="lime" />
+        <StatCard label="Inactive" value={branches.inactive} hint="Need attention" tone="orange" />
+        <StatCard label="Requests" value={privilegedRequests.length} hint="Awaiting review" tone="purple" />
       </View>
 
       {/* Assigned Branches */}
-      <View style={styles.section}>
+      <View
+        style={styles.section}
+        onLayout={event => {
+          branchesSectionYRef.current = event.nativeEvent.layout.y;
+        }}>
         <Text style={styles.sectionTitle}>Assigned Branches</Text>
 
         <TextInput
@@ -381,9 +429,7 @@ const SuperAdminDashboardScreen = () => {
               <Text style={styles.branchInfo}>
                 {branch.city} • {branch.address}
               </Text>
-              <Text style={styles.branchStatus}>
-                {branch.isActive ? 'Active' : 'Inactive'}
-              </Text>
+              <StatusPill label={branch.isActive ? 'Active' : 'Inactive'} tone={branch.isActive ? 'green' : 'orange'} />
 
               {hasPermission(user?.role, PERMISSIONS.BRANCHES_VIEW) && (
                 <TouchableOpacity
@@ -717,7 +763,7 @@ const SuperAdminDashboardScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     padding: 20,
     backgroundColor: '#f5f6fa',
@@ -1059,6 +1105,97 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+});
+
+const styles = StyleSheet.create({
+  ...baseStyles,
+  container: {padding: 14, paddingTop: 18, paddingBottom: 46, backgroundColor: colors.cream},
+  center: {flex: 1, justifyContent: 'center', alignItems: 'center', padding: 28, backgroundColor: colors.cream},
+  statusText: {fontFamily: fonts.body, color: colors.muted, fontSize: 14, marginTop: 10},
+  title: {fontFamily: fonts.display, color: colors.ink},
+  nextStepsCard: {backgroundColor: colors.white, borderRadius: 22, padding: 14, marginBottom: 16, ...shadow},
+  nextStepsTitle: {fontFamily: fonts.heading, color: colors.ink, fontSize: 15, marginBottom: 10},
+  nextStepsActions: {flexDirection: 'row', alignItems: 'center', gap: 9},
+  attentionButton: {backgroundColor: '#4b5bbb', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10},
+  attentionButtonText: {fontFamily: fonts.bodySemiBold, color: colors.white, fontSize: 12},
+  outlineAction: {borderWidth: 1, borderColor: '#e6dcca', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: '#fffdf9'},
+  outlineActionText: {fontFamily: fonts.bodySemiBold, color: '#4b5bbb', fontSize: 12},
+  nextStepsLowerRow: {marginTop: 9, alignItems: 'flex-start'},
+  greetingRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15},
+  greeting: {fontFamily: fonts.display, fontSize: 27, lineHeight: 33, letterSpacing: -1, color: colors.ink, maxWidth: 270},
+  greetingCaption: {fontFamily: fonts.body, fontSize: 12, color: colors.muted, marginTop: 4, maxWidth: 290},
+  dateChip: {backgroundColor: colors.softPurple, borderRadius: 12, paddingHorizontal: 9, paddingVertical: 7, marginTop: 5},
+  dateChipText: {fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: .6, color: '#685b88'},
+  heroCard: {backgroundColor: '#ffe2a0', borderRadius: 24, minHeight: 214, padding: 18, overflow: 'hidden', marginBottom: 24, borderWidth: 1, borderColor: '#f4d58f'},
+  heroBackgroundImage: {borderRadius: 23},
+  heroImageFade: {position: 'absolute', left: 0, top: 0, bottom: 0, width: '66%', backgroundColor: '#ffe2a0', opacity: .9},
+  heroContent: {flex: 1, justifyContent: 'space-between', alignItems: 'flex-start'},
+  heroSun: {position: 'absolute', right: 42, top: 16, width: 42, height: 42, borderRadius: 21, backgroundColor: '#fff5c9'},
+  heroCloudOne: {position: 'absolute', right: 12, top: 54, width: 64, height: 20, borderRadius: 12, backgroundColor: '#fff1c0', opacity: .8},
+  heroCloudTwo: {position: 'absolute', right: 72, top: 68, width: 40, height: 14, borderRadius: 9, backgroundColor: '#fff1c0', opacity: .65},
+  schoolIllustration: {position: 'absolute', right: -3, bottom: 4, width: 157, height: 128, alignItems: 'center'},
+  schoolRoof: {width: 108, height: 37, backgroundColor: '#f39a75', transform: [{rotate: '45deg'}], borderTopLeftRadius: 8, position: 'absolute', top: 13},
+  schoolBody: {width: 121, height: 70, backgroundColor: '#fff8e5', borderRadius: 7, position: 'absolute', bottom: 25, borderWidth: 3, borderColor: '#edb266'},
+  schoolDoor: {position: 'absolute', width: 22, height: 35, backgroundColor: '#7e705e', bottom: 0, left: 47, borderTopLeftRadius: 5, borderTopRightRadius: 5},
+  schoolWindow: {position: 'absolute', width: 20, height: 18, backgroundColor: colors.softBlue, top: 14, left: 15, borderRadius: 3},
+  schoolWindowRight: {position: 'absolute', width: 20, height: 18, backgroundColor: colors.softBlue, top: 14, right: 15, borderRadius: 3},
+  schoolPath: {position: 'absolute', width: 130, height: 16, backgroundColor: '#efc77c', bottom: 10, borderRadius: 12, transform: [{rotate: '-6deg'}]},
+  heroKicker: {fontFamily: fonts.bodySemiBold, fontSize: 9, letterSpacing: 1.2, color: '#9a7442'},
+  heroTitle: {fontFamily: fonts.display, fontSize: 21, lineHeight: 25, letterSpacing: -.5, color: colors.ink, marginTop: 8, maxWidth: 190},
+  heroCopy: {fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: '#716b5d', marginTop: 8, maxWidth: 183},
+  heroPrimaryAction: {backgroundColor: '#4b5bbb', borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, alignSelf: 'flex-start'},
+  heroPrimaryActionText: {fontFamily: fonts.bodySemiBold, color: colors.white, fontSize: 11},
+  overviewTitle: {fontFamily: fonts.heading, color: colors.ink, fontSize: 19, marginBottom: 13},
+  statsGrid: {flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12, marginBottom: 22},
+  section: {marginTop: 13},
+  sectionTitle: {fontFamily: fonts.heading, fontSize: 19, color: colors.ink, marginBottom: 12},
+  card: {backgroundColor: colors.white, padding: 18, borderRadius: 20, marginBottom: 12, ...shadow},
+  cardTitle: {fontFamily: fonts.heading, fontSize: 16, color: colors.ink},
+  value: {fontFamily: fonts.display, fontSize: 30, color: colors.ink, marginTop: 7},
+  label: {fontFamily: fonts.body, fontSize: 13, lineHeight: 19, color: colors.muted, marginTop: 4},
+  branchCard: {backgroundColor: colors.white, padding: 18, borderRadius: 20, marginBottom: 12, ...shadow},
+  branchName: {fontFamily: fonts.heading, fontSize: 17, color: colors.ink},
+  branchCode: {fontFamily: fonts.bodySemiBold, fontSize: 11, letterSpacing: .5, color: colors.primary, marginTop: 5},
+  branchInfo: {fontFamily: fonts.body, fontSize: 13, color: colors.muted, marginTop: 8, marginBottom: 10},
+  branchStatus: {fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.success, marginTop: 8},
+  healthCard: {backgroundColor: colors.white, padding: 18, borderRadius: 20, marginBottom: 12, borderWidth: 1, borderColor: colors.line},
+  healthTitle: {fontFamily: fonts.heading, fontSize: 16, color: colors.ink},
+  healthStatus: {fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.primary, marginTop: 8},
+  healthMessage: {fontFamily: fonts.body, fontSize: 13, lineHeight: 19, color: colors.muted, marginTop: 5},
+  searchInput: {backgroundColor: colors.white, borderColor: colors.line, borderWidth: 1, borderRadius: 16, paddingHorizontal: 15, paddingVertical: 12, fontFamily: fonts.body, fontSize: 13, color: colors.ink, marginBottom: 11},
+  filterContainer: {flexDirection: 'row', marginBottom: 14, gap: 8},
+  filterButton: {flex: 1, paddingVertical: 9, borderRadius: 14, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, alignItems: 'center'},
+  filterButtonActive: {backgroundColor: colors.primary, borderColor: colors.primary},
+  filterButtonText: {fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.muted},
+  filterButtonTextActive: {color: colors.white},
+  viewButton: {marginTop: 14, paddingVertical: 11, paddingHorizontal: 16, borderRadius: 14, alignItems: 'center', backgroundColor: colors.softBlue},
+  viewButtonText: {fontFamily: fonts.bodySemiBold, fontSize: 13, color: colors.primary},
+  actionRow: {flexDirection: 'row', marginTop: 14, gap: 10},
+  approveButton: {flex: 1, backgroundColor: colors.primary, paddingVertical: 11, borderRadius: 14, alignItems: 'center'},
+  rejectButton: {flex: 1, backgroundColor: colors.dangerSoft, paddingVertical: 11, borderRadius: 14, alignItems: 'center'},
+  pauseButton: {marginTop: 14, backgroundColor: colors.softOrange, paddingVertical: 11, borderRadius: 14, alignItems: 'center'},
+  resumeButton: {marginTop: 14, backgroundColor: colors.primary, paddingVertical: 11, borderRadius: 14, alignItems: 'center'},
+  revokeButton: {marginTop: 14, backgroundColor: colors.dangerSoft, paddingVertical: 11, borderRadius: 14, alignItems: 'center'},
+  buttonText: {fontFamily: fonts.bodySemiBold, color: colors.white, fontSize: 13},
+  buttonDisabled: {opacity: .55},
+  badge: {paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, fontFamily: fonts.bodySemiBold, fontSize: 11, overflow: 'hidden'},
+  badgeActive: {backgroundColor: '#e1f1e7', color: colors.success},
+  badgePaused: {backgroundColor: colors.softOrange, color: '#80513e'},
+  badgeRevoked: {backgroundColor: colors.dangerSoft, color: colors.danger},
+  feedbackBanner: {backgroundColor: colors.softBlue, borderRadius: 16, padding: 13, marginBottom: 16},
+  feedbackText: {fontFamily: fonts.bodyMedium, color: colors.primary, fontSize: 13, textAlign: 'center'},
+  error: {fontFamily: fonts.bodyMedium, color: colors.danger, textAlign: 'center', fontSize: 15},
+  retryButton: {marginTop: 16, backgroundColor: colors.primary, paddingVertical: 11, paddingHorizontal: 22, borderRadius: 14},
+  retryButtonText: {fontFamily: fonts.bodySemiBold, color: colors.white, fontSize: 13},
+  errorBanner: {backgroundColor: colors.dangerSoft, borderRadius: 16, padding: 12, marginBottom: 16, flexDirection: 'row', alignItems: 'center'},
+  errorBannerText: {fontFamily: fonts.bodyMedium, color: colors.danger, fontSize: 13, flex: 1, marginRight: 8},
+  retryButtonBanner: {backgroundColor: colors.white, paddingVertical: 7, paddingHorizontal: 11, borderRadius: 10},
+  retryButtonBannerText: {fontFamily: fonts.bodySemiBold, color: colors.danger, fontSize: 12},
+  actionErrorBanner: {backgroundColor: colors.dangerSoft, borderRadius: 14, padding: 10, marginTop: 10, flexDirection: 'row', alignItems: 'center'},
+  actionErrorText: {fontFamily: fonts.body, color: colors.danger, fontSize: 12, flex: 1, marginRight: 8},
+  inlineRetryButton: {backgroundColor: colors.white, paddingVertical: 5, paddingHorizontal: 9, borderRadius: 9},
+  inlineRetryText: {fontFamily: fonts.bodySemiBold, color: colors.danger, fontSize: 11},
+  empty: {fontFamily: fonts.body, color: colors.muted, fontSize: 13},
 });
 
 export default SuperAdminDashboardScreen;

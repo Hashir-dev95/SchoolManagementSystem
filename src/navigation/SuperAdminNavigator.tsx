@@ -17,13 +17,19 @@ const SuperAdminNavigator = () => {
         name="SuperAdminDashboard"
         component={SuperAdminDashboardScreen}
         options={{
-          title: 'Super Admin',
+          headerShown: false,
         }}
       />
       <Stack.Screen
         name="SuperAdminBranchDetails"
         component={SuperAdminBranchDetailsScreen}
-        options={{ title: 'Branch Details' }}
+        options={{
+          title: 'Branch details',
+          headerStyle: {backgroundColor: '#fbf9f4'},
+          headerTintColor: '#23595a',
+          headerShadowVisible: false,
+          headerTitleStyle: {fontFamily: 'Nunito-Bold', fontSize: 18},
+        }}
       />
     </Stack.Navigator>
   );

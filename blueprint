@@ -1,10 +1,10 @@
 # SCHOOL MANAGEMENT SYSTEM
 
-## MASTER DEVELOPMENT BLUEPRINT
+# MASTER DEVELOPMENT BLUEPRINT — UPDATED
 
 You are working as a **Senior Full-Stack React Native + Node.js Developer** on a production-ready School Management System.
 
-Your responsibility is to design and implement the system with clean architecture, secure APIs, scalable database design, proper role-based access, branch isolation, and fully working React Native screens.
+The system must be developed incrementally with clean architecture, secure APIs, scalable database design, role-based access, permission-based authorization, branch isolation, working React Native screens, real backend integration, testing, and production build verification.
 
 ---
 
@@ -14,7 +14,9 @@ Your responsibility is to design and implement the system with clean architectur
 
 * React Native CLI
 * TypeScript
-* React Navigation
+* React Navigation 7
+* React 19.1
+* React Native 0.81.5
 * Android + iOS support
 * Reusable components
 * API service layer
@@ -24,7 +26,7 @@ Your responsibility is to design and implement the system with clean architectur
 ## Backend
 
 * Node.js
-* Express.js
+* Express 5
 * TypeScript
 * REST API architecture
 * JWT authentication
@@ -32,6 +34,7 @@ Your responsibility is to design and implement the system with clean architectur
 * Permission-based authorization
 * Middleware-based security
 * Service / Controller / Route separation
+* CommonJS backend configuration
 
 ## Database
 
@@ -49,16 +52,19 @@ Your responsibility is to design and implement the system with clean architectur
 * Authentication middleware
 * Authorization middleware
 * Secure environment variables
-* Audit logging
+* Session management
+* Audit/history architecture
 * Security testing
 
 ## Development
 
 * Git
 * Feature branches
+* PR-based workflow
 * Small atomic commits
 * Build verification
 * Integration testing
+* Android real-device testing
 * Production build
 
 ---
@@ -96,9 +102,13 @@ Development MUST follow this order:
 27. Production Build
 28. Git / PR / Release
 
-DO NOT skip steps.
+## Current implementation status
 
-DO NOT start the next major feature before the current feature is completed and verified.
+Steps 1–12 are complete.
+
+**Current active development step: Step 13 — Principal.**
+
+Do not restart completed steps unless a real dependency or regression requires it.
 
 ---
 
@@ -109,37 +119,69 @@ Every feature must be completed END-TO-END.
 Required flow:
 
 Feature
+
 ↓
+
 MongoDB Model
+
 ↓
+
 Backend Service
+
 ↓
+
 Controller
+
 ↓
+
 API Route
+
 ↓
+
 Authentication
+
 ↓
+
 RBAC
+
 ↓
+
 Permissions
+
 ↓
+
 Branch Scoping
+
 ↓
+
 React Native Screen
+
 ↓
+
 API Integration
+
 ↓
+
 Loading / Error / Empty States
+
 ↓
+
 Testing
+
 ↓
+
 Build Verification
+
 ↓
+
 Git Commit
+
 ↓
+
 Git Push
+
 ↓
+
 Next Feature
 
 Never create large numbers of UI screens without working backend functionality.
@@ -152,14 +194,18 @@ The goal is a **fully working School Management System**, not a collection of ha
 
 Current root:
 
+```text
 D:\SchoolManagementSystem
+```
 
-Recommended structure:
+Architecture:
 
+```text
 SchoolManagementSystem/
 │
 ├── android/
 ├── ios/
+│
 ├── src/
 │   ├── components/
 │   ├── constants/
@@ -173,7 +219,8 @@ SchoolManagementSystem/
 │   │   └── teacher/
 │   ├── services/
 │   │   ├── api/
-│   │   └── auth/
+│   │   ├── auth/
+│   │   └── admin/
 │   ├── types/
 │   └── utils/
 │
@@ -192,16 +239,21 @@ SchoolManagementSystem/
 │
 ├── package.json
 └── README.md
+```
 
-Do not mix frontend and backend responsibilities.
+Frontend and backend responsibilities must remain separate.
 
 Backend constants belong inside:
 
+```text
 backend/src/constants/
+```
 
 Frontend constants belong inside:
 
+```text
 src/constants/
+```
 
 ---
 
@@ -216,10 +268,12 @@ The system supports these core roles:
 
 Current role constants:
 
+```text
 super_admin
 principal
 teacher
 student
+```
 
 Every authenticated request must identify the current user.
 
@@ -237,12 +291,39 @@ Core user fields:
 
 Passwords must NEVER be stored as plain text.
 
+## Current User Model Status
+
+`backend/src/models/user.ts` already supports all four core roles.
+
+Principal users use:
+
+```text
+role: principal
+branchId: assigned branch ObjectId
+```
+
+Super Admin users use:
+
+```text
+role: super_admin
+branchId: null
+```
+
+The existing model does not require a separate `principalId` field on Branch.
+
+Principal-to-branch relationship:
+
+```text
+User.branchId → Branch._id
+```
+
 ---
 
 # 6. AUTHENTICATION ARCHITECTURE
 
 Authentication flow:
 
+```text
 React Native
 ↓
 Login API
@@ -262,14 +343,19 @@ Access Token
 React Native token storage
 ↓
 Authenticated API requests
+```
 
 Protected requests use:
 
+```text
 Authorization: Bearer <token>
+```
 
 Backend middleware:
 
+```text
 authenticateToken
+```
 
 Responsibilities:
 
@@ -280,27 +366,54 @@ Responsibilities:
 * Attach authenticated user to request
 * Reject invalid/expired tokens
 
+## Existing Authentication
+
+Implemented and verified:
+
+* Login
+* Registration
+* JWT authentication
+* Current-user endpoint
+* Active-user validation
+* Password hashing
+* Password verification
+
+Public registration creates only:
+
+```text
+student
+```
+
+Privileged roles must NOT be created through public registration.
+
+Principal provisioning must happen through protected Super Admin functionality.
+
 ---
 
 # 7. RBAC ARCHITECTURE
 
 RBAC means:
 
+```text
 Role → Access
+```
 
 Roles:
 
-Super Admin
-Principal
-Teacher
-Student
+* Super Admin
+* Principal
+* Teacher
+* Student
 
 Authorization middleware:
 
+```text
 requireRole(...roles)
+```
 
 Example:
 
+```text
 Principal-only API
 ↓
 authenticateToken
@@ -308,27 +421,45 @@ authenticateToken
 requireRole('principal')
 ↓
 Controller
+```
 
 Unauthorized role:
 
+```text
 HTTP 403
+```
 
 Unauthenticated request:
 
+```text
 HTTP 401
+```
+
+## Existing RBAC
+
+Implemented:
+
+* Role constants
+* `requireRole()` middleware
+* Principal role support
+* Super Admin protection
+* Principal RBAC test endpoint
 
 ---
 
 # 8. PERMISSION SYSTEM
 
-Permissions provide more granular authorization.
+Permissions provide granular authorization.
 
 Permission format:
 
+```text
 resource.action
+```
 
-Examples:
+Existing permissions include:
 
+```text
 students.view
 students.create
 students.update
@@ -352,9 +483,31 @@ finance.view
 finance.manage
 
 reports.view
+```
+
+## Principal provisioning permission
+
+The permission catalog must also contain:
+
+```text
+principals.manage
+```
+
+This permission is intended for Super Admin Principal management.
+
+Super Admin currently receives all defined permissions through:
+
+```text
+Object.values(PERMISSIONS)
+```
+
+Therefore adding a new permission automatically makes it available to Super Admin without changing the Super Admin role mapping.
+
+Principal, Teacher, and Student must NOT automatically receive `principals.manage`.
 
 Architecture:
 
+```text
 permissions.ts
 ↓
 Permission definitions
@@ -367,8 +520,6 @@ permission.middleware.ts
 ↓
 requirePermission()
 
-Authorization flow:
-
 JWT
 ↓
 Authentication
@@ -380,6 +531,7 @@ Role Permissions
 Required Permission
 ↓
 Allow / Deny
+```
 
 ---
 
@@ -389,17 +541,21 @@ Branches are independent school campuses/branches.
 
 Example:
 
+```text
 Branch A
 Branch B
 Branch C
+```
 
 A user associated with Branch A must not access Branch B data unless explicitly authorized.
 
 Branch-aware entities should contain:
 
+```text
 branchId
+```
 
-Branch isolation must be enforced at the backend level.
+Branch isolation must be enforced at backend level.
 
 NEVER rely only on React Native UI hiding.
 
@@ -407,6 +563,7 @@ Every branch-sensitive API must verify branch ownership/scope.
 
 Target architecture:
 
+```text
 Authentication
 ↓
 Role
@@ -417,7 +574,35 @@ Branch Scope
 ↓
 Controller
 ↓
+Service
+↓
 Database Query
+```
+
+## Existing Branch Scope Middleware
+
+Implemented:
+
+```text
+requireBranchScope
+```
+
+Behavior:
+
+* verifies authenticated user
+* reloads user from database
+* verifies active account
+* Super Admin can operate without branch restriction
+* branch users must have a branch
+* assigned branch is attached to request scope
+
+Important:
+
+`requireBranchScope` alone is NOT sufficient.
+
+Services/controllers must actually use the scoped branch ID in MongoDB queries.
+
+The request body must never be blindly trusted for branch authorization.
 
 ---
 
@@ -434,10 +619,105 @@ Responsibilities:
 * View organization-wide data
 * Manage system configuration
 * Access cross-branch information where permitted
-* View audit logs
+* View audit/history information
 * Manage permissions/system-level settings
 
-Super Admin must have carefully controlled access.
+## Step 12 — SUPER ADMIN COMPLETE
+
+Super Admin functionality implemented and verified includes:
+
+### Authentication
+
+* Super Admin login
+* JWT authentication
+* Protected Super Admin routes
+
+### Authorization
+
+* Super Admin RBAC
+* Permission-aware access
+* Branch-aware behavior
+
+### Dashboard
+
+* Branch totals
+* Active branches
+* Inactive branches
+* Branch listing
+
+### Branch functionality
+
+* Branch search/filter functionality
+* Branch details
+* Related record/history information
+* Invalid branch handling
+
+### System information
+
+* System health
+* Backup status/alerts
+* Usage-limit state
+* Pending privileged requests
+
+### Automation state
+
+* Automation pause/resume state/configuration
+* No real automation worker/engine is claimed or implemented yet
+
+### Session management
+
+* Session revoke functionality
+
+### Error handling
+
+* Connection timeout handling
+* API errors
+* Retry behavior
+* Loading states
+* Empty states
+* Permission-aware UI
+
+### Frontend
+
+Implemented Super Admin screens/navigation/API services.
+
+Relevant architecture includes:
+
+```text
+SuperAdminNavigator
+SuperAdminDashboardScreen
+SuperAdminBranchDetailsScreen
+adminService
+```
+
+### Testing
+
+Step 12 testing has already been completed.
+
+Do NOT repeat Step 12 testing merely because Step 13 has started.
+
+Known limitation:
+
+Full privileged-request E2E depends on a legitimate Principal requester workflow and therefore belongs to Principal/related future workflow testing.
+
+Detailed audit/event history belongs to Step 24.
+
+## Step 12 Git
+
+Completed commit:
+
+```text
+43ecda7
+feat: complete super admin module
+```
+
+Pushed to:
+
+```text
+origin feture
+```
+
+`main` remains untouched.
 
 ---
 
@@ -445,7 +725,7 @@ Super Admin must have carefully controlled access.
 
 Principal manages a specific school branch.
 
-Principal responsibilities:
+Principal responsibilities include:
 
 * Dashboard
 * Students
@@ -458,12 +738,368 @@ Principal responsibilities:
 * Reports
 * Academic setup
 * Branch-level management
+* Approvals
+* Safety and school overview
+* Notices/tasks
 
-Principal must only operate within the assigned branch unless an explicit system-level permission exists.
+Principal must operate only within the assigned branch unless an explicit system-level permission exists.
 
 ---
 
-# 12. STUDENT MANAGEMENT
+# 12. STEP 13 — PRINCIPAL MASTER WORKFLOW
+
+Step 13 is now the current active development phase.
+
+```text
+STEP 13 — PRINCIPAL
+│
+├── 13.1 Principal Provisioning / Security
+│
+├── 13.2 Principal Dashboard API
+│   ├── Branch Attendance
+│   ├── Fee Summary
+│   ├── Safety Alerts
+│   ├── School Notices
+│   └── Pending Approvals
+│
+├── 13.3 Approval Domain Foundation
+│
+├── 13.4 Approval Inbox
+│
+├── 13.5 Approval Details
+│   ├── Approve
+│   ├── Reject
+│   ├── Request Changes
+│   └── Delegate + Expiry
+│
+├── 13.6 Approval Security
+│   ├── Permission
+│   ├── Branch Scope
+│   ├── Authority Limit
+│   ├── Separation Rules
+│   └── Duplicate Prevention
+│
+├── 13.7 Safety & School Overview
+│
+├── 13.8 Notices / Tasks
+│
+├── 13.9 History
+│
+├── 13.10 React Native Navigation + Screens
+│
+├── 13.11 Loading / Empty / Error / Retry
+│
+├── 13.12 Security Tests
+│
+├── 13.13 Integration Tests
+│
+├── 13.14 Android Real-Device Test
+│
+├── 13.15 Build
+│
+└── 13.16 Git Commit + Push
+```
+
+---
+
+# 13.1 PRINCIPAL PROVISIONING / SECURITY
+
+Principal creation must NOT be public.
+
+Target API:
+
+```text
+POST /api/admin/principals
+```
+
+Security chain:
+
+```text
+authenticateToken
+↓
+requireRole('super_admin')
+↓
+requirePermission(PRINCIPALS_MANAGE)
+↓
+Principal Controller
+↓
+Principal Service
+↓
+User Model
+```
+
+Input may contain:
+
+```json
+{
+  "fullName": "Principal Name",
+  "email": "principal@school.com",
+  "phone": "03XXXXXXXXX",
+  "password": "password",
+  "branchId": "BRANCH_OBJECT_ID"
+}
+```
+
+The client MUST NOT be allowed to choose:
+
+```text
+role
+```
+
+Backend automatically sets:
+
+```text
+role: principal
+```
+
+Backend must enforce:
+
+* authenticated caller
+* Super Admin role
+* `principals.manage` permission
+* required fields
+* valid email
+* valid password
+* valid MongoDB ObjectId
+* branch exists
+* branch is active
+* email uniqueness
+* password hashing
+* valid branch assignment
+* no duplicate Principal account where business rules prohibit it
+* password never returned in API response
+
+Success must only be returned after database confirmation.
+
+---
+
+# 13.2 PRINCIPAL MOBILE DASHBOARD
+
+Location:
+
+```text
+MOBILE APP > Principal > Principal mobile dashboard
+```
+
+Dashboard should contain:
+
+* Branch attendance
+* Fee summary
+* Safety alerts
+* School notices
+* Pending approvals
+
+Where applicable, selected:
+
+* student
+* class
+* trip
+* transaction
+
+should remain visible when navigating to related details.
+
+Dashboard data must be limited to the Principal's assigned branch and permissions.
+
+---
+
+# 13.3 APPROVAL DOMAIN FOUNDATION
+
+Principal approval system will support approval records for:
+
+* Leave
+* Refunds
+* Discounts
+* Results
+* Papers
+* Purchases
+* Payroll
+* Certificates
+
+Approval records should support:
+
+* requester
+* entity/student
+* type
+* amount where relevant
+* reason
+* supporting file/reference
+* before/after information
+* status
+* history
+* timestamps
+* branch
+* approval metadata
+
+---
+
+# 13.4 APPROVAL INBOX
+
+Principal approval inbox must support:
+
+* Search
+* Filters
+* Record rows
+* Status
+* Relevant approval metadata
+
+Actions:
+
+* Review
+* Approve
+* Reject with reason
+* Request changes
+* Delegate with expiry
+* Assign task where applicable
+
+Only authorized actions should be displayed.
+
+UI visibility is NOT authorization.
+
+Backend must enforce authorization independently.
+
+---
+
+# 13.5 APPROVAL DETAILS
+
+Location:
+
+```text
+MOBILE APP > Principal > Principal approval details
+```
+
+Shows:
+
+* Requester
+* Entity/student
+* Type
+* Amount where relevant
+* Reason
+* Supporting file
+* Before/after
+* History
+
+Actions:
+
+* Approve
+* Reject
+* Request changes
+* Delegate with expiry
+
+Before an approval action backend must:
+
+* re-check current status
+* re-check Principal authority
+* re-check branch scope
+* re-check permission
+* enforce approval limit
+* enforce requester separation rules
+* prevent repeated approval
+* confirm database update
+
+After successful action:
+
+* related record updates
+* dashboard/inbox state updates
+* confirmation shown
+* selected record remains preserved when returning to list
+
+---
+
+# 13.6 APPROVAL SECURITY
+
+Approval security must include:
+
+### Permission
+
+Only permitted Principals can perform the action.
+
+### Branch
+
+Principal can only operate on records belonging to the assigned branch.
+
+### Authority
+
+Approval limits must be checked server-side.
+
+### Separation of duties
+
+Requester/approver separation rules must be enforced where required.
+
+### Duplicate prevention
+
+A completed approval cannot be approved/rejected again.
+
+### Concurrency/status re-check
+
+Backend must verify the latest record state immediately before mutation.
+
+---
+
+# 13.7 SAFETY & SCHOOL OVERVIEW
+
+Location:
+
+```text
+MOBILE APP > Principal > Principal safety and school overview
+```
+
+Shows:
+
+* Missing attendance
+* Substitute gaps
+* Bus/gate exceptions
+* Active incidents
+* Pending helpdesk
+* Backup failures
+
+Actions:
+
+* Open affected record
+* Assign officer
+* Review resolution
+* Escalate
+
+Welfare/support details must use narrow permissions.
+
+Approved changes must notify affected users where required.
+
+---
+
+# 13.8 NOTICES / TASKS
+
+Principal workflow will support:
+
+* School notices
+* Notice opening/details
+* Principal tasks
+* Task assignment
+* Task status
+* Relevant notifications
+
+All mutations must be authenticated and permission protected.
+
+---
+
+# 13.9 PRINCIPAL HISTORY
+
+Important Principal actions should preserve history.
+
+Examples:
+
+* Approval
+* Rejection
+* Requested changes
+* Delegation
+* Important corrections
+* Printed documents
+* Safety resolution
+* Assignment actions
+
+Detailed organization-wide audit logging remains part of Step 24, but Principal workflows must preserve required operational history.
+
+---
+
+# 14. STUDENT MANAGEMENT
 
 Student module includes:
 
@@ -486,18 +1122,23 @@ Student module includes:
 
 Student APIs must enforce:
 
+```text
 Authentication
 +
 Permission
 +
 Branch Scope
+```
+
+Student implementation begins after Principal foundation/workflow is complete according to the master order.
 
 ---
 
-# 13. ADMISSIONS
+# 15. ADMISSIONS
 
 Admission workflow:
 
+```text
 Applicant
 ↓
 Application
@@ -511,10 +1152,11 @@ Student Creation
 Enrollment
 ↓
 Class / Section Assignment
+```
 
-Admission records should maintain status and timestamps.
+Admission records must maintain status and timestamps.
 
-Important statuses may include:
+Statuses may include:
 
 * pending
 * approved
@@ -525,10 +1167,11 @@ Admission actions must be permission protected.
 
 ---
 
-# 14. ACADEMIC SETUP
+# 16. ACADEMIC SETUP
 
 Academic structure:
 
+```text
 Academic Year
 ↓
 Classes
@@ -540,29 +1183,13 @@ Subjects
 Teacher Assignment
 ↓
 Student Enrollment
+```
 
-Examples:
-
-Academic Year:
-2026-2027
-
-Class:
-Grade 9
-
-Section:
-A
-
-Subjects:
-Mathematics
-English
-Physics
-Computer Science
-
-All branch-sensitive academic records must contain branchId where appropriate.
+All branch-sensitive academic records must contain branch scope where appropriate.
 
 ---
 
-# 15. TEACHER MANAGEMENT
+# 17. TEACHER MANAGEMENT
 
 Teacher module:
 
@@ -579,13 +1206,13 @@ Teacher module:
 
 Principal can manage teachers according to permissions.
 
-Teacher can access only the academic data assigned to them.
+Teacher can access only assigned academic data.
 
 ---
 
-# 16. ATTENDANCE
+# 18. ATTENDANCE
 
-Attendance should support:
+Attendance supports:
 
 * Student attendance
 * Teacher attendance where required
@@ -604,6 +1231,7 @@ Statuses:
 
 Attendance flow:
 
+```text
 Teacher
 ↓
 Assigned Class
@@ -619,14 +1247,15 @@ Submit
 Backend Validation
 ↓
 MongoDB
+```
 
-Duplicate attendance records for the same student/date/class should be prevented.
+Duplicate attendance records for the same student/date/class must be prevented.
 
 ---
 
-# 17. TEACHER ACADEMIC WORK
+# 19. TEACHER ACADEMIC WORK
 
-Teacher academic functionality:
+Teacher functionality:
 
 * Assigned classes
 * Assigned subjects
@@ -640,10 +1269,11 @@ Teacher must only manage academic work for assigned classes/subjects.
 
 ---
 
-# 18. EXAMS
+# 20. EXAMS
 
 Exam system:
 
+```text
 Exam
 ↓
 Academic Year
@@ -657,6 +1287,7 @@ Subject
 Exam Schedule
 ↓
 Marks
+```
 
 Features:
 
@@ -671,10 +1302,11 @@ Features:
 
 ---
 
-# 19. RESULTS
+# 21. RESULTS
 
 Result flow:
 
+```text
 Exam
 ↓
 Student
@@ -688,10 +1320,11 @@ Percentage
 Grade
 ↓
 Result
+```
 
 Results should be calculated consistently on the backend.
 
-Possible result states:
+Possible states:
 
 * pass
 * fail
@@ -705,7 +1338,7 @@ Principals can view/manage branch-level results according to permissions.
 
 ---
 
-# 20. FINANCE INTEGRATION
+# 22. FINANCE INTEGRATION
 
 Finance module should support:
 
@@ -721,14 +1354,11 @@ Finance data must be branch-scoped.
 
 Financial permissions must be explicitly controlled.
 
-Example:
-
-finance.view
-finance.manage
+Existing Super Admin dashboard fee-related/system-summary work must not be confused with the future full Finance module.
 
 ---
 
-# 21. REPORTS
+# 23. REPORTS
 
 Reports may include:
 
@@ -743,15 +1373,17 @@ Reports may include:
 
 Reports must respect:
 
+```text
 Role
 +
 Permission
 +
 Branch Scope
+```
 
 ---
 
-# 22. AUDIT LOGS
+# 24. AUDIT LOGS
 
 Important actions should be logged.
 
@@ -767,6 +1399,8 @@ Examples:
 * Marks modification
 * Fee/payment action
 * Permission-sensitive actions
+* Principal approvals
+* Principal security-sensitive actions
 
 Audit record should contain appropriate information such as:
 
@@ -778,14 +1412,17 @@ Audit record should contain appropriate information such as:
 * timestamp
 * relevant metadata
 
-Do not store passwords or sensitive secrets in audit logs.
+Do not store passwords or sensitive secrets.
+
+Detailed audit/event history remains a dedicated Step 24 feature.
 
 ---
 
-# 23. API ARCHITECTURE
+# 25. API ARCHITECTURE
 
 Use:
 
+```text
 Route
 ↓
 Middleware
@@ -797,8 +1434,9 @@ Service
 Model
 ↓
 MongoDB
+```
 
-Controllers should remain thin.
+Controllers remain thin.
 
 Business logic belongs in services.
 
@@ -808,29 +1446,34 @@ Authentication belongs in middleware.
 
 Authorization belongs in middleware.
 
+Branch-scope enforcement must be reflected in actual service queries.
+
 ---
 
-# 24. API RESPONSE STYLE
-
-Use consistent responses.
+# 26. API RESPONSE STYLE
 
 Success:
 
+```json
 {
-"success": true,
-"message": "...",
-"data": {}
+  "success": true,
+  "message": "...",
+  "data": {}
 }
+```
 
 Error:
 
+```json
 {
-"success": false,
-"message": "..."
+  "success": false,
+  "message": "..."
 }
+```
 
 Common status codes:
 
+```text
 200 — Success
 201 — Created
 400 — Bad Request
@@ -839,13 +1482,15 @@ Common status codes:
 404 — Not Found
 409 — Conflict
 500 — Server Error
+```
 
 ---
 
-# 25. REACT NATIVE ARCHITECTURE
+# 27. REACT NATIVE ARCHITECTURE
 
 Mobile application flow:
 
+```text
 App
 ↓
 Auth State
@@ -859,47 +1504,56 @@ Role Navigator
 Feature Screens
 ↓
 API Services
+```
 
-Navigation should be role-aware.
+Navigation is role-aware.
 
-Examples:
+Current navigation architecture includes:
 
+```text
 AuthNavigator
 PrincipalNavigator
-TeacherNavigator
-StudentNavigator
+SuperAdminNavigator
+```
 
-Do not allow users to access unauthorized screens merely by manually navigating.
+Super Admin navigation is already implemented.
 
-Backend remains the final authority.
+Principal navigation foundation exists, but Principal routing/screens will be expanded during Step 13.
+
+Backend remains the final authorization authority.
+
+Users must not gain access merely by manually navigating to a screen.
 
 ---
 
-# 26. API SERVICE LAYER
+# 28. API SERVICE LAYER
 
-React Native API calls should NOT be scattered throughout screens.
+React Native API calls must NOT be scattered throughout screens.
 
 Use:
 
+```text
 src/services/api/
+```
 
-Example:
-
-apiClient.ts
-
-Responsibilities:
+Core API client responsibilities:
 
 * Base URL
 * Headers
 * Authorization token
 * Request handling
-* Error handling
+* Timeout handling
+* JSON response handling
+* API error extraction
+* Network failure handling
 
-Feature services can be added as the system grows.
+Feature services should be added as the system grows.
+
+Existing services include authentication and Super Admin/admin functionality.
 
 ---
 
-# 27. UI RULES
+# 29. UI RULES
 
 Every production screen must handle:
 
@@ -909,6 +1563,7 @@ Every production screen must handle:
 * Error state
 * Network failure
 * Unauthorized state where relevant
+* Retry where appropriate
 
 Use reusable components.
 
@@ -916,15 +1571,23 @@ Avoid duplicate UI logic.
 
 Do not build fake static data into production screens unless clearly marked as temporary test data.
 
+Important:
+
+Frontend button hiding is only a UX feature.
+
+It is NOT authorization.
+
 ---
 
-# 28. VALIDATION
+# 30. VALIDATION
 
 Validate input on BOTH:
 
+```text
 Frontend
 AND
 Backend
+```
 
 Never trust client-side validation alone.
 
@@ -938,10 +1601,12 @@ Examples:
 * Marks limits
 * Duplicate records
 * Branch ownership
+* Current record status
+* Approval authority
 
 ---
 
-# 29. SECURITY RULES
+# 31. SECURITY RULES
 
 NEVER:
 
@@ -953,6 +1618,8 @@ NEVER:
 * Trust branchId sent from frontend without authorization
 * Allow unauthorized cross-branch queries
 * Put authorization logic only in UI
+* Return passwords in API responses
+* Allow public creation of privileged accounts
 
 ALWAYS:
 
@@ -964,10 +1631,12 @@ ALWAYS:
 * Validate inputs
 * Return appropriate HTTP status
 * Keep secrets in environment variables
+* Re-check sensitive record status before mutation
+* Prevent duplicate sensitive actions
 
 ---
 
-# 30. TESTING RULE
+# 32. TESTING RULE
 
 Each feature must be tested before moving forward.
 
@@ -985,22 +1654,35 @@ Minimum testing:
 
 Then:
 
+```text
 npm run build
+```
 
 must pass.
 
+## Important testing rule
+
+Do not repeat already completed tests without a real reason.
+
+Step 12 Super Admin testing is already complete.
+
+Step 13 testing begins with Principal functionality and its new security boundaries.
+
 ---
 
-# 31. GIT WORKFLOW
+# 33. GIT WORKFLOW
 
 Current working branch:
 
+```text
 feture
+```
 
-`main` must remain stable.
+`main` must remain stable and untouched.
 
 Workflow:
 
+```text
 Create feature
 ↓
 Implement
@@ -1018,54 +1700,80 @@ git add specific files
 git commit
 ↓
 git push origin feture
+↓
+PR / Review
+```
 
-Use meaningful commits.
+Use meaningful atomic commits.
 
 Examples:
 
-feat: implement branch scoping
-
-feat: implement principal student management
-
-fix: validate student branch access
-
-test: verify attendance permissions
+```text
+feat: add principal provisioning
+feat: add principal dashboard
+feat: add approval workflow
+feat: add principal safety overview
+fix: enforce principal branch scope
+test: verify principal approval permissions
+```
 
 Do NOT commit unrelated changes.
 
 ---
 
-# 32. FEATURE COMPLETION CHECKLIST
+# 34. FEATURE COMPLETION CHECKLIST
 
-A feature is NOT complete until:
+A feature is NOT complete until applicable requirements are satisfied:
 
 [ ] MongoDB model complete
+
 [ ] Backend service complete
+
 [ ] Controller complete
+
 [ ] Route complete
+
 [ ] Authentication integrated
+
 [ ] RBAC integrated
+
 [ ] Permissions integrated
+
 [ ] Branch scope integrated where required
+
 [ ] React Native screen complete
+
 [ ] API integration complete
+
 [ ] Loading state complete
+
 [ ] Error state complete
+
 [ ] Empty state complete
+
 [ ] Positive test complete
+
 [ ] Negative authorization test complete
+
 [ ] Build successful
+
 [ ] Git status reviewed
-[ ] Commit created
+
+[ ] Relevant files staged only
+
+[ ] Atomic commit created
+
 [ ] Push successful
 
 Only then move to the next feature.
 
 ---
 
-# 33. CURRENT PROJECT STATUS
+# 35. CURRENT PROJECT STATUS
 
-Completed:
+## Completed
+
+### Foundation
 
 1. React Native CLI
 2. TypeScript
@@ -1077,36 +1785,118 @@ Completed:
 8. JWT
 9. RBAC
 10. Permissions
-
-Current next step:
-
 11. Branch Scoping
 
-Existing permission architecture:
+### Step 12 — Super Admin
 
-backend/src/constants/permissions.ts
-backend/src/constants/rolePermissions.ts
-backend/src/middleware/permission.middleware.ts
+12. Super Admin — **COMPLETE**
 
-Existing authentication architecture:
+Implemented and verified:
 
-backend/src/middleware/auth.middleware.ts
+* Super Admin authentication
+* JWT authentication
+* Super Admin RBAC
+* Permission checks
+* Dashboard API
+* Branch listing
+* Branch statistics
+* Search/filter functionality
+* Branch details
+* Related history fields
+* System health
+* Backup alert state
+* Usage-limit state
+* Pending privileged requests
+* Session revoke
+* Automation pause/resume state/configuration
+* Invalid branch handling
+* API timeout/error/retry handling
+* Permission-aware UI
+* Loading states
+* Empty states
+* Error states
+* Android real-device testing
+* Backend build
+* TypeScript checks
+* Git commit
+* Git push
 
-Existing user model:
+Step 12 commit:
 
-backend/src/models/user.ts
+```text
+43ecda7 feat: complete super admin module
+```
+
+Remote:
+
+```text
+origin feture
+```
+
+## Current Database
+
+Current project MongoDB database:
+
+```text
+test
+```
+
+Relevant current collections include:
+
+```text
+users
+branches
+sessions
+privilegedrequests
+automations
+```
+
+Other existing collections in the database are legacy/unrelated and must NOT be deleted without explicit investigation.
+
+## Current Principal Readiness
+
+Already available:
+
+* Principal role
+* Principal branch assignment through `User.branchId`
+* Principal RBAC
+* Branch-scope middleware
+* Permission architecture
+* JWT authentication
+* Existing Principal navigator foundation
+* Existing Principal dashboard foundation
+
+Next implementation:
+
+```text
+Step 13.1 — Principal Provisioning / Security
+```
+
+First planned permission:
+
+```text
+PRINCIPALS_MANAGE: 'principals.manage'
+```
+
+Then:
+
+```text
+POST /api/admin/principals
+```
+
+with Super Admin-only authorization.
 
 ---
 
-# 34. DEVELOPMENT COMMUNICATION RULE
+# 36. DEVELOPMENT COMMUNICATION RULE
 
 When working on this project:
 
 * Give clear step-by-step instructions.
 * Do not give unnecessary information.
 * Do not jump multiple development steps at once.
-* Give one small actionable task at a time when implementation is in progress.
-* Wait for the command/output/result before proceeding to the next task.
+* Give one small actionable task at a time during implementation.
+* Wait for command/output/result before proceeding.
 * Never assume a command succeeded without confirmation.
 * If an error occurs, fix the current step first.
 * Do not move to the next feature until the current feature is fully complete.
@@ -1114,31 +1904,38 @@ When working on this project:
 * Do not modify `main`.
 * Do not expose secrets.
 * Do not ask the user to share `.env`.
+* Do not redo completed Step 12 work unnecessarily.
+* Keep current working implementation as the source of truth.
+* Never silently remove existing functionality while implementing a new feature.
 
 ---
 
-# 35. FINAL PRODUCT GOAL
+# 37. FINAL PRODUCT GOAL
 
-The final application should provide a secure, scalable and production-ready School Management System where:
+The final application must be a secure, scalable, production-ready School Management System.
 
+Organization structure:
+
+```text
 Super Admin
 ↓
 Manages organization and branches
-
+↓
 Principal
 ↓
 Manages assigned school branch
-
+↓
 Teacher
 ↓
 Manages assigned academic responsibilities
-
+↓
 Student
 ↓
 Views personal academic information
 
 All users operate through:
 
+```text
 Authentication
 ↓
 JWT
@@ -1151,6 +1948,23 @@ Branch Scoping
 ↓
 Authorized API
 ↓
+Service Layer
+↓
 MongoDB
+```
 
-The final system must be a real end-to-end application, not a UI prototype.
+The final system must be a **real end-to-end application**, not a UI prototype.
+
+Every completed module must preserve:
+
+* Security
+* Branch isolation
+* Role boundaries
+* Permission boundaries
+* Backend authorization
+* Data consistency
+* Error handling
+* Testability
+* Production buildability
+* Clean Git history
+* Existing working functionality
