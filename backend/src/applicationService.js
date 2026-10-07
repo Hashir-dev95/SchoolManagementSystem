@@ -22,13 +22,19 @@ function validateApplication(input) {
 }
 
 async function resolveAssignedTeacher(classId) {
-  const assignments = await getDatabase()
+  const db = getDatabase();
+  const assignments = await db
     .collection('classTeacherAssignments')
     .find({ classId, active: true, status: 'assigned' })
     .limit(2)
     .toArray();
   if (assignments.length !== 1 || !assignments[0].teacherUserId) return null;
-  return assignments[0].teacherUserId;
+  const teacher = await db.collection('users').findOne({
+    id: assignments[0].teacherUserId,
+    role: 'teacher',
+    active: { $ne: false },
+  });
+  return teacher?.id || null;
 }
 
 async function createClassTeacherApplication({

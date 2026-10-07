@@ -26,6 +26,7 @@ function verifiedLinkFilter(parentUserId, studentId) {
   const filter = {
     parentUserId,
     revokedAt: null,
+    status: { $ne: 'revoked' },
     $or: [{ status: 'verified' }, { verified: true }],
   };
   if (studentId) filter.studentId = studentId;
@@ -92,6 +93,10 @@ function publishedFilter() {
   return { $or: [{ published: true }, { status: 'published' }] };
 }
 
+function ownedChildFilter(child, extra = {}) {
+  return { ...extra, studentId: child.id };
+}
+
 router.use(requireParentContext);
 router.use('/payments', parentPaymentRoutes);
 
@@ -116,7 +121,7 @@ router.get('/notifications', async (req, res, next) => {
     const classIds = [
       ...new Set(children.map(child => child.classId).filter(Boolean)),
     ];
-    const notifications = classIds.length
+    const dlpNotifications = classIds.length
       ? await getDatabase()
           .collection('parentNotifications')
           .find(
@@ -130,6 +135,18 @@ router.get('/notifications', async (req, res, next) => {
           .sort({ createdAt: -1 })
           .toArray()
       : [];
+    const recipientNotifications = await getDatabase()
+      .collection('notifications')
+      .find(
+        { recipientUserId: req.parentUserId, recipientRole: 'parent' },
+        { projection: { recipientUserId: 0 } },
+      )
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .toArray();
+    const notifications = [...dlpNotifications, ...recipientNotifications]
+      .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt))
+      .slice(0, 100);
     const unreadCount = notifications.reduce(
       (count, notification) => count + (notification.readAt ? 0 : 1),
       0,
@@ -155,9 +172,30 @@ router.post('/notifications/:notificationId/read', async (req, res, next) => {
       $or: identity,
     });
     if (!notification) {
-      return res
-        .status(404)
-        .json({ success: false, error: 'Parent notification was not found.' });
+      const generic = getDatabase().collection('notifications');
+      const result = await generic.updateOne(
+        {
+          recipientUserId: req.parentUserId,
+          recipientRole: 'parent',
+          $or: identity,
+          readAt: null,
+        },
+        { $set: { readAt: new Date() } },
+      );
+      if (!result.matchedCount) {
+        const exists = await generic.findOne({
+          recipientUserId: req.parentUserId,
+          recipientRole: 'parent',
+          $or: identity,
+        });
+        if (!exists) {
+          return res.status(404).json({
+            success: false,
+            error: 'Parent notification was not found.',
+          });
+        }
+      }
+      return res.json({ success: true, data: { read: true } });
     }
 
     const links = await getDatabase()
@@ -210,10 +248,22 @@ router.get('/notifications/:notificationId', async (req, res, next) => {
         $or: notificationMatch,
       });
     if (!notification) {
-      return res.status(404).json({
-        success: false,
-        error: 'Parent DLP notification was not found.',
-      });
+      const genericNotification = await getDatabase()
+        .collection('notifications')
+        .findOne({
+          recipientUserId: req.parentUserId,
+          recipientRole: 'parent',
+          $or: notificationMatch,
+        });
+      if (!genericNotification) {
+        return res.status(404).json({
+          success: false,
+          error: 'Parent notification was not found.',
+        });
+      }
+      const safeNotification = { ...genericNotification };
+      delete safeNotification.recipientUserId;
+      return res.json({ success: true, data: safeNotification });
     }
 
     const links = await getDatabase()
@@ -365,7 +415,7 @@ router.get('/children/:studentId/attendance', async (req, res, next) => {
       return res.status(400).json({ success: false, error: range.error });
     const data = await getDatabase()
       .collection('attendance')
-      .find({ studentId: req.parentChild.id, ...range.filter })
+      .find(ownedChildFilter(req.parentChild, range.filter))
       .sort({ date: -1 })
       .toArray();
     return res.json({ success: true, data });
@@ -404,8 +454,21 @@ router.get('/children/:studentId/results', async (req, res, next) => {
   try {
     const data = await getDatabase()
       .collection('results')
-      .find({ studentId: req.parentChild.id, ...publishedFilter() })
+      .find(ownedChildFilter(req.parentChild, publishedFilter()))
       .sort({ publishedAt: -1 })
+      .toArray();
+    return res.json({ success: true, data });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get('/children/:studentId/progress', async (req, res, next) => {
+  try {
+    const data = await getDatabase()
+      .collection('progress')
+      .find(ownedChildFilter(req.parentChild, publishedFilter()))
+      .sort({ updatedAt: -1 })
       .toArray();
     return res.json({ success: true, data });
   } catch (error) {
@@ -625,10 +688,14 @@ router.get('/children/:studentId/feedback', async (req, res, next) => {
       getDatabase()
         .collection('progress')
         .find({
-          studentId,
-          $or: [
-            { teacherFeedback: { $type: 'string', $ne: '' } },
-            { feedback: { $type: 'string', $ne: '' } },
+          $and: [
+            ownedChildFilter(req.parentChild, publishedFilter()),
+            {
+              $or: [
+                { teacherFeedback: { $type: 'string', $ne: '' } },
+                { feedback: { $type: 'string', $ne: '' } },
+              ],
+            },
           ],
         })
         .sort({ updatedAt: -1 })
@@ -641,3 +708,10 @@ router.get('/children/:studentId/feedback', async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.__test = {
+  getVerifiedChild,
+  ownedChildFilter,
+  publishedFilter,
+  requireParentContext,
+  verifiedLinkFilter,
+};

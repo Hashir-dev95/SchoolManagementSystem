@@ -29,8 +29,8 @@ const copy = {
     title: 'Big ideas start\nwith curious minds.',
     tag: 'A LITTLE CURIOSITY GOES A LONG WAY',
     description: 'Your classes, your progress, your next little adventure.',
-    action: 'My learning',
-    page: 'Learning',
+    action: 'My timetable',
+    page: 'Timetable',
   },
   Finance: {
     title: 'Less paperwork.\nMore peace of mind.',
@@ -354,7 +354,7 @@ export default function HiraHome({
                   'Results',
                   '#F3E9FF',
                 ],
-                ['Learning', 'View classes', 'Learning', '#E4F2F0'],
+                ['Timetable', 'View classes', 'Timetable', '#E4F2F0'],
               ]
           ).map(([label, value, route, color]) => (
             <Pressable

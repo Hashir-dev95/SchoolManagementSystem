@@ -20,6 +20,8 @@ export const studentApi = {
   getProgress: () => request('/progress'),
   getFees: () => request('/fees'),
   getHomework: () => request('/homework'),
+  getHomeworkDetails: homeworkId =>
+    request(`/homework/${encodeURIComponent(homeworkId)}`),
   getApplications: () => request('/applications'),
   getNotifications: () => request('/notifications'),
   getNotification: notificationId =>

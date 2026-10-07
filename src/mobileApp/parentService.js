@@ -38,6 +38,8 @@ export const parentApi = {
     request(`/children/${encodeURIComponent(childId)}/homework`),
   getResults: childId =>
     request(`/children/${encodeURIComponent(childId)}/results`),
+  getProgress: childId =>
+    request(`/children/${encodeURIComponent(childId)}/progress`),
   getFees: childId => request(`/children/${encodeURIComponent(childId)}/fees`),
   getFeeCheckoutConfig: () => request('/payments/checkout/config'),
   createFeeCheckout: (childId, invoiceId, method) =>

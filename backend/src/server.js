@@ -43,6 +43,7 @@ app.use((error, _req, res, _next) => {
 async function startServer() {
   const port = Number(process.env.PORT) || 5000;
   await connectDatabase();
+  await apiRoutes.initializeFinanceIndexes();
   const server = app.listen(port, () =>
     console.log(
       `JavaScript API server listening on port ${port}; MongoDB connected`,

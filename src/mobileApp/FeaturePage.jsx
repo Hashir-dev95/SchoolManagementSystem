@@ -161,6 +161,8 @@ export default function FeaturePage({
     'Student Progress Tracking',
     'Student Fees',
     'Receipt Details',
+    'Attendance Calendar',
+    'Leave Request',
   ].includes(page);
   const parentReceiptPage = role === 'Parent' && page === 'Receipt Details';
   const provider = useMemo(
@@ -312,7 +314,9 @@ export default function FeaturePage({
     try {
       const result = await provider.submit(form);
       if (result) setData(Array.isArray(result) ? { records: result } : result);
-      setNotice('Request completed.');
+      setNotice(
+        result?.notice || 'The connected school service completed the request.',
+      );
     } catch (failure) {
       setError(failure.message || 'Could not complete this action.');
     } finally {

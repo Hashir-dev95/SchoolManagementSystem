@@ -1,5 +1,5 @@
 import PageIcon from './PageIcon';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -23,7 +23,12 @@ import HiraHome from './HiraHome';
 import FeaturePage from './FeaturePage';
 import TeacherApplicationsPage from './TeacherApplicationsPage';
 import { features, staffFeatures } from './featureScreens';
-import { theme as t, rolePages, bottomPages } from './hiraTheme';
+import {
+  theme as t,
+  rolePages,
+  previewRolePages,
+  bottomPages,
+} from './hiraTheme';
 import { checkSessionExpiry, subscribeSessionExpiry } from './authSession';
 import { validateSession } from './authService';
 
@@ -84,6 +89,10 @@ export default function MobileApp({
   const role = previewOnly
     ? previewRole
     : roleNames[String(user?.role || '').toLowerCase()];
+  const availablePages = useMemo(
+    () => (previewOnly ? previewRolePages[role] : rolePages[role]) || [],
+    [previewOnly, role],
+  );
   const { width } = useWindowDimensions();
   const drawerWidth = Math.min(width * 0.91, 370);
   const slide = useRef(new Animated.Value(-drawerWidth)).current;
@@ -191,10 +200,10 @@ export default function MobileApp({
   useEffect(() => {
     if (!role) return;
     setPage((currentPage) =>
-      rolePages[role]?.includes(currentPage) ? currentPage : 'Home',
+      availablePages.includes(currentPage) ? currentPage : 'Home',
     );
     setChildId('');
-  }, [role]);
+  }, [role, availablePages]);
   const navigate = (next, selectedChildId) => {
     if (selectedChildId) setChildId(selectedChildId);
     setPage(next);
@@ -303,7 +312,7 @@ export default function MobileApp({
           },
         ]}
       >
-        {page === 'Inbox' && ownedRoles.includes(role) ? (
+        {page === 'Inbox' ? (
           <MessagesInbox
             key={`${role}-${previewOnly ? 'preview' : 'live'}`}
             role={role}
@@ -475,7 +484,7 @@ export default function MobileApp({
                   </View>
                 ) : null}
                 <Text style={s.group}>YOUR SCHOOL DAY</Text>
-                {rolePages[role].map((item) => (
+                {availablePages.map((item) => (
                     <Pressable
                       key={item}
                       accessibilityRole="button"

@@ -1,4 +1,5 @@
 import PageIcon from './PageIcon';
+import SchoolPageHero from './SchoolPageHero';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   BackHandler,
@@ -12,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { theme as t } from './hiraTheme';
+import InboxNotifications from './InboxNotifications';
 
 // Fictional conversations are rendered only in the explicitly labelled local preview.
 const previewConversations = [
@@ -22,9 +24,24 @@ const previewConversations = [
     unread: 2,
     updatedAt: '2026-10-02T10:15:00.000Z',
     messages: [
-      { id: 'preview-msg-1', sender: 'them', body: 'Welcome to the messaging preview.', createdAt: '2026-10-02T10:10:00.000Z' },
-      { id: 'preview-msg-2', sender: 'me', body: 'Thank you. This is a local sample.', createdAt: '2026-10-02T10:12:00.000Z' },
-      { id: 'preview-msg-3', sender: 'them', body: 'No message is sent to the school.', createdAt: '2026-10-02T10:15:00.000Z' },
+      {
+        id: 'preview-msg-1',
+        sender: 'them',
+        body: 'Welcome to the messaging preview.',
+        createdAt: '2026-10-02T10:10:00.000Z',
+      },
+      {
+        id: 'preview-msg-2',
+        sender: 'me',
+        body: 'Thank you. This is a local sample.',
+        createdAt: '2026-10-02T10:12:00.000Z',
+      },
+      {
+        id: 'preview-msg-3',
+        sender: 'them',
+        body: 'No message is sent to the school.',
+        createdAt: '2026-10-02T10:15:00.000Z',
+      },
     ],
   },
   {
@@ -34,7 +51,12 @@ const previewConversations = [
     unread: 0,
     updatedAt: '2026-10-01T08:30:00.000Z',
     messages: [
-      { id: 'preview-msg-4', sender: 'them', body: 'This conversation is fictional preview content.', createdAt: '2026-10-01T08:30:00.000Z' },
+      {
+        id: 'preview-msg-4',
+        sender: 'them',
+        body: 'This conversation is fictional preview content.',
+        createdAt: '2026-10-01T08:30:00.000Z',
+      },
     ],
   },
 ];
@@ -50,7 +72,12 @@ function fullTime(value) {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? ''
-    : date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    : date.toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
 }
 
 function Button({ children, onPress, disabled, secondary = false }) {
@@ -67,34 +94,53 @@ function Button({ children, onPress, disabled, secondary = false }) {
         pressed && { opacity: 0.8 },
       ]}
     >
-      <Text style={[styles.buttonText, secondary && styles.secondaryButtonText]}>{children}</Text>
+      <Text
+        style={[styles.buttonText, secondary && styles.secondaryButtonText]}
+      >
+        {children}
+      </Text>
     </Pressable>
   );
 }
 
-export default function MessagesInbox({ role, previewOnly = false, onNavigate }) {
+export default function MessagesInbox({
+  role,
+  previewOnly = false,
+  onNavigate,
+}) {
   const [conversations, setConversations] = useState(
     previewOnly ? previewConversations : [],
   );
   const [search, setSearch] = useState('');
+  const [unreadOnly, setUnreadOnly] = useState(false);
   const [selectedId, setSelectedId] = useState('');
   const [draft, setDraft] = useState('');
   const [previewNotice, setPreviewNotice] = useState('');
-  const selected = conversations.find((item) => item.id === selectedId);
+  const selected = conversations.find(item => item.id === selectedId);
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return conversations.filter((item) =>
-      !query || `${item.name} ${item.subtitle} ${item.messages.map((message) => message.body).join(' ')}`.toLowerCase().includes(query),
+    return conversations.filter(
+      item =>
+        (!unreadOnly || item.unread > 0) &&
+        (!query ||
+          `${item.name} ${item.subtitle} ${item.messages
+            .map(message => message.body)
+            .join(' ')}`
+            .toLowerCase()
+            .includes(query)),
     );
-  }, [conversations, search]);
+  }, [conversations, search, unreadOnly]);
 
   useEffect(() => {
     if (!selectedId) return undefined;
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      setSelectedId('');
-      setDraft('');
-      return true;
-    });
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        setSelectedId('');
+        setDraft('');
+        return true;
+      },
+    );
     return () => subscription.remove();
   }, [selectedId]);
 
@@ -103,9 +149,13 @@ export default function MessagesInbox({ role, previewOnly = false, onNavigate })
     setDraft('');
     setPreviewNotice('');
     if (previewOnly && item.unread) {
-      setConversations((current) => current.map((conversation) =>
-        conversation.id === item.id ? { ...conversation, unread: 0 } : conversation,
-      ));
+      setConversations(current =>
+        current.map(conversation =>
+          conversation.id === item.id
+            ? { ...conversation, unread: 0 }
+            : conversation,
+        ),
+      );
     }
   }
 
@@ -113,20 +163,25 @@ export default function MessagesInbox({ role, previewOnly = false, onNavigate })
     const body = draft.trim();
     if (!body || !selected || !previewOnly) return;
     const createdAt = new Date().toISOString();
-    setConversations((current) => current.map((conversation) =>
-      conversation.id === selected.id
-        ? {
-            ...conversation,
-            updatedAt: createdAt,
-            messages: [...conversation.messages, {
-              id: `preview-local-${createdAt}`,
-              sender: 'me',
-              body,
-              createdAt,
-            }],
-          }
-        : conversation,
-    ));
+    setConversations(current =>
+      current.map(conversation =>
+        conversation.id === selected.id
+          ? {
+              ...conversation,
+              updatedAt: createdAt,
+              messages: [
+                ...conversation.messages,
+                {
+                  id: `preview-local-${createdAt}`,
+                  sender: 'me',
+                  body,
+                  createdAt,
+                },
+              ],
+            }
+          : conversation,
+      ),
+    );
     setDraft('');
     setPreviewNotice('Saved in this local preview only. Nothing was sent.');
   }
@@ -144,7 +199,16 @@ export default function MessagesInbox({ role, previewOnly = false, onNavigate })
         keyboardDismissMode="on-drag"
       >
         <Text style={styles.eyebrow}>{role.toUpperCase()} · MESSAGES</Text>
-        <Text style={styles.title}>{selected ? selected.name : 'Your conversations'}</Text>
+        <Text style={styles.title}>
+          {selected ? selected.name : 'Messages'}
+        </Text>
+        {!selected ? (
+          <SchoolPageHero
+            title="Keep in touch"
+            subtitle="Your conversations with the school, together in one place."
+            icon="message"
+          />
+        ) : null}
         <Text style={styles.subtitle}>
           {selected ? selected.subtitle : 'School conversations in one place'}
         </Text>
@@ -152,42 +216,73 @@ export default function MessagesInbox({ role, previewOnly = false, onNavigate })
         {previewOnly ? (
           <View style={styles.previewBanner}>
             <PageIcon name="sparkle" size={18} />
-            <Text style={styles.previewText}>Developer Preview · fictional local messages; nothing is sent.</Text>
+            <Text style={styles.previewText}>
+              Developer Preview · fictional local messages; nothing is sent.
+            </Text>
           </View>
         ) : null}
+
+        <InboxNotifications role={role} previewOnly={previewOnly} />
 
         {selected ? (
           <>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Back to conversations"
-              onPress={() => { setSelectedId(''); setDraft(''); }}
+              onPress={() => {
+                setSelectedId('');
+                setDraft('');
+              }}
               style={styles.back}
             >
               <PageIcon name="chevron" size={18} style={styles.backIcon} />
               <Text style={styles.backText}>All conversations</Text>
             </Pressable>
             <View style={styles.threadHeading}>
-              <View style={styles.avatar}><Text style={styles.avatarText}>{selected.name.slice(0, 1)}</Text></View>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {selected.name.slice(0, 1)}
+                </Text>
+              </View>
               <View style={styles.flex}>
                 <Text style={styles.threadName}>{selected.name}</Text>
                 <Text style={styles.muted}>{selected.subtitle}</Text>
               </View>
             </View>
             <View style={styles.messageList}>
-              {selected.messages.map((message) => {
+              {selected.messages.map(message => {
                 const mine = message.sender === 'me';
                 return (
-                  <View key={message.id} style={[styles.messageRow, mine && styles.mineRow]}>
-                    <View style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble]}>
-                      <Text style={[styles.messageText, mine && styles.mineText]}>{message.body}</Text>
-                      <Text style={[styles.timestamp, mine && styles.mineTimestamp]}>{fullTime(message.createdAt)}</Text>
+                  <View
+                    key={message.id}
+                    style={[styles.messageRow, mine && styles.mineRow]}
+                  >
+                    <View
+                      style={[
+                        styles.bubble,
+                        mine ? styles.mineBubble : styles.theirBubble,
+                      ]}
+                    >
+                      <Text
+                        style={[styles.messageText, mine && styles.mineText]}
+                      >
+                        {message.body}
+                      </Text>
+                      <Text
+                        style={[styles.timestamp, mine && styles.mineTimestamp]}
+                      >
+                        {fullTime(message.createdAt)}
+                      </Text>
                     </View>
                   </View>
                 );
               })}
             </View>
-            {previewNotice ? <Text accessibilityRole="alert" style={styles.previewNotice}>{previewNotice}</Text> : null}
+            {previewNotice ? (
+              <Text accessibilityRole="alert" style={styles.previewNotice}>
+                {previewNotice}
+              </Text>
+            ) : null}
           </>
         ) : (
           <>
@@ -203,125 +298,374 @@ export default function MessagesInbox({ role, previewOnly = false, onNavigate })
                 returnKeyType="search"
               />
               {search ? (
-                <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setSearch('')}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search"
+                  onPress={() => setSearch('')}
+                >
                   <PageIcon name="close" size={18} color={t.muted} />
                 </Pressable>
               ) : null}
             </View>
-            {previewOnly ? filtered.map((item) => (
-              <Pressable
-                key={item.id}
-                accessibilityRole="button"
-                accessibilityLabel={`${item.name}${item.unread ? `, ${item.unread} unread` : ''}`}
-                onPress={() => openConversation(item)}
-                style={styles.conversation}
-              >
-                <View style={styles.avatar}><Text style={styles.avatarText}>{item.name.slice(0, 1)}</Text></View>
-                <View style={styles.conversationCopy}>
-                  <View style={styles.conversationTop}>
-                    <Text numberOfLines={1} style={styles.threadName}>{item.name}</Text>
-                    <Text style={styles.time}>{shortTime(item.updatedAt)}</Text>
+            <View style={styles.tabs}>
+              {[false, true].map(unread => (
+                <Pressable
+                  key={String(unread)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: unreadOnly === unread }}
+                  onPress={() => setUnreadOnly(unread)}
+                  style={[
+                    styles.tab,
+                    unreadOnly === unread && styles.tabActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      unreadOnly === unread && styles.tabActiveText,
+                    ]}
+                  >
+                    {unread ? 'Unread' : 'All conversations'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            {previewOnly ? (
+              filtered.map(item => (
+                <Pressable
+                  key={item.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${item.name}${
+                    item.unread ? `, ${item.unread} unread` : ''
+                  }`}
+                  onPress={() => openConversation(item)}
+                  style={styles.conversation}
+                >
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>
+                      {item.name.slice(0, 1)}
+                    </Text>
                   </View>
-                  <View style={styles.conversationBottom}>
-                    <Text numberOfLines={1} style={styles.previewMessage}>{item.messages[item.messages.length - 1]?.body}</Text>
-                    {item.unread ? <View style={styles.unreadBadge}><Text style={styles.unreadText}>{item.unread}</Text></View> : null}
+                  <View style={styles.conversationCopy}>
+                    <View style={styles.conversationTop}>
+                      <Text numberOfLines={1} style={styles.threadName}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.time}>
+                        {shortTime(item.updatedAt)}
+                      </Text>
+                    </View>
+                    <View style={styles.conversationBottom}>
+                      <Text numberOfLines={1} style={styles.previewMessage}>
+                        {item.messages[item.messages.length - 1]?.body}
+                      </Text>
+                      {item.unread ? (
+                        <View style={styles.unreadBadge}>
+                          <Text style={styles.unreadText}>{item.unread}</Text>
+                        </View>
+                      ) : null}
+                    </View>
                   </View>
-                </View>
-              </Pressable>
-            )) : (
+                </Pressable>
+              ))
+            ) : (
               <View style={styles.unavailable}>
-                <View style={styles.unavailableIcon}><PageIcon name="message" size={32} /></View>
-                <Text style={styles.sectionTitle}>Messaging isn’t available yet</Text>
+                <View style={styles.unavailableIcon}>
+                  <PageIcon name="message" size={32} />
+                </View>
+                <Text style={styles.sectionTitle}>
+                  Messaging isn’t available yet
+                </Text>
                 <Text style={styles.muted}>
-                  No messaging API is connected for this account. No live messages are shown, and sending is disabled.
+                  No messaging API is connected for this account. No live
+                  messages are shown, and sending is disabled.
                 </Text>
               </View>
             )}
             {previewOnly && filtered.length === 0 ? (
               <View style={styles.empty}>
                 <Text style={styles.sectionTitle}>No conversations found</Text>
-                <Text style={styles.muted}>Try another name or search term.</Text>
+                <Text style={styles.muted}>
+                  Try another name or search term.
+                </Text>
               </View>
             ) : null}
           </>
         )}
 
-        <View style={styles.composer}>
-          <TextInput
-            accessibilityLabel="Write a message"
-            placeholder={previewOnly ? 'Write a preview message…' : 'Messaging unavailable'}
-            placeholderTextColor={t.muted}
-            value={draft}
-            onChangeText={setDraft}
-            editable={previewOnly && !!selected}
-            multiline
-            style={[styles.composerInput, !(previewOnly && selected) && styles.composerDisabled]}
-          />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={previewOnly ? 'Send local preview message' : 'Sending unavailable'}
-            accessibilityState={{ disabled: !previewOnly || !selected || !draft.trim() }}
-            disabled={!previewOnly || !selected || !draft.trim()}
-            onPress={sendPreviewMessage}
-            style={({ pressed }) => [styles.send, (!previewOnly || !selected || !draft.trim()) && styles.disabled, pressed && { opacity: 0.8 }]}
-          >
-            <PageIcon name="message" size={19} color="#FFFFFF" />
-          </Pressable>
-        </View>
-        <Button secondary onPress={() => onNavigate('Home')}>Back to Overview</Button>
+        {selected ? (
+          <View style={styles.composer}>
+            <TextInput
+              accessibilityLabel="Write a message"
+              placeholder={
+                previewOnly
+                  ? 'Write a preview message…'
+                  : 'Messaging unavailable'
+              }
+              placeholderTextColor={t.muted}
+              value={draft}
+              onChangeText={setDraft}
+              editable={previewOnly && !!selected}
+              multiline
+              style={[
+                styles.composerInput,
+                !(previewOnly && selected) && styles.composerDisabled,
+              ]}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                previewOnly
+                  ? 'Send local preview message'
+                  : 'Sending unavailable'
+              }
+              accessibilityState={{
+                disabled: !previewOnly || !selected || !draft.trim(),
+              }}
+              disabled={!previewOnly || !selected || !draft.trim()}
+              onPress={sendPreviewMessage}
+              style={({ pressed }) => [
+                styles.send,
+                (!previewOnly || !selected || !draft.trim()) && styles.disabled,
+                pressed && { opacity: 0.8 },
+              ]}
+            >
+              <PageIcon name="message" size={19} color="#FFFFFF" />
+            </Pressable>
+          </View>
+        ) : null}
+        <Button secondary onPress={() => onNavigate('Home')}>
+          Back to Overview
+        </Button>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  tabs: { flexDirection: 'row', gap: 10, marginBottom: 18, flexWrap: 'wrap' },
+  tab: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 24,
+    backgroundColor: '#EEEDFF',
+  },
+  tabActive: { backgroundColor: '#4857B5' },
+  tabText: { color: '#4857B5', fontSize: 12, fontWeight: '700' },
+  tabActiveText: { color: '#FFFFFF' },
   flex: { flex: 1 },
   page: { padding: 18, paddingBottom: 30 },
-  eyebrow: { color: t.muted, fontSize: 9, fontWeight: '700', letterSpacing: 1.4 },
-  title: { color: t.ink, fontSize: 27, lineHeight: 34, fontWeight: '900', marginTop: 10 },
-  subtitle: { color: t.muted, fontSize: 13, lineHeight: 20, marginTop: 7, marginBottom: 16 },
-  previewBanner: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 12, marginBottom: 14, borderRadius: 15, backgroundColor: '#FFF0CF' },
-  previewText: { flex: 1, color: '#755518', fontSize: 11, lineHeight: 16, fontWeight: '600' },
-  searchBox: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 14, backgroundColor: t.paper, borderWidth: 1, borderColor: t.border, borderRadius: 16, marginBottom: 10 },
+  eyebrow: {
+    color: t.muted,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+  },
+  title: {
+    color: t.ink,
+    fontSize: 27,
+    lineHeight: 34,
+    fontWeight: '900',
+    marginTop: 10,
+  },
+  subtitle: {
+    color: t.muted,
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 7,
+    marginBottom: 16,
+  },
+  previewBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    padding: 12,
+    marginBottom: 14,
+    borderRadius: 15,
+    backgroundColor: '#FFF0CF',
+  },
+  previewText: {
+    flex: 1,
+    color: '#755518',
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+  },
+  searchBox: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 14,
+    backgroundColor: t.paper,
+    borderWidth: 1,
+    borderColor: t.border,
+    borderRadius: 16,
+    marginBottom: 10,
+  },
   searchInput: { flex: 1, minHeight: 44, color: t.ink, fontSize: 14 },
-  conversation: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 82, padding: 13, marginBottom: 8, backgroundColor: t.paper, borderRadius: 19, borderWidth: 1, borderColor: t.border },
+  conversation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 96,
+    padding: 16,
+    marginBottom: 8,
+    backgroundColor: t.paper,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: t.border,
+  },
   conversationCopy: { flex: 1 },
   conversationTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  conversationBottom: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 7 },
-  avatar: { width: 45, height: 45, borderRadius: 16, backgroundColor: t.lavender, alignItems: 'center', justifyContent: 'center' },
+  conversationBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 7,
+  },
+  avatar: {
+    width: 45,
+    height: 45,
+    borderRadius: 16,
+    backgroundColor: t.lavender,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   avatarText: { color: t.primary, fontSize: 17, fontWeight: '800' },
   threadName: { flex: 1, color: t.ink, fontSize: 14, fontWeight: '800' },
   time: { color: t.muted, fontSize: 10 },
   previewMessage: { flex: 1, color: t.muted, fontSize: 12 },
-  unreadBadge: { minWidth: 21, height: 21, borderRadius: 11, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center', backgroundColor: t.primary },
+  unreadBadge: {
+    minWidth: 21,
+    height: 21,
+    borderRadius: 11,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: t.primary,
+  },
   unreadText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
-  unavailable: { alignItems: 'center', padding: 22, marginTop: 8, backgroundColor: t.paper, borderWidth: 1, borderColor: t.border, borderRadius: 23, ...t.shadow },
-  unavailableIcon: { width: 62, height: 62, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: t.lavender, marginBottom: 12 },
-  sectionTitle: { color: t.ink, fontSize: 16, fontWeight: '800', textAlign: 'center', marginBottom: 7 },
+  unavailable: {
+    alignItems: 'center',
+    padding: 22,
+    marginTop: 8,
+    backgroundColor: t.paper,
+    borderWidth: 1,
+    borderColor: t.border,
+    borderRadius: 23,
+    ...t.shadow,
+  },
+  unavailableIcon: {
+    width: 62,
+    height: 62,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 22,
+    backgroundColor: t.lavender,
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    color: t.ink,
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 7,
+  },
   muted: { color: t.muted, fontSize: 12, lineHeight: 19, textAlign: 'center' },
   empty: { alignItems: 'center', padding: 24 },
-  back: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 10, marginBottom: 8 },
+  back: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
   backIcon: { transform: [{ rotate: '180deg' }] },
   backText: { color: t.primary, fontSize: 13, fontWeight: '700' },
-  threadHeading: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, marginBottom: 16, backgroundColor: t.paper, borderRadius: 18, borderWidth: 1, borderColor: t.border },
+  threadHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 13,
+    marginBottom: 16,
+    backgroundColor: t.paper,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: t.border,
+  },
   messageList: { gap: 10, paddingBottom: 12 },
   messageRow: { flexDirection: 'row', justifyContent: 'flex-start' },
   mineRow: { justifyContent: 'flex-end' },
-  bubble: { maxWidth: '85%', paddingVertical: 10, paddingHorizontal: 13, borderRadius: 18 },
-  theirBubble: { backgroundColor: t.paper, borderWidth: 1, borderColor: t.border, borderTopLeftRadius: 5 },
+  bubble: {
+    maxWidth: '85%',
+    paddingVertical: 10,
+    paddingHorizontal: 13,
+    borderRadius: 18,
+  },
+  theirBubble: {
+    backgroundColor: t.paper,
+    borderWidth: 1,
+    borderColor: t.border,
+    borderTopLeftRadius: 5,
+  },
   mineBubble: { backgroundColor: t.primary, borderTopRightRadius: 5 },
   messageText: { color: t.ink, fontSize: 14, lineHeight: 20 },
   mineText: { color: '#FFFFFF' },
   timestamp: { color: t.muted, fontSize: 9, marginTop: 5 },
   mineTimestamp: { color: '#E1E3FF', textAlign: 'right' },
-  previewNotice: { color: '#755518', fontSize: 11, marginBottom: 8, textAlign: 'center' },
-  composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 9, padding: 8, marginTop: 10, marginBottom: 14, backgroundColor: t.paper, borderWidth: 1, borderColor: t.border, borderRadius: 19 },
-  composerInput: { flex: 1, minHeight: 42, maxHeight: 110, paddingHorizontal: 10, paddingTop: 10, color: t.ink, fontSize: 13 },
+  previewNotice: {
+    color: '#755518',
+    fontSize: 11,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 9,
+    padding: 8,
+    marginTop: 10,
+    marginBottom: 14,
+    backgroundColor: t.paper,
+    borderWidth: 1,
+    borderColor: t.border,
+    borderRadius: 19,
+  },
+  composerInput: {
+    flex: 1,
+    minHeight: 48,
+    maxHeight: 110,
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    color: t.ink,
+    fontSize: 13,
+  },
   composerDisabled: { opacity: 0.6 },
-  send: { width: 42, height: 42, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: t.primary },
+  send: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: t.primary,
+  },
   disabled: { opacity: 0.42 },
-  button: { alignSelf: 'flex-start', minHeight: 42, paddingHorizontal: 17, paddingVertical: 11, borderRadius: 16, backgroundColor: t.primary, ...t.shadow },
-  secondaryButton: { backgroundColor: t.lavender, elevation: 0, shadowOpacity: 0 },
+  button: {
+    alignSelf: 'flex-start',
+    minHeight: 48,
+    paddingHorizontal: 17,
+    paddingVertical: 11,
+    borderRadius: 16,
+    backgroundColor: t.primary,
+    ...t.shadow,
+  },
+  secondaryButton: {
+    backgroundColor: t.lavender,
+    elevation: 0,
+    shadowOpacity: 0,
+  },
   buttonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   secondaryButtonText: { color: t.primary },
 });

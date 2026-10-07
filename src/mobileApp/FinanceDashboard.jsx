@@ -151,6 +151,10 @@ export default function FinanceDashboard({
   const [studentSearchLoading, setStudentSearchLoading] = useState(false);
   const [studentSearchError, setStudentSearchError] = useState('');
   const [verifyingPaymentId, setVerifyingPaymentId] = useState('');
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [receiptDetails, setReceiptDetails] = useState(null);
+  const [receiptLoadingId, setReceiptLoadingId] = useState('');
+  const [receiptError, setReceiptError] = useState('');
   const financeSearch = (previewOnly ? searchQuery || filters.q : filters.q)
     .trim()
     .toLowerCase();
@@ -251,7 +255,7 @@ export default function FinanceDashboard({
     setPaymentNotice('');
     const amount = Number(payment.amount);
     const method = payment.method.trim().toLowerCase();
-    const allowedMethods = ['cash', 'bank_transfer', 'card', 'cheque', 'other'];
+    const allowedMethods = ['cash', 'bank_transfer', 'card', 'easypaisa', 'cheque', 'other'];
     if (!payment.invoiceId.trim()) {
       setPaymentError('Enter an invoice ID.');
       return;
@@ -388,6 +392,45 @@ export default function FinanceDashboard({
     }
   }
 
+  async function rejectPayment(paymentId) {
+    if (previewOnly || verificationLock.current) return;
+    const reason = rejectionReason.trim();
+    if (!reason) {
+      setPaymentError('Enter a rejection reason before rejecting a payment.');
+      return;
+    }
+    verificationLock.current = true;
+    setVerifyingPaymentId(String(paymentId));
+    setPaymentError('');
+    setPaymentNotice('');
+    try {
+      await financeApi.rejectPayment(paymentId, reason);
+      setRejectionReason('');
+      setPaymentNotice('Payment rejected. Its reserved invoice balance is available again.');
+      await loadData(filters, true);
+    } catch (error) {
+      setPaymentError(financeErrorMessage(error));
+    } finally {
+      verificationLock.current = false;
+      setVerifyingPaymentId('');
+    }
+  }
+
+  async function openReceipt(paymentId) {
+    if (previewOnly) return;
+    setReceiptLoadingId(String(paymentId));
+    setReceiptError('');
+    setReceiptDetails(null);
+    try {
+      const result = await financeApi.getReceipt(paymentId);
+      setReceiptDetails(result.data);
+    } catch (error) {
+      setReceiptError(financeErrorMessage(error));
+    } finally {
+      setReceiptLoadingId('');
+    }
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.keyboard}
@@ -451,7 +494,7 @@ export default function FinanceDashboard({
         autoCapitalize="characters"
       />
       <Field
-        label="Payment method (cash, bank_transfer, card, cheque, other)"
+        label="Payment method (cash, bank_transfer, card, easypaisa, cheque, other)"
         value={filters.method}
         onChangeText={(value) =>
           setFilters((current) => ({ ...current, method: value }))
@@ -523,6 +566,17 @@ export default function FinanceDashboard({
               <Text style={styles.cardText}>
                 {student.id} · {student.grade || 'Grade unavailable'}
               </Text>
+              {!previewOnly ? (
+                <Action
+                  title="Use student as filter"
+                  secondary
+                  onPress={() => {
+                    const next = { ...filters, studentId: String(student.id) };
+                    setFilters(next);
+                    loadData(next, true);
+                  }}
+                />
+              ) : null}
             </View>
           ))}
         </>
@@ -711,7 +765,7 @@ export default function FinanceDashboard({
             keyboardType="decimal-pad"
           />
           <Field
-            label="Method (cash, bank_transfer, card, cheque, other)"
+            label="Method (cash, bank_transfer, card, easypaisa, cheque, other)"
             value={payment.method}
             onChangeText={(value) =>
               setPayment((current) => ({ ...current, method: value }))
@@ -744,6 +798,13 @@ export default function FinanceDashboard({
               No payment entries are awaiting verification.
             </Text>
           ) : null}
+          <Field
+            label="Rejection reason"
+            value={rejectionReason}
+            onChangeText={setRejectionReason}
+            placeholder="Required only when rejecting an entry"
+            autoCapitalize="sentences"
+          />
           {pendingPayments.map((item) => (
             <View key={String(item._id)} style={styles.card}>
               <Text style={styles.cardTitle}>Invoice {item.invoiceId}</Text>
@@ -752,15 +813,31 @@ export default function FinanceDashboard({
                 {item.status}
               </Text>
               {!previewOnly ? (
-                <Action
-                  title={
-                    verifyingPaymentId === String(item._id)
-                      ? 'Verifying…'
-                      : 'Verify payment and issue receipt'
-                  }
-                  disabled={previewOnly || !!verifyingPaymentId}
-                  onPress={() => verifyPayment(String(item._id))}
-                />
+                <>
+                  <Action
+                    title={
+                      verifyingPaymentId === String(item._id)
+                        ? 'Verifying…'
+                        : 'Verify payment and issue receipt'
+                    }
+                    disabled={previewOnly || !!verifyingPaymentId}
+                    onPress={() => verifyPayment(String(item._id))}
+                  />
+                  <Action
+                    title={
+                      verifyingPaymentId === String(item._id)
+                        ? 'Saving…'
+                        : 'Reject payment entry'
+                    }
+                    secondary
+                    disabled={
+                      previewOnly ||
+                      !!verifyingPaymentId ||
+                      !rejectionReason.trim()
+                    }
+                    onPress={() => rejectPayment(String(item._id))}
+                  />
+                </>
               ) : (
                 <Text style={styles.muted}>
                   Preview only · no real verification
@@ -819,8 +896,39 @@ export default function FinanceDashboard({
                   ? new Date(receipt.confirmedAt).toLocaleDateString()
                   : 'Date unavailable'}
               </Text>
+              {!previewOnly ? (
+                <Action
+                  title={
+                    receiptLoadingId === String(receipt._id)
+                      ? 'Opening…'
+                      : 'View receipt details'
+                  }
+                  secondary
+                  disabled={!!receiptLoadingId}
+                  onPress={() => openReceipt(String(receipt._id))}
+                />
+              ) : null}
             </View>
           ))}
+          <Notice message={receiptError} error />
+          {receiptDetails ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>{receiptDetails.receiptNumber}</Text>
+              <Text style={styles.cardText}>
+                {receiptDetails.student || 'Student'} · invoice {receiptDetails.invoiceId}
+              </Text>
+              <Text style={styles.cardText}>
+                {receiptDetails.description || 'Invoice payment'} ·{' '}
+                {formatMoney(receiptDetails.amount, receiptDetails.currency)}
+              </Text>
+              <Text style={styles.cardText}>
+                {receiptDetails.method} · {receiptDetails.reference || 'No reference'} ·{' '}
+                {receiptDetails.confirmedAt
+                  ? new Date(receiptDetails.confirmedAt).toLocaleString()
+                  : 'Date unavailable'}
+              </Text>
+            </View>
+          ) : null}
         </>
       )}
       {(page === 'All' || page === 'Collection report') && (

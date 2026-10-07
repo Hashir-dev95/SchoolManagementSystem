@@ -21,6 +21,16 @@ function queryString(filters = {}) {
   return encoded ? `?${encoded}` : '';
 }
 
+function paymentQuery(status, filters = {}) {
+  return queryString({
+    status,
+    studentId: filters.studentId,
+    from: filters.from,
+    to: filters.to,
+    method: filters.method,
+  });
+}
+
 export const financeApi = {
   getNotifications: async () => {
     const payload = await notificationRequest('');
@@ -49,12 +59,17 @@ export const financeApi = {
       body: JSON.stringify(payment),
     }),
   getPendingPayments: filters =>
-    request(`/finance/payments?status=pending_verification${queryString(filters)}`),
+    request(`/finance/payments${paymentQuery('pending_verification', filters)}`),
   getPaymentHistory: filters =>
-    request(`/finance/payments?status=confirmed${queryString(filters)}`),
+    request(`/finance/payments${paymentQuery('confirmed', filters)}`),
   verifyPayment: paymentId =>
     request(`/finance/payments/${encodeURIComponent(paymentId)}/verify`, {
       method: 'POST',
+    }),
+  rejectPayment: (paymentId, reason) =>
+    request(`/finance/payments/${encodeURIComponent(paymentId)}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
     }),
   getReceipts: filters => request(`/finance/receipts${queryString(filters)}`),
   getReceipt: paymentId =>

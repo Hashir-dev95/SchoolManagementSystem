@@ -32,7 +32,8 @@ export const rolePages = {
   ],
   Student: [
     'Home',
-    'Learning',
+    'Profile',
+    'Timetable',
     'Attendance',
     'Results',
     'Progress',
@@ -75,17 +76,48 @@ export const rolePages = {
 };
 export const bottomPages = {
   Parent: ['Home', 'Progress', 'Inbox'],
-  Student: ['Home', 'Learning', 'Homework', 'Inbox'],
+  Student: ['Home', 'Timetable', 'Homework', 'Inbox'],
   Finance: ['Home', 'Invoices', 'Receipts', 'Inbox'],
   Teacher: ['Home', 'Classes', 'Inbox'],
   Principal: ['Home', 'Reports', 'Inbox'],
   'Super Admin': ['Home', 'Schools', 'Inbox'],
 };
 
-Object.entries(extraPages).forEach(([role, pages]) => {
+const connectedExtraPages = {
+  Parent: [
+    'Academic Report',
+    'Monthly Feedback',
+    'Student Progress Tracking',
+    'Student Fees',
+    'Receipt Details',
+    'Attendance Calendar',
+    'Leave Request',
+  ],
+  Student: [
+    'Academic Report',
+    'Monthly Feedback',
+    'Student Fees',
+    'Attendance Calendar',
+    'Leave Request',
+  ],
+  Finance: ['Student Ledger', 'Voucher Scan', 'Receipt Details', 'Finance Reports'],
+};
+
+Object.entries(connectedExtraPages).forEach(([role, pages]) => {
   rolePages[role] = [
     ...rolePages[role].filter((page) => page !== 'Inbox'),
     ...pages,
     'Inbox',
   ];
 });
+
+export const previewRolePages = Object.fromEntries(
+  Object.entries(rolePages).map(([role, pages]) => [
+    role,
+    [
+      ...pages.filter((page) => page !== 'Inbox'),
+      ...(extraPages[role] || []).filter((page) => !pages.includes(page)),
+      'Inbox',
+    ],
+  ]),
+);

@@ -68,6 +68,8 @@ export function getFeatureProvider(role, page, preferredChild) {
             : await studentApi.getProgress();
         const fields = page === 'Academic Report'
           ? [['Subject', ['subject']], ['Term', ['term', 'termName', 'examName']], ['Session', ['session', 'academicSession', 'schoolYear']]]
+          : page === 'Monthly Feedback'
+          ? [['Month', ['month', 'period', 'date', 'createdAt', 'updatedAt']], ['Teacher', ['teacher', 'teacherName']]]
           : [['Subject', ['subject', 'area']], ['Period', ['period', 'date', 'createdAt', 'updatedAt']]];
         return { records: filterRows(data, filters, fields).map(record) };
       },
@@ -210,6 +212,7 @@ export function getFeatureProvider(role, page, preferredChild) {
       submit: async (form) => {
         const response = await financeApi.verifyVoucher(form['Voucher code']);
         return {
+          notice: 'Voucher verified against the authorized Finance branch.',
           records: [
             {
               ...response.data,
@@ -229,6 +232,7 @@ export function getFeatureProvider(role, page, preferredChild) {
         const response = await financeApi.getReceipt(form['Payment ID']);
         const receipt = response.data;
         return {
+          notice: 'Confirmed receipt loaded from the authorized Finance branch.',
           records: [
             {
               ...receipt,
@@ -291,7 +295,10 @@ export function getFeatureProvider(role, page, preferredChild) {
           if (!id) throw new Error('No verified child is linked.');
           await parentApi.submitApplication(id, application);
         }
-        return { records: [] };
+        return {
+          records: [],
+          notice: 'Leave application submitted to the assigned class teacher.',
+        };
       },
     };
   if (role === 'Finance' && page === 'Finance Reports')

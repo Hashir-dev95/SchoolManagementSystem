@@ -137,6 +137,7 @@ export const pageIconNames = {
   Schools: 'school',
   Parent: 'users',
   Student: 'graduation',
+  Profile: 'graduation',
   Finance: 'wallet',
   Teacher: 'book',
   Principal: 'school',

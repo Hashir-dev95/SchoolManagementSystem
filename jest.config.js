@@ -1,3 +1,12 @@
+const reactNativePreset = require('@react-native/jest-preset');
+
 module.exports = {
-  preset: '@react-native/jest-preset',
+  ...reactNativePreset,
+  transform: {
+    ...reactNativePreset.transform,
+    '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
+  },
+  transformIgnorePatterns: [
+    'node_modules/(?!((@)?react-native|@react-native(-community)?|@react-navigation|@react-native-documents)/)',
+  ],
 };

@@ -7,6 +7,7 @@ export function setAccessToken(token, expiry) {
 }
 export function clearAccessToken() { accessToken = ''; expiresAt = 0; }
 export function getAuthHeaders() { return accessToken ? { Authorization: `Bearer ${accessToken}` } : {}; }
+export function getSessionExpiry() { return expiresAt; }
 export function subscribeSessionExpiry(listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);

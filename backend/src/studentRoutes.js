@@ -9,10 +9,22 @@ const { createClassTeacherApplication } = require('./applicationService');
 const { createUserNotificationRouter } = require('./userNotificationRoutes');
 
 const router = express.Router();
+const MAX_SUBMISSION_FILE_BYTES = 5 * 1024 * 1024;
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 10 },
+  limits: { fileSize: MAX_SUBMISSION_FILE_BYTES, files: 1, fields: 10 },
 });
+let submissionIndexPromise;
+
+function ensureSubmissionIndex(submissions) {
+  if (!submissionIndexPromise) {
+    submissionIndexPromise = submissions.createIndex(
+      { homeworkId: 1, studentId: 1 },
+      { unique: true, name: 'unique_student_homework_submission' },
+    );
+  }
+  return submissionIndexPromise;
+}
 
 function requireStudentContext(req, res, next) {
   const userId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
@@ -79,6 +91,10 @@ function publishedFilter() {
   return { $or: [{ published: true }, { status: 'published' }] };
 }
 
+function ownedStudentFilter(student, extra = {}) {
+  return { ...extra, studentId: student.id };
+}
+
 function recordIdFilter(id) {
   const alternatives = [{ id }];
   if (ObjectId.isValid(id)) alternatives.push({ _id: new ObjectId(id) });
@@ -115,6 +131,38 @@ function submissionDeadline(value) {
   return Number.isFinite(deadline.getTime())
     ? { deadline }
     : { error: 'Homework has an invalid deadline.' };
+}
+
+function validateSubmissionFile(file) {
+  if (!file) return { type: null, safeFileName: null };
+  const allowed = {
+    '.pdf': { mime: 'application/pdf', signature: Buffer.from('%PDF-') },
+    '.jpg': { mime: 'image/jpeg', signature: Buffer.from([0xff, 0xd8, 0xff]) },
+    '.jpeg': { mime: 'image/jpeg', signature: Buffer.from([0xff, 0xd8, 0xff]) },
+    '.png': {
+      mime: 'image/png',
+      signature: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    },
+  };
+  const extension = path.extname(file.originalname || '').toLowerCase();
+  const type = allowed[extension];
+  if (
+    !type ||
+    file.mimetype !== type.mime ||
+    !Buffer.isBuffer(file.buffer) ||
+    !file.buffer.subarray(0, type.signature.length).equals(type.signature)
+  ) {
+    return {
+      error: 'File content, extension, and MIME type must match PDF, JPEG, or PNG.',
+    };
+  }
+  return {
+    type,
+    safeFileName: path
+      .basename(String(file.originalname).replace(/\\/g, '/'))
+      .replace(/[\r\n\0"]/g, '_')
+      .slice(0, 180),
+  };
 }
 
 router.use(requireStudentContext);
@@ -209,7 +257,7 @@ router.get('/attendance', async (req, res, next) => {
       return res.status(400).json({ success: false, error: range.error });
     const data = await getDatabase()
       .collection('attendance')
-      .find({ studentId: req.studentRecord.id, ...range.filter })
+      .find(ownedStudentFilter(req.studentRecord, range.filter))
       .sort({ date: -1 })
       .toArray();
     return res.json({ success: true, data });
@@ -222,7 +270,7 @@ router.get('/results', async (req, res, next) => {
   try {
     const data = await getDatabase()
       .collection('results')
-      .find({ studentId: req.studentRecord.id, ...publishedFilter() })
+      .find(ownedStudentFilter(req.studentRecord, publishedFilter()))
       .sort({ publishedAt: -1 })
       .toArray();
     return res.json({ success: true, data });
@@ -235,7 +283,7 @@ router.get('/progress', async (req, res, next) => {
   try {
     const data = await getDatabase()
       .collection('progress')
-      .find({ studentId: req.studentRecord.id })
+      .find(ownedStudentFilter(req.studentRecord, publishedFilter()))
       .sort({ updatedAt: -1 })
       .toArray();
     return res.json({ success: true, data });
@@ -419,6 +467,36 @@ router.get('/homework', async (req, res, next) => {
   }
 });
 
+router.get('/homework/:homeworkId', async (req, res, next) => {
+  try {
+    const db = getDatabase();
+    const homework = await db.collection('homework').findOne({
+      $and: [
+        recordIdFilter(req.params.homeworkId),
+        publishedFilter(),
+        studentClassFilter(req.studentRecord),
+      ],
+    });
+    if (!homework) {
+      return res.status(404).json({
+        success: false,
+        error: 'Published homework was not found for this student.',
+      });
+    }
+    const homeworkId = homework.id || String(homework._id);
+    const latestSubmission = await db.collection('submissions').findOne(
+      { homeworkId, studentId: req.studentRecord.id },
+      { projection: { fileData: 0 }, sort: { submittedAt: -1 } },
+    );
+    return res.json({
+      success: true,
+      data: { ...homework, latestSubmission: latestSubmission || null },
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.get('/homework/:homeworkId/submissions', async (req, res, next) => {
   try {
     const db = getDatabase();
@@ -547,45 +625,9 @@ router.post(
         });
       }
 
-      let type = null;
-      let safeFileName = null;
-      if (req.file) {
-        const allowed = {
-          '.pdf': { mime: 'application/pdf', signature: Buffer.from('%PDF-') },
-          '.jpg': {
-            mime: 'image/jpeg',
-            signature: Buffer.from([0xff, 0xd8, 0xff]),
-          },
-          '.jpeg': {
-            mime: 'image/jpeg',
-            signature: Buffer.from([0xff, 0xd8, 0xff]),
-          },
-          '.png': {
-            mime: 'image/png',
-            signature: Buffer.from([
-              0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-            ]),
-          },
-        };
-        const extension = path.extname(req.file.originalname).toLowerCase();
-        type = allowed[extension];
-        if (
-          !type ||
-          req.file.mimetype !== type.mime ||
-          !req.file.buffer
-            .subarray(0, type.signature.length)
-            .equals(type.signature)
-        ) {
-          return res.status(400).json({
-            success: false,
-            error:
-              'File content, extension, and MIME type must match PDF, JPEG, or PNG.',
-          });
-        }
-        safeFileName = path
-          .basename(req.file.originalname.replace(/\\/g, '/'))
-          .replace(/[\r\n\0"]/g, '_')
-          .slice(0, 180);
+      const { type, safeFileName, error: fileError } = validateSubmissionFile(req.file);
+      if (fileError) {
+        return res.status(400).json({ success: false, error: fileError });
       }
 
       const submission = {
@@ -604,7 +646,19 @@ router.post(
         status: 'submitted',
         submittedAt: new Date(),
       };
-      await db.collection('submissions').insertOne(submission);
+      const submissions = db.collection('submissions');
+      await ensureSubmissionIndex(submissions);
+      try {
+        await submissions.insertOne(submission);
+      } catch (error) {
+        if (error?.code === 11000) {
+          return res.status(409).json({
+            success: false,
+            error: 'A submission already exists for this homework.',
+          });
+        }
+        throw error;
+      }
       const { fileData, ...response } = submission;
       return res.status(201).json({ success: true, data: response });
     } catch (error) {
@@ -628,3 +682,12 @@ router.use((error, _req, res, next) => {
 });
 
 module.exports = router;
+module.exports.__test = {
+  ownedStudentFilter,
+  MAX_SUBMISSION_FILE_BYTES,
+  publishedFilter,
+  requireStudentContext,
+  submissionDeadline,
+  studentClassFilter,
+  validateSubmissionFile,
+};
