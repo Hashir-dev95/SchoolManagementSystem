@@ -15,6 +15,11 @@ import { parentApi } from './parentService';
 import { studentApi } from './studentService';
 import { financeApi } from './financeService';
 import { parentPreview, studentPreview, financePreview } from './previewData';
+import {
+  SchoolPanel,
+  SchoolQuickActions,
+  SchoolRow,
+} from './SchoolReferenceUI';
 
 const copy = {
   Parent: {
@@ -43,7 +48,7 @@ const copy = {
 };
 const money = (value, currency = 'PKR') =>
   value == null ? '—' : `${currency} ${Number(value).toLocaleString()}`;
-const list = (value) => (Array.isArray(value) ? value : []);
+const list = value => (Array.isArray(value) ? value : []);
 function Action({ children, onPress, secondary = false }) {
   return (
     <Pressable
@@ -164,7 +169,7 @@ export default function HiraHome({
   const attendancePercent = attendance.length
     ? `${Math.round(
         (attendance.filter(
-          (item) => String(item.status).toLowerCase() === 'present',
+          item => String(item.status).toLowerCase() === 'present',
         ).length /
           attendance.length) *
           100,
@@ -249,7 +254,7 @@ export default function HiraHome({
           {children.map((child, index) => (
             <Pressable
               key={child.id || child._id || index}
-              onPress={() => onNavigate('My children', child.id)}
+              onPress={() => onNavigate('Student Progress Tracking', child.id)}
               accessibilityRole="button"
               accessibilityLabel={`Open ${
                 child.fullName || child.name
@@ -296,6 +301,47 @@ export default function HiraHome({
           {!loading && !error && !children.length ? (
             <Text style={s.subtitle}>No linked children available.</Text>
           ) : null}
+          <SchoolPanel title="Stay connected" style={s.connected}>
+            <SchoolQuickActions
+              actions={[
+                {
+                  label: 'Request',
+                  icon: '💌',
+                  onPress: () => onNavigate('Applications'),
+                },
+                {
+                  label: 'Feedback',
+                  icon: '🌟',
+                  onPress: () => onNavigate('Monthly Feedback'),
+                },
+                {
+                  label: 'Calendar',
+                  icon: '📅',
+                  onPress: () => onNavigate('Academic Calendar'),
+                },
+                {
+                  label: 'Inbox',
+                  icon: '💬',
+                  onPress: () => onNavigate('Inbox'),
+                },
+              ]}
+            />
+          </SchoolPanel>
+          <SchoolPanel title="A date for your diary" style={s.connected}>
+            <SchoolRow
+              icon="👩‍🏫"
+              title="Parent–Teacher Meetings"
+              subtitle={
+                previewOnly
+                  ? '7 October · Book your preferred slot'
+                  : 'View meeting availability with your school'
+              }
+              badge={previewOnly ? 'Upcoming' : undefined}
+              action="Book"
+              last
+              onPress={() => onNavigate('PTM & Appointments')}
+            />
+          </SchoolPanel>
         </>
       ) : (
         <View style={s.metrics}>
@@ -377,6 +423,7 @@ export default function HiraHome({
   );
 }
 const s = StyleSheet.create({
+  connected: { marginTop: 14, marginBottom: 4 },
   content: { paddingHorizontal: 18, paddingBottom: 25 },
   action: {
     backgroundColor: t.primary,
@@ -451,8 +498,8 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     minHeight: 201,
     borderRadius: 23,
-    borderWidth: 1.5,
-    borderColor: '#C7C8EA',
+    borderWidth: 1,
+    borderColor: '#EEE1D0',
     backgroundColor: t.paper,
     overflow: 'hidden',
     marginBottom: 14,
@@ -460,7 +507,7 @@ const s = StyleSheet.create({
   },
   portrait: {
     width: '31%',
-    backgroundColor: '#FFE3A7',
+    backgroundColor: '#D4DCFA',
     alignItems: 'center',
     justifyContent: 'center',
   },

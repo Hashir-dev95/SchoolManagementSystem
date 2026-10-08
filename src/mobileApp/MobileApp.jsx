@@ -1,5 +1,11 @@
 import PageIcon from './PageIcon';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -20,6 +26,7 @@ import NotificationDrawer from './NotificationDrawer';
 import MessagesInbox from './MessagesInbox';
 import RoleDashboard from './RoleDashboard';
 import HiraHome from './HiraHome';
+import ParentSchoolStory from './ParentSchoolStory';
 import FeaturePage from './FeaturePage';
 import TeacherApplicationsPage from './TeacherApplicationsPage';
 import { features, staffFeatures } from './featureScreens';
@@ -116,11 +123,15 @@ export default function MobileApp({
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') check();
     });
-    return () => { unsubscribe(); clearInterval(interval); subscription.remove(); };
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+      subscription.remove();
+    };
   }, [previewOnly, user, onLogout]);
   useEffect(() => {
     let alive = true;
-    AccessibilityInfo.isReduceMotionEnabled().then((value) => {
+    AccessibilityInfo.isReduceMotionEnabled().then(value => {
       if (alive) setReducedMotion(value);
     });
     const subscription = AccessibilityInfo.addEventListener(
@@ -136,7 +147,7 @@ export default function MobileApp({
     const refreshGreeting = () => setGreeting(getGreeting());
     refreshGreeting();
     const interval = setInterval(refreshGreeting, 60 * 1000);
-    const subscription = AppState.addEventListener('change', (state) => {
+    const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') refreshGreeting();
     });
     return () => {
@@ -199,7 +210,7 @@ export default function MobileApp({
   }, [drawerWidth, reducedMotion, slide]);
   useEffect(() => {
     if (!role) return;
-    setPage((currentPage) =>
+    setPage(currentPage =>
       availablePages.includes(currentPage) ? currentPage : 'Home',
     );
     setChildId('');
@@ -230,7 +241,9 @@ export default function MobileApp({
         <View style={s.center}>
           {authLoading ? <ActivityIndicator color={t.primary} /> : null}
           <Text style={s.title}>
-            {sessionExpired ? 'Your session expired. Please sign in again.' : authLoading
+            {sessionExpired
+              ? 'Your session expired. Please sign in again.'
+              : authLoading
               ? 'Restoring your session…'
               : !user
               ? 'Sign in to your school workspace'
@@ -251,6 +264,10 @@ export default function MobileApp({
     );
   }
   const PartnerScreen = roleScreens[role];
+  const activeBottomPage =
+    role === 'Parent' && page === 'Student Progress Tracking'
+      ? 'Progress'
+      : page;
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={t.background} />
@@ -285,7 +302,13 @@ export default function MobileApp({
             {greeting}
           </Animated.Text>
           <Text style={s.headerTitle}>
-            {page === 'Home' ? 'Overview' : page === 'Inbox' ? 'Messages' : page}
+            {page === 'Home'
+              ? 'Overview'
+              : page === 'Inbox'
+              ? 'Messages'
+              : role === 'Parent' && page === 'Progress'
+              ? 'Student Progress Tracking'
+              : page}
           </Text>
         </View>
         {ownedRoles.includes(role) ? (
@@ -319,10 +342,19 @@ export default function MobileApp({
             previewOnly={previewOnly}
             onNavigate={navigate}
           />
+        ) : role === 'Parent' &&
+          ['Progress', 'Student Progress Tracking'].includes(page) ? (
+          <ParentSchoolStory
+            key={`${role}-${previewOnly ? 'preview' : 'live'}`}
+            previewOnly={previewOnly}
+            initialChildId={childId}
+            onChildChange={setChildId}
+            onNavigate={navigate}
+          />
         ) : page === 'Applications' && role === 'Teacher' ? (
           <TeacherApplicationsPage />
         ) : page === 'Teachers DLP' &&
-        ['Teacher', 'Principal', 'Super Admin'].includes(role) ? (
+          ['Teacher', 'Principal', 'Super Admin'].includes(role) ? (
           <RoleDashboard role={role} page={page} previewOnly={previewOnly} />
         ) : features[page] && ownedRoles.includes(role) ? (
           <FeaturePage
@@ -384,23 +416,41 @@ export default function MobileApp({
         )}
       </Animated.View>
       <View style={s.bottom}>
-        {bottomPages[role].map((item) => (
+        {bottomPages[role].map(item => (
           <Pressable
             key={item}
             accessibilityRole="tab"
-            accessibilityState={{ selected: page === item }}
+            accessibilityState={{ selected: activeBottomPage === item }}
             accessibilityLabel={item}
             onPress={() => navigate(item)}
             style={s.tab}
           >
-            <View style={[s.tabIcon, page === item && s.tabIconActive]}>
-              <PageIcon
-                name={item}
-                size={24}
-                color={page === item ? t.primary : t.muted}
-              />
+            <View
+              style={[s.tabIcon, activeBottomPage === item && s.tabIconActive]}
+            >
+              {role === 'Parent' ? (
+                <Text
+                  style={{
+                    fontSize: item === 'Progress' ? 24 : 22,
+                    color: activeBottomPage === item ? t.primary : t.muted,
+                  }}
+                >
+                  {item === 'Home' ? '▦' : item === 'Progress' ? '🚌' : '◇'}
+                </Text>
+              ) : (
+                <PageIcon
+                  name={item}
+                  size={24}
+                  color={page === item ? t.primary : t.muted}
+                />
+              )}
             </View>
-            <Text style={[s.tabLabel, page === item && { color: t.primary }]}>
+            <Text
+              style={[
+                s.tabLabel,
+                activeBottomPage === item && { color: t.primary },
+              ]}
+            >
               {item}
             </Text>
           </Pressable>
@@ -453,7 +503,9 @@ export default function MobileApp({
                 <Text style={s.roleText}>
                   {role === 'Parent' ? 'Parent / Guardian' : role}
                 </Text>
-                {previewOnly ? <PageIcon name="chevron-down" size={20} /> : null}
+                {previewOnly ? (
+                  <PageIcon name="chevron-down" size={20} />
+                ) : null}
               </Pressable>
               <ScrollView
                 keyboardShouldPersistTaps="handled"
@@ -462,7 +514,7 @@ export default function MobileApp({
                 {rolePicker && previewOnly ? (
                   <View style={s.roleList}>
                     <Text style={s.group}>SWITCH PREVIEW ROLE</Text>
-                    {roles.map((item) => (
+                    {roles.map(item => (
                       <Pressable
                         accessibilityRole="button"
                         accessibilityLabel={`Switch to ${item}`}
@@ -484,26 +536,26 @@ export default function MobileApp({
                   </View>
                 ) : null}
                 <Text style={s.group}>YOUR SCHOOL DAY</Text>
-                {availablePages.map((item) => (
-                    <Pressable
-                      key={item}
-                      accessibilityRole="button"
-                      onPress={() => navigate(item)}
-                      style={[s.row, page === item && s.activeRow]}
-                    >
-                      <PageIcon
-                        name={item}
-                        size={23}
-                        color={page === item ? '#FFFFFF' : t.primary}
-                      />
-                      <Text style={[s.rowText, page === item && s.activeText]}>
-                        {item}
-                      </Text>
-                      {page === item ? (
-                        <Text style={{ color: '#FFE4AA' }}>•</Text>
-                      ) : null}
-                    </Pressable>
-                  ))}
+                {availablePages.map(item => (
+                  <Pressable
+                    key={item}
+                    accessibilityRole="button"
+                    onPress={() => navigate(item)}
+                    style={[s.row, page === item && s.activeRow]}
+                  >
+                    <PageIcon
+                      name={item}
+                      size={23}
+                      color={page === item ? '#FFFFFF' : t.primary}
+                    />
+                    <Text style={[s.rowText, page === item && s.activeText]}>
+                      {item}
+                    </Text>
+                    {page === item ? (
+                      <Text style={{ color: '#FFE4AA' }}>•</Text>
+                    ) : null}
+                  </Pressable>
+                ))}
                 {onLogout && !previewOnly ? (
                   <Button style={{ marginTop: 20 }} onPress={onLogout}>
                     Sign out

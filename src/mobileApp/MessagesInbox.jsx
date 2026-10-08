@@ -1,5 +1,4 @@
 import PageIcon from './PageIcon';
-import SchoolPageHero from './SchoolPageHero';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   BackHandler,
@@ -13,21 +12,26 @@ import {
   View,
 } from 'react-native';
 import { theme as t } from './hiraTheme';
+import { SchoolPanel, SchoolRow, schoolStyles } from './SchoolReferenceUI';
+import SchoolPageHero from './SchoolPageHero';
 import InboxNotifications from './InboxNotifications';
 
 // Fictional conversations are rendered only in the explicitly labelled local preview.
 const previewConversations = [
   {
     id: 'preview-thread-teacher',
-    name: 'Ms. Sana Ahmed',
-    subtitle: 'Class teacher · Preview',
+    name: 'Miss Ayesha · Mathematics',
+    subtitle: 'Assigned class teacher',
+    icon: '👩‍🏫',
+    action: 'Reply',
+    excerpt: 'Ahmed’s fractions practice is improving.',
     unread: 2,
     updatedAt: '2026-10-02T10:15:00.000Z',
     messages: [
       {
         id: 'preview-msg-1',
         sender: 'them',
-        body: 'Welcome to the messaging preview.',
+        body: 'Ahmed’s fractions practice is improving.',
         createdAt: '2026-10-02T10:10:00.000Z',
       },
       {
@@ -47,26 +51,40 @@ const previewConversations = [
   {
     id: 'preview-thread-office',
     name: 'School office',
-    subtitle: 'School contact · Preview',
-    unread: 0,
+    subtitle: 'School notices',
+    icon: '🏫',
+    action: 'View',
+    excerpt: 'PTM slots for October are now available.',
+    unread: 1,
     updatedAt: '2026-10-01T08:30:00.000Z',
     messages: [
       {
         id: 'preview-msg-4',
         sender: 'them',
-        body: 'This conversation is fictional preview content.',
+        body: 'PTM slots for October are now available.',
+        createdAt: '2026-10-01T08:30:00.000Z',
+      },
+    ],
+  },
+  {
+    id: 'preview-thread-transport',
+    name: 'Transport office',
+    subtitle: 'Transport notices',
+    icon: '🚌',
+    action: 'Track',
+    excerpt: 'Return trip scheduled for 1:45 PM.',
+    unread: 0,
+    updatedAt: '2026-10-01T08:30:00.000Z',
+    messages: [
+      {
+        id: 'preview-msg-5',
+        sender: 'them',
+        body: 'Return trip scheduled for 1:45 PM.',
         createdAt: '2026-10-01T08:30:00.000Z',
       },
     ],
   },
 ];
-
-function shortTime(value) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? ''
-    : date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-}
 
 function fullTime(value) {
   const date = new Date(value);
@@ -78,6 +96,13 @@ function fullTime(value) {
         hour: 'numeric',
         minute: '2-digit',
       });
+}
+
+function shortTime(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 function Button({ children, onPress, disabled, secondary = false }) {
@@ -111,24 +136,26 @@ export default function MessagesInbox({
   const [conversations, setConversations] = useState(
     previewOnly ? previewConversations : [],
   );
+  const [selectedId, setSelectedId] = useState('');
   const [search, setSearch] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
-  const [selectedId, setSelectedId] = useState('');
   const [draft, setDraft] = useState('');
   const [previewNotice, setPreviewNotice] = useState('');
   const selected = conversations.find(item => item.id === selectedId);
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return conversations.filter(
-      item =>
+    return conversations.filter(item => {
+      const messageText = (item.messages || [])
+        .map(message => message.body)
+        .join(' ');
+      return (
         (!unreadOnly || item.unread > 0) &&
         (!query ||
-          `${item.name} ${item.subtitle} ${item.messages
-            .map(message => message.body)
-            .join(' ')}`
+          `${item.name} ${item.subtitle} ${item.excerpt || ''} ${messageText}`
             .toLowerCase()
-            .includes(query)),
-    );
+            .includes(query))
+      );
+    });
   }, [conversations, search, unreadOnly]);
 
   useEffect(() => {
@@ -169,6 +196,7 @@ export default function MessagesInbox({
           ? {
               ...conversation,
               updatedAt: createdAt,
+              excerpt: body,
               messages: [
                 ...conversation.messages,
                 {
@@ -198,10 +226,7 @@ export default function MessagesInbox({
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        <Text style={styles.eyebrow}>{role.toUpperCase()} · MESSAGES</Text>
-        <Text style={styles.title}>
-          {selected ? selected.name : 'Messages'}
-        </Text>
+        <Text style={styles.eyebrow}>{role?.toUpperCase() || 'SCHOOL'} · MESSAGES</Text>
         {!selected ? (
           <SchoolPageHero
             title="Keep in touch"
@@ -209,20 +234,16 @@ export default function MessagesInbox({
             icon="message"
           />
         ) : null}
-        <Text style={styles.subtitle}>
-          {selected ? selected.subtitle : 'School conversations in one place'}
+        <Text style={schoolStyles.title}>
+          {selected ? selected.name : 'A little conversation goes a long way.'}
         </Text>
 
-        {previewOnly ? (
-          <View style={styles.previewBanner}>
-            <PageIcon name="sparkle" size={18} />
-            <Text style={styles.previewText}>
-              Developer Preview · fictional local messages; nothing is sent.
-            </Text>
-          </View>
-        ) : null}
-
         <InboxNotifications role={role} previewOnly={previewOnly} />
+        <Text style={styles.subtitle}>
+          {selected
+            ? selected.subtitle
+            : 'School notices and moderated messages.'}
+        </Text>
 
         {selected ? (
           <>
@@ -330,43 +351,23 @@ export default function MessagesInbox({
                 </Pressable>
               ))}
             </View>
+            <SchoolPanel title="School inbox">
             {previewOnly ? (
-              filtered.map(item => (
-                <Pressable
+              filtered.map((item, index) => (
+                <SchoolRow
                   key={item.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${item.name}${
-                    item.unread ? `, ${item.unread} unread` : ''
-                  }`}
+                  icon={item.icon}
+                  title={item.name}
+                  subtitle={`${
+                    item.excerpt ||
+                    item.messages?.[item.messages.length - 1]?.body ||
+                    ''
+                  }${item.updatedAt ? ` · ${shortTime(item.updatedAt)}` : ''}`}
+                  badge={item.unread ? `${item.unread} new` : 'Read'}
+                  action={item.action}
+                  last={index === filtered.length - 1}
                   onPress={() => openConversation(item)}
-                  style={styles.conversation}
-                >
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>
-                      {item.name.slice(0, 1)}
-                    </Text>
-                  </View>
-                  <View style={styles.conversationCopy}>
-                    <View style={styles.conversationTop}>
-                      <Text numberOfLines={1} style={styles.threadName}>
-                        {item.name}
-                      </Text>
-                      <Text style={styles.time}>
-                        {shortTime(item.updatedAt)}
-                      </Text>
-                    </View>
-                    <View style={styles.conversationBottom}>
-                      <Text numberOfLines={1} style={styles.previewMessage}>
-                        {item.messages[item.messages.length - 1]?.body}
-                      </Text>
-                      {item.unread ? (
-                        <View style={styles.unreadBadge}>
-                          <Text style={styles.unreadText}>{item.unread}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  </View>
-                </Pressable>
+                />
               ))
             ) : (
               <View style={styles.unavailable}>
@@ -390,6 +391,7 @@ export default function MessagesInbox({
                 </Text>
               </View>
             ) : null}
+            </SchoolPanel>
           </>
         )}
 
@@ -434,6 +436,12 @@ export default function MessagesInbox({
             </Pressable>
           </View>
         ) : null}
+        {previewOnly ? (
+          <Text style={[schoolStyles.preview, { marginTop: 18 }]}>
+            Development design preview · fictional local messages; nothing is
+            sent.
+          </Text>
+        ) : null}
         <Button secondary onPress={() => onNavigate('Home')}>
           Back to Overview
         </Button>
@@ -454,9 +462,9 @@ const styles = StyleSheet.create({
   tabText: { color: '#4857B5', fontSize: 12, fontWeight: '700' },
   tabActiveText: { color: '#FFFFFF' },
   flex: { flex: 1 },
-  page: { padding: 18, paddingBottom: 30 },
+  page: { paddingHorizontal: 18, paddingTop: 20, paddingBottom: 30 },
   eyebrow: {
-    color: t.muted,
+    color: '#74868E',
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.4,
@@ -473,7 +481,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
     marginTop: 7,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   previewBanner: {
     flexDirection: 'row',

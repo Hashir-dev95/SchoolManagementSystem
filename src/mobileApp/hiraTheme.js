@@ -63,7 +63,14 @@ export const rolePages = {
     'Applications',
     'Inbox',
   ],
-  Principal: ['Home', 'Teachers', 'Teachers DLP', 'Reports', 'Applications', 'Inbox'],
+  Principal: [
+    'Home',
+    'Teachers',
+    'Teachers DLP',
+    'Reports',
+    'Applications',
+    'Inbox',
+  ],
   'Super Admin': [
     'Home',
     'Schools',
@@ -88,6 +95,9 @@ const connectedExtraPages = {
     'Academic Report',
     'Monthly Feedback',
     'Student Progress Tracking',
+    'Personal & Behaviour Report',
+    'Academic Calendar',
+    'PTM & Appointments',
     'Student Fees',
     'Receipt Details',
     'Attendance Calendar',
@@ -100,12 +110,17 @@ const connectedExtraPages = {
     'Attendance Calendar',
     'Leave Request',
   ],
-  Finance: ['Student Ledger', 'Voucher Scan', 'Receipt Details', 'Finance Reports'],
+  Finance: [
+    'Student Ledger',
+    'Voucher Scan',
+    'Receipt Details',
+    'Finance Reports',
+  ],
 };
 
 Object.entries(connectedExtraPages).forEach(([role, pages]) => {
   rolePages[role] = [
-    ...rolePages[role].filter((page) => page !== 'Inbox'),
+    ...rolePages[role].filter(page => page !== 'Inbox'),
     ...pages,
     'Inbox',
   ];
@@ -115,8 +130,8 @@ export const previewRolePages = Object.fromEntries(
   Object.entries(rolePages).map(([role, pages]) => [
     role,
     [
-      ...pages.filter((page) => page !== 'Inbox'),
-      ...(extraPages[role] || []).filter((page) => !pages.includes(page)),
+      ...pages.filter(page => page !== 'Inbox'),
+      ...(extraPages[role] || []).filter(page => !pages.includes(page)),
       'Inbox',
     ],
   ]),

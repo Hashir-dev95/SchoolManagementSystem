@@ -1,7 +1,7 @@
 import { parentApi } from './parentService';
 import { studentApi } from './studentService';
 import { financeApi } from './financeService';
-const rows = (data) => (Array.isArray(data) ? data : []);
+const rows = data => (Array.isArray(data) ? data : []);
 function record(item, index) {
   return {
     ...item,
@@ -24,34 +24,44 @@ function record(item, index) {
 }
 function matchesText(value, term) {
   if (!term) return true;
-  return String(value ?? '').toLowerCase().includes(String(term).trim().toLowerCase());
+  return String(value ?? '')
+    .toLowerCase()
+    .includes(String(term).trim().toLowerCase());
 }
 function filterRows(data, filters, fields) {
-  return rows(data).filter((item) =>
+  return rows(data).filter(item =>
     fields.every(([filter, keys]) => {
       const value = filters?.[filter];
       if (!String(value || '').trim()) return true;
-      return keys.some((key) => matchesText(item[key], value));
+      return keys.some(key => matchesText(item[key], value));
     }),
   );
 }
 async function childId(preferred) {
   const children = await parentApi.getChildren();
   const verified = preferred
-    ? rows(children).find((child) => child.id === preferred)
+    ? rows(children).find(child => child.id === preferred)
     : rows(children)[0];
   return verified?.id;
 }
 function currencyTotals(items, field) {
   const totals = new Map();
-  rows(items).forEach((item) => {
+  rows(items).forEach(item => {
     const currency = item.currency || 'PKR';
     const cents = Math.round(Number(item[field] || 0) * 100);
     totals.set(currency, (totals.get(currency) || 0) + cents);
   });
-  return [...totals.entries()]
-    .map(([currency, cents]) => `${currency} ${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
-    .join(' · ') || '—';
+  return (
+    [...totals.entries()]
+      .map(
+        ([currency, cents]) =>
+          `${currency} ${(cents / 100).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`,
+      )
+      .join(' · ') || '—'
+  );
 }
 export function getFeatureProvider(role, page, preferredChild) {
   const academic = [
@@ -66,11 +76,25 @@ export function getFeatureProvider(role, page, preferredChild) {
           page === 'Academic Report'
             ? await studentApi.getResults()
             : await studentApi.getProgress();
-        const fields = page === 'Academic Report'
-          ? [['Subject', ['subject']], ['Term', ['term', 'termName', 'examName']], ['Session', ['session', 'academicSession', 'schoolYear']]]
-          : page === 'Monthly Feedback'
-          ? [['Month', ['month', 'period', 'date', 'createdAt', 'updatedAt']], ['Teacher', ['teacher', 'teacherName']]]
-          : [['Subject', ['subject', 'area']], ['Period', ['period', 'date', 'createdAt', 'updatedAt']]];
+        const fields =
+          page === 'Academic Report'
+            ? [
+                ['Subject', ['subject']],
+                ['Term', ['term', 'termName', 'examName']],
+                ['Session', ['session', 'academicSession', 'schoolYear']],
+              ]
+            : page === 'Monthly Feedback'
+            ? [
+                [
+                  'Month',
+                  ['month', 'period', 'date', 'createdAt', 'updatedAt'],
+                ],
+                ['Teacher', ['teacher', 'teacherName']],
+              ]
+            : [
+                ['Subject', ['subject', 'area']],
+                ['Period', ['period', 'date', 'createdAt', 'updatedAt']],
+              ];
         return { records: filterRows(data, filters, fields).map(record) };
       },
     };
@@ -80,6 +104,7 @@ export function getFeatureProvider(role, page, preferredChild) {
       'Academic Report',
       'Monthly Feedback',
       'Student Progress Tracking',
+      'Personal & Behaviour Report',
     ].includes(page)
   )
     return {
@@ -98,6 +123,22 @@ export function getFeatureProvider(role, page, preferredChild) {
               filters,
               fields,
             ).map(record),
+          };
+        }
+        if (page === 'Personal & Behaviour Report') {
+          const progress = rows(await parentApi.getProgress(id));
+          const behaviour = progress.filter(item =>
+            /behavio[u]?r|personal|wellbeing/.test(
+              String(
+                item.category || item.type || item.area || '',
+              ).toLowerCase(),
+            ),
+          );
+          return {
+            records: filterRows(behaviour, filters, [
+              ['Month', ['month', 'period', 'date']],
+              ['Session', ['session', 'academicSession']],
+            ]).map(record),
           };
         }
         const feedback = await parentApi.getFeedback(id);
@@ -138,22 +179,53 @@ export function getFeatureProvider(role, page, preferredChild) {
             },
             records: invoices.map((invoice, index) => ({
               ...record(invoice, index),
-              title: invoice.description || invoice.invoiceNumber || invoice.id || 'Invoice',
-              subtitle: [invoice.dueDate && `Due ${String(invoice.dueDate).slice(0, 10)}`, invoice.status]
+              title:
+                invoice.description ||
+                invoice.invoiceNumber ||
+                invoice.id ||
+                'Invoice',
+              subtitle: [
+                invoice.dueDate &&
+                  `Due ${String(invoice.dueDate).slice(0, 10)}`,
+                invoice.status,
+              ]
                 .filter(Boolean)
                 .join(' · '),
-              body: `Amount: ${invoice.currency || 'PKR'} ${Number(invoice.amount || 0).toFixed(2)} · Confirmed paid: ${Number(invoice.confirmedPaidAmount || 0).toFixed(2)} · Pending verification: ${Number(invoice.pendingAmount || 0).toFixed(2)} · Due (pending not yet confirmed): ${Number(invoice.balanceDue || 0).toFixed(2)} · Remaining after pending: ${Number(invoice.availableBalance ?? invoice.balanceDue ?? 0).toFixed(2)}`,
+              body: `Amount: ${invoice.currency || 'PKR'} ${Number(
+                invoice.amount || 0,
+              ).toFixed(2)} · Confirmed paid: ${Number(
+                invoice.confirmedPaidAmount || 0,
+              ).toFixed(2)} · Pending verification: ${Number(
+                invoice.pendingAmount || 0,
+              ).toFixed(2)} · Due (pending not yet confirmed): ${Number(
+                invoice.balanceDue || 0,
+              ).toFixed(2)} · Remaining after pending: ${Number(
+                invoice.availableBalance ?? invoice.balanceDue ?? 0,
+              ).toFixed(2)}`,
             })),
           };
         }
-        const receipts = invoices.flatMap((invoice) =>
-          rows(invoice.confirmedReceipts).map((receipt) => ({
+        const receipts = invoices.flatMap(invoice =>
+          rows(invoice.confirmedReceipts).map(receipt => ({
             ...receipt,
             id: receipt.paymentId,
             invoiceId: invoice.id || invoice.invoiceNumber,
             title: receipt.receiptNumber || 'Confirmed receipt',
-            subtitle: `${invoice.description || invoice.invoiceNumber || invoice.id || 'Invoice'} · ${receipt.confirmedAt ? new Date(receipt.confirmedAt).toLocaleDateString() : 'Confirmation date unavailable'}`,
-            body: `Amount: ${receipt.currency || invoice.currency || 'PKR'} ${Number(receipt.amount || 0).toFixed(2)} · Method: ${receipt.method || 'Not recorded'} · Status: Confirmed`,
+            subtitle: `${
+              invoice.description ||
+              invoice.invoiceNumber ||
+              invoice.id ||
+              'Invoice'
+            } · ${
+              receipt.confirmedAt
+                ? new Date(receipt.confirmedAt).toLocaleDateString()
+                : 'Confirmation date unavailable'
+            }`,
+            body: `Amount: ${
+              receipt.currency || invoice.currency || 'PKR'
+            } ${Number(receipt.amount || 0).toFixed(2)} · Method: ${
+              receipt.method || 'Not recorded'
+            } · Status: Confirmed`,
             status: 'Confirmed',
           })),
         );
@@ -183,14 +255,24 @@ export function getFeatureProvider(role, page, preferredChild) {
             ]
               .filter(Boolean)
               .join(' · '),
-            body: `Amount: ${invoice.currency || 'PKR'} ${Number(invoice.amount || 0).toFixed(2)} · Confirmed paid: ${Number(invoice.confirmedPaidAmount || 0).toFixed(2)} · Pending verification: ${Number(invoice.pendingAmount || 0).toFixed(2)} · Due (pending not yet confirmed): ${Number(invoice.balanceDue || 0).toFixed(2)} · Remaining after pending: ${Number(invoice.availableBalance ?? invoice.balanceDue ?? 0).toFixed(2)}`,
+            body: `Amount: ${invoice.currency || 'PKR'} ${Number(
+              invoice.amount || 0,
+            ).toFixed(2)} · Confirmed paid: ${Number(
+              invoice.confirmedPaidAmount || 0,
+            ).toFixed(2)} · Pending verification: ${Number(
+              invoice.pendingAmount || 0,
+            ).toFixed(2)} · Due (pending not yet confirmed): ${Number(
+              invoice.balanceDue || 0,
+            ).toFixed(2)} · Remaining after pending: ${Number(
+              invoice.availableBalance ?? invoice.balanceDue ?? 0,
+            ).toFixed(2)}`,
           })),
         };
       },
     };
   if (role === 'Finance' && page === 'Student Ledger')
     return {
-      load: async (filters) => {
+      load: async filters => {
         const response = await financeApi.getDues({
           studentId: filters['Student ID'],
           from: filters['From date'],
@@ -202,14 +284,16 @@ export function getFeatureProvider(role, page, preferredChild) {
             ...record(item, i),
             body: `Confirmed paid: ${item.paidAmount ?? '—'} · Pending: ${
               item.pendingAmount ?? '—'
-            } · Due: ${item.balanceDue ?? '—'} · Methods: ${(item.paymentMethods || []).join(', ') || '—'}`,
+            } · Due: ${item.balanceDue ?? '—'} · Methods: ${
+              (item.paymentMethods || []).join(', ') || '—'
+            }`,
           })),
         };
       },
     };
   if (role === 'Finance' && page === 'Voucher Scan')
     return {
-      submit: async (form) => {
+      submit: async form => {
         const response = await financeApi.verifyVoucher(form['Voucher code']);
         return {
           notice: 'Voucher verified against the authorized Finance branch.',
@@ -228,11 +312,12 @@ export function getFeatureProvider(role, page, preferredChild) {
     };
   if (role === 'Finance' && page === 'Receipt Details')
     return {
-      submit: async (form) => {
+      submit: async form => {
         const response = await financeApi.getReceipt(form['Payment ID']);
         const receipt = response.data;
         return {
-          notice: 'Confirmed receipt loaded from the authorized Finance branch.',
+          notice:
+            'Confirmed receipt loaded from the authorized Finance branch.',
           records: [
             {
               ...receipt,
@@ -272,11 +357,11 @@ export function getFeatureProvider(role, page, preferredChild) {
     };
   if (page === 'Leave Request' && ['Student', 'Parent'].includes(role))
     return {
-      submit: async (form) => {
+      submit: async form => {
         const dates = [form['From date'], form['To date']];
         if (
           dates.some(
-            (date) =>
+            date =>
               !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
               !Number.isFinite(Date.parse(date)),
           ) ||
@@ -303,7 +388,7 @@ export function getFeatureProvider(role, page, preferredChild) {
     };
   if (role === 'Finance' && page === 'Finance Reports')
     return {
-      load: async (filters) => {
+      load: async filters => {
         const response = await financeApi.getCollectionReport({
           from: filters['From date'],
           to: filters['To date'],
@@ -312,16 +397,20 @@ export function getFeatureProvider(role, page, preferredChild) {
         });
         return {
           records: [
-            ...rows(response.data?.confirmedCollections).map((item) => ({
+            ...rows(response.data?.confirmedCollections).map(item => ({
               id: `total-${item._id || 'PKR'}`,
               title: `Confirmed collections · ${item._id || 'PKR'}`,
-              body: `${item._id || 'PKR'} ${Number(item.total || 0).toFixed(2)} · ${item.count} confirmed payments`,
+              body: `${item._id || 'PKR'} ${Number(item.total || 0).toFixed(
+                2,
+              )} · ${item.count} confirmed payments`,
               status: 'Total',
             })),
             ...rows(response.data?.byMethod).map((item, index) => ({
               id: `${item.currency || 'PKR'}-${item._id || index}`,
               title: `${item._id || 'Unspecified'} · ${item.currency || 'PKR'}`,
-              body: `Confirmed amount: ${item.currency || 'PKR'} ${Number(item.total || 0).toFixed(2)} · Transactions: ${item.count}`,
+              body: `Confirmed amount: ${item.currency || 'PKR'} ${Number(
+                item.total || 0,
+              ).toFixed(2)} · Transactions: ${item.count}`,
               status: 'Confirmed',
             })),
           ],
