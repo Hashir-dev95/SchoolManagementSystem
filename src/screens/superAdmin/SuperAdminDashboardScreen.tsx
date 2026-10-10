@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   ActivityIndicator,
-  ImageBackground,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useAuth } from '../../context/AuthContext';
@@ -25,11 +27,24 @@ import {
   UserSession,
 } from '../../services/admin/adminService';
 import { SuperAdminStackParamList } from '../../navigation/SuperAdminNavigator';
-import {HiraHeader, StatCard, StatusPill} from '../../components/ui/HiraUI';
-import {colors, fonts, shadow} from '../../theme/hiraTheme';
+import {HiraHeader, StatusPill} from '../../components/ui/HiraUI';
+import { HeroBanner, ScreenHeading, StatCard as DashboardStatCard, StatGrid } from '../../components/hiraDashboard';
+import { cardShadow, colors as dashboardColors, typography as dashboardTypography } from '../../theme/hiraDashboard';
+const colors = {
+ cream: dashboardColors.background, line: dashboardColors.border, white: dashboardColors.white,
+ primary: dashboardColors.primary, muted: dashboardColors.muted, ink: dashboardColors.ink,
+ danger: dashboardColors.danger.text, dangerSoft: dashboardColors.danger.bg,
+ success: dashboardColors.paid.text, softOrange: dashboardColors.pending.bg,
+ softBlue: dashboardColors.soft, softPurple: dashboardColors.leave.bg,
+};
+const fonts = {
+ body: dashboardTypography.body.fontFamily, bodyMedium: dashboardTypography.body.fontFamily,
+ bodySemiBold: dashboardTypography.bodyStrong.fontFamily,
+ display: dashboardTypography.bigNumber.fontFamily, heading: dashboardTypography.h3.fontFamily,
+};
 
 const SuperAdminDashboardScreen = () => {
-  const { user, accessToken, logout } = useAuth();
+  const { user, accessToken } = useAuth();
 
   const navigation =
     useNavigation<NativeStackNavigationProp<SuperAdminStackParamList>>();
@@ -62,6 +77,7 @@ const SuperAdminDashboardScreen = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [activeTab, setActiveTab] = useState<'home' | 'operations' | 'administration'>('home');
   const scrollViewRef = useRef<ScrollView>(null);
   const branchesSectionYRef = useRef(0);
 
@@ -176,6 +192,17 @@ const SuperAdminDashboardScreen = () => {
     }
   };
 
+  const confirmReviewRequest = (request: PrivilegedRequest, status: 'approved' | 'rejected') => {
+    Alert.alert(
+      `${status === 'approved' ? 'Approve' : 'Reject'} request`,
+      `${request.requestType}: ${request.reason}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: status === 'approved' ? 'Approve' : 'Reject', style: status === 'rejected' ? 'destructive' : 'default', onPress: () => handleReviewRequest(request._id, status) },
+      ],
+    );
+  };
+
   const handleToggleAutomation = async (
     key: string,
     currentPaused: boolean,
@@ -197,14 +224,12 @@ const SuperAdminDashboardScreen = () => {
         !currentPaused,
       );
 
-      if (res.success) {
+      if (res.success && res.data?.key === key && res.data.isPaused === !currentPaused) {
         setAutomations(prev =>
           prev.map(auto => (auto.key === key ? res.data : auto)),
         );
         setFeedbackMessage(
-          `Automation "${res.data.name}" ${
-            res.data.isPaused ? 'paused' : 'resumed'
-          }.`,
+          `Pause configuration for "${res.data.name}" saved.`,
         );
       } else {
         const errMsg = res.message || 'Failed to update automation';
@@ -239,7 +264,7 @@ const SuperAdminDashboardScreen = () => {
 
       const res = await adminService.revokeSession(accessToken, sessionId);
 
-      if (res.success) {
+      if (res.success && res.data?._id === sessionId && res.data.isRevoked) {
         setSessions(prev =>
           prev.map(sess => (sess._id === sessionId ? res.data : sess)),
         );
@@ -261,6 +286,36 @@ const SuperAdminDashboardScreen = () => {
     } finally {
       setRevokingId(null);
     }
+  };
+
+  const confirmAutomationSetting = (automation: AutomationConfig) => {
+    const nextPaused = !automation.isPaused;
+    Alert.alert(
+      nextPaused ? 'Save pause setting' : 'Clear pause setting',
+      'This updates stored configuration only; no automation worker is connected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: nextPaused ? 'Save pause setting' : 'Clear pause setting',
+          onPress: () => handleToggleAutomation(automation.key, automation.isPaused),
+        },
+      ],
+    );
+  };
+
+  const confirmSessionRevocation = (session: UserSession) => {
+    Alert.alert(
+      'Revoke session',
+      `Revoke access for ${session.userId?.fullName ?? 'this user'}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Revoke',
+          style: 'destructive',
+          onPress: () => handleRevokeSession(session._id),
+        },
+      ],
+    );
   };
 
   if (loading) {
@@ -311,32 +366,18 @@ const SuperAdminDashboardScreen = () => {
   });
 
   return (
-    <ScrollView ref={scrollViewRef} contentContainerStyle={styles.container}>
-      <HiraHeader onLogout={logout} />
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.scroll}
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}>
+      <HiraHeader onOpenSettings={() => navigation.navigate('SuperAdminSettings')} />
 
-      <View style={styles.nextStepsCard}>
-        <Text style={styles.nextStepsTitle}>Your next steps</Text>
-        <View style={styles.nextStepsActions}>
-          <View style={styles.attentionButton}>
-            <Text style={styles.attentionButtonText}>
-              {privilegedRequests.length} {privilegedRequests.length === 1 ? 'item needs' : 'items need'} attention
-            </Text>
-          </View>
-          <View style={styles.outlineAction}><Text style={styles.outlineActionText}>Branches</Text></View>
-        </View>
-        <View style={styles.nextStepsLowerRow}>
-          <View style={styles.outlineAction}><Text style={styles.outlineActionText}>System health</Text></View>
-        </View>
-      </View>
-
-      <View style={styles.greetingRow}>
-        <View>
-          <Text style={styles.greeting}>Hello, {user?.fullName?.split(' ')[0] ?? 'Admin'}!</Text>
-          <Text style={styles.greetingCaption}>Here’s your school network at a glance.</Text>
-        </View>
-        <View style={styles.dateChip}><Text style={styles.dateChipText}>TODAY</Text></View>
-      </View>
-
+      <ScreenHeading
+        title="Super Admin overview"
+        subtitle={'Hello, ' + (user?.fullName?.split(' ')[0] ?? 'Admin') + ' - your school network at a glance'}
+      />
       {error !== '' && dashboard !== null && (
         <View style={styles.errorBanner}>
           <Text style={styles.errorBannerText}>{error}</Text>
@@ -354,412 +395,451 @@ const SuperAdminDashboardScreen = () => {
         </View>
       )}
 
-      <ImageBackground
-        style={styles.heroCard}
-        imageStyle={styles.heroBackgroundImage}
-        source={require('../../assets/images/school-art.webp')}>
-        <View style={styles.heroImageFade} />
-        <View style={styles.heroContent}>
-          <View>
-            <Text style={styles.heroKicker}>A BRIGHT DAY TO GROW</Text>
-            <Text style={styles.heroTitle}>Your school network{`\n`}is in good hands.</Text>
-        <Text style={styles.heroCopy}>Review today’s essentials and keep every branch moving forward.</Text>
-          </View>
-          <TouchableOpacity
-            accessibilityRole="button"
-            style={styles.heroPrimaryAction}
-            onPress={scrollToBranches}>
-            <Text style={styles.heroPrimaryActionText}>Explore branches</Text>
-          </TouchableOpacity>
-        </View>
-      </ImageBackground>
+      {activeTab === 'home' && (
+        <>
+          <HeroBanner
+            roleLabel="SUPER ADMIN"
+            dateLabel={new Date().toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}
+            bigValue={branches.total}
+            bigValueCaption="assigned branches"
+            title="Your school network"
+            subtitle="Review network health and keep every branch moving forward."
+            actionLabel="Explore branches"
+            onActionPress={scrollToBranches}
+          />
 
-      <Text style={styles.overviewTitle}>Your overview</Text>
-      <View style={styles.statsGrid}>
-        <StatCard label="All branches" value={branches.total} hint="Registered schools" tone="blue" />
-        <StatCard label="Active today" value={branches.active} hint="Ready to learn" tone="lime" />
-        <StatCard label="Inactive" value={branches.inactive} hint="Need attention" tone="orange" />
-        <StatCard label="Requests" value={privilegedRequests.length} hint="Awaiting review" tone="purple" />
-      </View>
+          <Text style={styles.overviewTitle}>Network overview</Text>
+          <StatGrid>
+            <DashboardStatCard icon={String.fromCharCode(10003)} label="Active branches" value={branches.active} foot="Currently active" accentIndex={1} />
+            <DashboardStatCard icon="!" label="Inactive branches" value={branches.inactive} foot="Currently inactive" accentIndex={2} />
+          </StatGrid>
 
-      {/* Assigned Branches */}
-      <View
-        style={styles.section}
-        onLayout={event => {
-          branchesSectionYRef.current = event.nativeEvent.layout.y;
-        }}>
-        <Text style={styles.sectionTitle}>Assigned Branches</Text>
+          <View
+            style={styles.section}
+            onLayout={event => {
+              branchesSectionYRef.current = event.nativeEvent.layout.y;
+            }}>
+            <Text style={styles.sectionTitle}>Assigned Branches</Text>
 
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search by name or code..."
-          placeholderTextColor="#888888"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCapitalize="none"
-        />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search by name or code..."
+              placeholderTextColor="#888888"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCapitalize="none"
+            />
 
-        <View style={styles.filterContainer}>
-          {(['all', 'active', 'inactive'] as const).map(filter => (
-            <TouchableOpacity
-              key={filter}
-              style={[
-                styles.filterButton,
-                statusFilter === filter && styles.filterButtonActive,
-              ]}
-              onPress={() => setStatusFilter(filter)}>
-              <Text
-                style={[
-                  styles.filterButtonText,
-                  statusFilter === filter && styles.filterButtonTextActive,
-                ]}>
-                {filter.charAt(0).toUpperCase() + filter.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {filteredBranches.length === 0 ? (
-          <Text style={styles.empty}>No branches found.</Text>
-        ) : (
-          filteredBranches.map(branch => (
-            <View key={branch._id} style={styles.branchCard}>
-              <Text style={styles.branchName}>{branch.name}</Text>
-              <Text style={styles.branchCode}>{branch.code}</Text>
-              <Text style={styles.branchInfo}>
-                {branch.city} • {branch.address}
-              </Text>
-              <StatusPill label={branch.isActive ? 'Active' : 'Inactive'} tone={branch.isActive ? 'green' : 'orange'} />
-
-              {hasPermission(user?.role, PERMISSIONS.BRANCHES_VIEW) && (
+            <View style={styles.filterContainer}>
+              {(['all', 'active', 'inactive'] as const).map(filter => (
                 <TouchableOpacity
-                  style={styles.viewButton}
-                  onPress={() =>
-                    navigation.navigate('SuperAdminBranchDetails', {
-                      branchId: branch._id,
-                    })
-                  }>
-                  <Text style={styles.viewButtonText}>View Branch</Text>
+                  key={filter}
+                  style={[
+                    styles.filterButton,
+                    statusFilter === filter && styles.filterButtonActive,
+                  ]}
+                  onPress={() => setStatusFilter(filter)}>
+                  <Text
+                    style={[
+                      styles.filterButtonText,
+                      statusFilter === filter && styles.filterButtonTextActive,
+                    ]}>
+                    {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                  </Text>
                 </TouchableOpacity>
+              ))}
+            </View>
+
+            {filteredBranches.length === 0 ? (
+              <Text style={styles.empty}>No branches found.</Text>
+            ) : (
+              filteredBranches.map(branch => (
+                <View key={branch._id} style={styles.branchCard}>
+                  <Text style={styles.branchName}>{branch.name}</Text>
+                  <Text style={styles.branchCode}>{branch.code}</Text>
+                  <Text style={styles.branchInfo}>
+                    {branch.city} • {branch.address}
+                  </Text>
+                  <StatusPill label={branch.isActive ? 'Active' : 'Inactive'} tone={branch.isActive ? 'green' : 'orange'} />
+
+                  {hasPermission(user?.role, PERMISSIONS.BRANCHES_VIEW) && (
+                    <TouchableOpacity
+                      style={styles.viewButton}
+                      onPress={() =>
+                        navigation.navigate('SuperAdminBranchDetails', {
+                          branchId: branch._id,
+                        })
+                      }>
+                      <Text style={styles.viewButtonText}>View Branch</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))
+            )}
+          </View>
+
+        </>
+      )}
+
+      {activeTab === 'operations' && (
+        <>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>System Health</Text>
+
+            <View style={styles.healthCard}>
+              <Text style={styles.healthTitle}>API</Text>
+              <Text style={styles.healthStatus}>
+                {health?.api.status.toUpperCase()}
+              </Text>
+              <Text style={styles.healthMessage}>{health?.api.message}</Text>
+            </View>
+
+            <View style={styles.healthCard}>
+              <Text style={styles.healthTitle}>Database</Text>
+              <Text style={styles.healthStatus}>
+                {health?.database.status.toUpperCase()}
+              </Text>
+              <Text style={styles.healthMessage}>{health?.database.message}</Text>
+            </View>
+
+            <View style={styles.healthCard}>
+              <Text style={styles.healthTitle}>Overall</Text>
+              <Text style={styles.healthStatus}>
+                {health?.overall.toUpperCase()}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Backup Alerts</Text>
+
+            <View style={styles.healthCard}>
+              <Text style={styles.healthTitle}>Backup Monitoring</Text>
+              <Text style={styles.healthStatus}>
+                {backup?.status.replace('_', ' ').toUpperCase()}
+              </Text>
+              <Text style={styles.healthMessage}>{backup?.message}</Text>
+              <Text style={styles.healthMessage}>
+                Last successful backup:{' '}
+                {backup?.lastSuccessfulBackup ?? 'Not available'}
+              </Text>
+              <Text style={styles.healthMessage}>
+                Next scheduled backup:{' '}
+                {backup?.nextScheduledBackup ?? 'Not available'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Usage Limits</Text>
+
+            {usage ? (
+              <>
+                <View style={styles.healthCard}>
+                  <Text style={styles.healthTitle}>Branches</Text>
+                  <Text style={styles.value}>{usage.branches.used}</Text>
+                  <Text style={styles.label}>
+                    Limit:{' '}
+                    {usage.branches.limit === null ? 'Not configured' : usage.branches.limit}
+                  </Text>
+                  <Text style={styles.statusText}>
+                    Status: {usage.branches.status}
+                  </Text>
+                </View>
+
+                <View style={styles.healthCard}>
+                  <Text style={styles.healthTitle}>Users</Text>
+                  <Text style={styles.value}>{usage.users.used}</Text>
+                  <Text style={styles.label}>
+                    Limit:{' '}
+                    {usage.users.limit === null ? 'Not configured' : usage.users.limit}
+                  </Text>
+                  <Text style={styles.statusText}>
+                    Status: {usage.users.status}
+                  </Text>
+                </View>
+              </>
+            ) : (
+              <Text style={styles.empty}>Usage data not available.</Text>
+            )}
+          </View>
+        </>
+      )}
+
+      {activeTab === 'administration' && (
+        <>
+          {hasPermission(user?.role, PERMISSIONS.PRINCIPALS_MANAGE) && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Principal administration</Text>
+              <TouchableOpacity
+                style={[styles.toolCard, styles.toolCardPrimary]}
+                onPress={() => navigation.navigate('CreatePrincipal')}>
+                <Text style={styles.toolCardTitle}>Create Principal</Text>
+                <Text style={styles.toolCardText}>
+                  Create a principal account and assign a school branch.
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {hasPermission(user?.role, PERMISSIONS.PRIVILEGED_REQUESTS_MANAGE) && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Pending Privileged Requests</Text>
+
+              {privilegedRequests.length === 0 ? (
+                <View style={styles.card}>
+                  <Text style={styles.empty}>No pending privileged requests</Text>
+                </View>
+              ) : (
+                privilegedRequests.map(request => {
+                  const isProcessing = reviewingId === request._id;
+                  const reviewInProgress = reviewingId !== null;
+                  const reqErr = requestErrors[request._id];
+                  return (
+                    <View key={request._id} style={styles.card}>
+                      <Text style={styles.cardTitle}>{request.requestType}</Text>
+                      <Text style={styles.label}>
+                        Requester: {request.requesterId?.fullName ?? 'Unknown'}
+                      </Text>
+                      <Text style={styles.label}>
+                        Role: {request.requesterId?.role ?? 'Unknown'}
+                      </Text>
+                      {request.branchId && (
+                        <Text style={styles.label}>
+                          Branch: {request.branchId.name} ({request.branchId.code})
+                        </Text>
+                      )}
+                      <Text style={styles.label}>Reason: {request.reason}</Text>
+                      <Text style={styles.statusText}>Status: {request.status}</Text>
+
+                      {reqErr && (
+                        <View style={styles.actionErrorBanner}>
+                          <Text style={styles.actionErrorText}>{reqErr.message}</Text>
+                          <TouchableOpacity
+                            style={styles.inlineRetryButton}
+                            disabled={reviewInProgress}
+                            onPress={() =>
+                              handleReviewRequest(request._id, reqErr.lastStatus)
+                            }>
+                            <Text style={styles.inlineRetryText}>
+                              Retry {reqErr.lastStatus === 'approved' ? 'Approve' : 'Reject'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+
+                      <View style={styles.actionRow}>
+                        <TouchableOpacity
+                          style={[
+                            styles.approveButton,
+                            reviewInProgress && styles.buttonDisabled,
+                          ]}
+                          disabled={reviewInProgress}
+                          onPress={() =>
+                            confirmReviewRequest(request, 'approved')
+                          }>
+                          {isProcessing ? (
+                            <ActivityIndicator color="#ffffff" size="small" />
+                          ) : (
+                            <Text style={styles.buttonText}>Approve</Text>
+                          )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.rejectButton,
+                            reviewInProgress && styles.buttonDisabled,
+                          ]}
+                          disabled={reviewInProgress}
+                          onPress={() =>
+                            confirmReviewRequest(request, 'rejected')
+                          }>
+                          {isProcessing ? (
+                            <ActivityIndicator color="#ffffff" size="small" />
+                          ) : (
+                            <Text style={styles.buttonText}>Reject</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })
               )}
             </View>
-          ))
-        )}
-      </View>
+          )}
 
-      {/* System Health */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>System Health</Text>
+        </>
+      )}
 
-        <View style={styles.healthCard}>
-          <Text style={styles.healthTitle}>API</Text>
-          <Text style={styles.healthStatus}>
-            {health?.api.status.toUpperCase()}
-          </Text>
-          <Text style={styles.healthMessage}>{health?.api.message}</Text>
-        </View>
-
-        <View style={styles.healthCard}>
-          <Text style={styles.healthTitle}>Database</Text>
-          <Text style={styles.healthStatus}>
-            {health?.database.status.toUpperCase()}
-          </Text>
-          <Text style={styles.healthMessage}>{health?.database.message}</Text>
-        </View>
-
-        <View style={styles.healthCard}>
-          <Text style={styles.healthTitle}>Overall</Text>
-          <Text style={styles.healthStatus}>
-            {health?.overall.toUpperCase()}
-          </Text>
-        </View>
-      </View>
-
-      {/* Backup Alerts */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Backup Alerts</Text>
-
-        <View style={styles.healthCard}>
-          <Text style={styles.healthTitle}>Backup Monitoring</Text>
-          <Text style={styles.healthStatus}>
-            {backup?.status.replace('_', ' ').toUpperCase()}
-          </Text>
-          <Text style={styles.healthMessage}>{backup?.message}</Text>
-          <Text style={styles.healthMessage}>
-            Last successful backup:{' '}
-            {backup?.lastSuccessfulBackup ?? 'Not available'}
-          </Text>
-          <Text style={styles.healthMessage}>
-            Next scheduled backup:{' '}
-            {backup?.nextScheduledBackup ?? 'Not available'}
-          </Text>
-        </View>
-      </View>
-
-      {/* Usage Limits */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Usage Limits</Text>
-
-        {usage ? (
-          <>
-            <View style={styles.healthCard}>
-              <Text style={styles.healthTitle}>Branches</Text>
-              <Text style={styles.value}>{usage.branches.used}</Text>
-              <Text style={styles.label}>
-                Limit:{' '}
-                {usage.branches.limit === null
-                  ? 'Not configured'
-                  : usage.branches.limit}
-              </Text>
+      {activeTab === 'operations' && hasPermission(user?.role, PERMISSIONS.AUTOMATIONS_MANAGE) && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Automation configuration</Text>
               <Text style={styles.statusText}>
-                Status: {usage.branches.status}
+                These settings are stored, but no automation worker is connected.
               </Text>
-            </View>
 
-            <View style={styles.healthCard}>
-              <Text style={styles.healthTitle}>Users</Text>
-              <Text style={styles.value}>{usage.users.used}</Text>
-              <Text style={styles.label}>
-                Limit:{' '}
-                {usage.users.limit === null
-                  ? 'Not configured'
-                  : usage.users.limit}
-              </Text>
-              <Text style={styles.statusText}>
-                Status: {usage.users.status}
-              </Text>
-            </View>
-          </>
-        ) : (
-          <Text style={styles.empty}>Usage data not available.</Text>
-        )}
-      </View>
+              {automations.length === 0 ? (
+                <View style={styles.card}>
+                  <Text style={styles.empty}>No automations configured</Text>
+                </View>
+              ) : (
+                automations.map(auto => {
+                  const isProcessing = togglingKey === auto.key;
+                  const autoErr = automationErrors[auto.key];
 
-      {/* Pending Privileged Requests */}
-      {hasPermission(user?.role, PERMISSIONS.PRIVILEGED_REQUESTS_MANAGE) && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Pending Privileged Requests</Text>
+                  return (
+                    <View key={auto._id} style={styles.card}>
+                      <Text style={styles.cardTitle}>{auto.name}</Text>
+                      <Text style={styles.label}>{auto.description}</Text>
 
-          {privilegedRequests.length === 0 ? (
-            <View style={styles.card}>
-              <Text style={styles.empty}>No pending privileged requests</Text>
-            </View>
-          ) : (
-            privilegedRequests.map(request => {
-              const isProcessing = reviewingId === request._id;
-              const reviewInProgress = reviewingId !== null;
-              const reqErr = requestErrors[request._id];
-              return (
-                <View key={request._id} style={styles.card}>
-                  <Text style={styles.cardTitle}>{request.requestType}</Text>
-                  <Text style={styles.label}>
-                    Requester: {request.requesterId?.fullName ?? 'Unknown'}
-                  </Text>
-                  <Text style={styles.label}>
-                    Role: {request.requesterId?.role ?? 'Unknown'}
-                  </Text>
-                  {request.branchId && (
-                    <Text style={styles.label}>
-                      Branch: {request.branchId.name} ({request.branchId.code})
-                    </Text>
-                  )}
-                  <Text style={styles.label}>Reason: {request.reason}</Text>
-                  <Text style={styles.statusText}>Status: {request.status}</Text>
-
-                  {reqErr && (
-                    <View style={styles.actionErrorBanner}>
-                      <Text style={styles.actionErrorText}>{reqErr.message}</Text>
-                      <TouchableOpacity
-                        style={styles.inlineRetryButton}
-                        disabled={reviewInProgress}
-                        onPress={() =>
-                          handleReviewRequest(request._id, reqErr.lastStatus)
-                        }>
-                        <Text style={styles.inlineRetryText}>
-                          Retry {reqErr.lastStatus === 'approved' ? 'Approve' : 'Reject'}
+                      <View style={styles.badgeRow}>
+                        <Text
+                          style={[
+                            styles.badge,
+                            auto.isPaused ? styles.badgePaused : styles.badgeActive,
+                          ]}>
+                          {auto.isPaused ? 'PAUSED' : 'ACTIVE'}
                         </Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
+                      </View>
 
-                  <View style={styles.actionRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.approveButton,
-                        reviewInProgress && styles.buttonDisabled,
-                      ]}
-                      disabled={reviewInProgress}
-                      onPress={() =>
-                        handleReviewRequest(request._id, 'approved')
-                      }>
-                      {isProcessing ? (
-                        <ActivityIndicator color="#ffffff" size="small" />
-                      ) : (
-                        <Text style={styles.buttonText}>Approve</Text>
+                      {autoErr && (
+                        <View style={styles.actionErrorBanner}>
+                          <Text style={styles.actionErrorText}>{autoErr.message}</Text>
+                          <TouchableOpacity
+                            style={styles.inlineRetryButton}
+                            disabled={isProcessing}
+                            onPress={() =>
+                              handleToggleAutomation(auto.key, autoErr.lastPaused)
+                            }>
+                            <Text style={styles.inlineRetryText}>Retry</Text>
+                          </TouchableOpacity>
+                        </View>
                       )}
-                    </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={[
-                        styles.rejectButton,
-                        reviewInProgress && styles.buttonDisabled,
-                      ]}
-                      disabled={reviewInProgress}
-                      onPress={() =>
-                        handleReviewRequest(request._id, 'rejected')
-                      }>
-                      {isProcessing ? (
-                        <ActivityIndicator color="#ffffff" size="small" />
-                      ) : (
-                        <Text style={styles.buttonText}>Reject</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })
-          )}
-        </View>
-      )}
-
-      {/* Permitted Automations */}
-      {hasPermission(user?.role, PERMISSIONS.AUTOMATIONS_MANAGE) && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Automation Controls</Text>
-
-          {automations.length === 0 ? (
-            <View style={styles.card}>
-              <Text style={styles.empty}>No automations configured</Text>
-            </View>
-          ) : (
-            automations.map(auto => {
-              const isProcessing = togglingKey === auto.key;
-              const autoErr = automationErrors[auto.key];
-
-              return (
-                <View key={auto._id} style={styles.card}>
-                  <Text style={styles.cardTitle}>{auto.name}</Text>
-                  <Text style={styles.label}>{auto.description}</Text>
-
-                  <View style={styles.badgeRow}>
-                    <Text
-                      style={[
-                        styles.badge,
-                        auto.isPaused ? styles.badgePaused : styles.badgeActive,
-                      ]}>
-                      {auto.isPaused ? 'PAUSED' : 'ACTIVE'}
-                    </Text>
-                  </View>
-
-                  {autoErr && (
-                    <View style={styles.actionErrorBanner}>
-                      <Text style={styles.actionErrorText}>{autoErr.message}</Text>
                       <TouchableOpacity
-                        style={styles.inlineRetryButton}
+                        style={[
+                          auto.isPaused ? styles.resumeButton : styles.pauseButton,
+                          isProcessing && styles.buttonDisabled,
+                        ]}
                         disabled={isProcessing}
-                        onPress={() =>
-                          handleToggleAutomation(auto.key, autoErr.lastPaused)
-                        }>
-                        <Text style={styles.inlineRetryText}>Retry</Text>
+                        onPress={() => confirmAutomationSetting(auto)}>
+                        {isProcessing ? (
+                          <ActivityIndicator color="#ffffff" size="small" />
+                        ) : (
+                          <Text style={styles.buttonText}>
+                            {auto.isPaused ? 'Clear pause setting' : 'Save pause setting'}
+                          </Text>
+                        )}
                       </TouchableOpacity>
                     </View>
-                  )}
+                  );
+                })
+              )}
+            </View>
+          )}
 
-                  <TouchableOpacity
-                    style={[
-                      auto.isPaused ? styles.resumeButton : styles.pauseButton,
-                      isProcessing && styles.buttonDisabled,
-                    ]}
-                    disabled={isProcessing}
-                    onPress={() =>
-                      handleToggleAutomation(auto.key, auto.isPaused)
-                    }>
-                    {isProcessing ? (
-                      <ActivityIndicator color="#ffffff" size="small" />
-                    ) : (
-                      <Text style={styles.buttonText}>
-                        {auto.isPaused ? 'Resume Automation' : 'Pause Automation'}
+      {activeTab === 'administration' && hasPermission(user?.role, PERMISSIONS.SESSIONS_MANAGE) && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Session Security Controls</Text>
+
+              {sessions.length === 0 ? (
+                <View style={styles.card}>
+                  <Text style={styles.empty}>No active sessions</Text>
+                </View>
+              ) : (
+                sessions.map(sess => {
+                  const isProcessing = revokingId === sess._id;
+                  const sessErr = sessionErrors[sess._id];
+
+                  return (
+                    <View key={sess._id} style={styles.card}>
+                      <Text style={styles.cardTitle}>
+                        User: {sess.userId?.fullName ?? 'Unknown'}
                       </Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              );
-            })
-          )}
-        </View>
-      )}
+                      <Text style={styles.label}>
+                        Email: {sess.userId?.email ?? 'N/A'}
+                      </Text>
+                      <Text style={styles.label}>Role: {sess.role}</Text>
+                      <Text style={styles.label}>
+                        Session ID: {sess._id.substring(0, 10)}...
+                      </Text>
 
-      {/* Session Security Controls */}
-      {hasPermission(user?.role, PERMISSIONS.SESSIONS_MANAGE) && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Session Security Controls</Text>
+                      <View style={styles.badgeRow}>
+                        <Text
+                          style={[
+                            styles.badge,
+                            sess.isRevoked ? styles.badgeRevoked : styles.badgeActive,
+                          ]}>
+                          {sess.isRevoked ? 'REVOKED' : 'ACTIVE'}
+                        </Text>
+                      </View>
 
-          {sessions.length === 0 ? (
-            <View style={styles.card}>
-              <Text style={styles.empty}>No active sessions</Text>
-            </View>
-          ) : (
-            sessions.map(sess => {
-              const isProcessing = revokingId === sess._id;
-              const sessErr = sessionErrors[sess._id];
-
-              return (
-                <View key={sess._id} style={styles.card}>
-                  <Text style={styles.cardTitle}>
-                    User: {sess.userId?.fullName ?? 'Unknown'}
-                  </Text>
-                  <Text style={styles.label}>
-                    Email: {sess.userId?.email ?? 'N/A'}
-                  </Text>
-                  <Text style={styles.label}>Role: {sess.role}</Text>
-                  <Text style={styles.label}>
-                    Session ID: {sess._id.substring(0, 10)}...
-                  </Text>
-
-                  <View style={styles.badgeRow}>
-                    <Text
-                      style={[
-                        styles.badge,
-                        sess.isRevoked ? styles.badgeRevoked : styles.badgeActive,
-                      ]}>
-                      {sess.isRevoked ? 'REVOKED' : 'ACTIVE'}
-                    </Text>
-                  </View>
-
-                  {sessErr && (
-                    <View style={styles.actionErrorBanner}>
-                      <Text style={styles.actionErrorText}>{sessErr}</Text>
-                      <TouchableOpacity
-                        style={styles.inlineRetryButton}
-                        disabled={isProcessing}
-                        onPress={() => handleRevokeSession(sess._id)}>
-                        <Text style={styles.inlineRetryText}>Retry</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-
-                  {!sess.isRevoked && (
-                    <TouchableOpacity
-                      style={[
-                        styles.revokeButton,
-                        isProcessing && styles.buttonDisabled,
-                      ]}
-                      disabled={isProcessing}
-                      onPress={() => handleRevokeSession(sess._id)}>
-                      {isProcessing ? (
-                        <ActivityIndicator color="#ffffff" size="small" />
-                      ) : (
-                        <Text style={styles.buttonText}>Revoke Session</Text>
+                      {sessErr && (
+                        <View style={styles.actionErrorBanner}>
+                          <Text style={styles.actionErrorText}>{sessErr}</Text>
+                          <TouchableOpacity
+                            style={styles.inlineRetryButton}
+                            disabled={isProcessing}
+                            onPress={() => Alert.alert(
+                              'Revoke session',
+                              `Revoke access for ${sess.userId?.fullName ?? 'this user'}?`,
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                { text: 'Revoke', style: 'destructive', onPress: () => handleRevokeSession(sess._id) },
+                              ],
+                            )}>
+                            <Text style={styles.inlineRetryText}>Retry</Text>
+                          </TouchableOpacity>
+                        </View>
                       )}
-                    </TouchableOpacity>
-                  )}
-                </View>
-              );
-            })
+
+                      {!sess.isRevoked && (
+                        <TouchableOpacity
+                          style={[
+                            styles.revokeButton,
+                            isProcessing && styles.buttonDisabled,
+                          ]}
+                          disabled={isProcessing}
+                          onPress={() => confirmSessionRevocation(sess)}>
+                          {isProcessing ? (
+                            <ActivityIndicator color="#ffffff" size="small" />
+                          ) : (
+                            <Text style={styles.buttonText}>Revoke Session</Text>
+                          )}
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })
+              )}
+            </View>
           )}
+      </ScrollView>
+      <SafeAreaView edges={['bottom', 'left', 'right']} style={styles.bottomSafeArea}>
+        <View style={styles.bottomBar}>
+          {([
+            ['home', 'Home', '▦'],
+            ['operations', 'Operations', '◴'],
+            ['administration', 'Administration', '⚙'],
+          ] as const).map(([tab, label, icon]) => {
+            const selected = activeTab === tab;
+            return (
+              <Pressable
+                key={tab}
+                accessibilityRole="tab"
+                accessibilityState={{ selected }}
+                accessibilityLabel={label}
+                onPress={() => setActiveTab(tab)}
+                style={styles.bottomTabButton}>
+                <View style={[styles.bottomTabPill, selected && styles.bottomTabPillActive]}>
+                  <Text style={[styles.bottomTabIcon, selected && styles.bottomTabTextActive]}>{icon}</Text>
+                  <Text style={[styles.bottomTabLabel, selected && styles.bottomTabTextActive]}>{label}</Text>
+                </View>
+              </Pressable>
+            );
+          })}
         </View>
-      )}
-    </ScrollView>
+      </SafeAreaView>
+    </SafeAreaView>
   );
 };
 
@@ -1109,12 +1189,14 @@ const baseStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   ...baseStyles,
-  container: {padding: 14, paddingTop: 18, paddingBottom: 46, backgroundColor: colors.cream},
-  center: {flex: 1, justifyContent: 'center', alignItems: 'center', padding: 28, backgroundColor: colors.cream},
+  safeArea: {flex: 1, backgroundColor: dashboardColors.background},
+  scroll: {flex: 1, backgroundColor: dashboardColors.background},
+  container: {paddingHorizontal: 18, paddingTop: 14, paddingBottom: 24, backgroundColor: dashboardColors.background},
+  center: {flex: 1, justifyContent: 'center', alignItems: 'center', padding: 28, backgroundColor: dashboardColors.background},
   statusText: {fontFamily: fonts.body, color: colors.muted, fontSize: 14, marginTop: 10},
   title: {fontFamily: fonts.display, color: colors.ink},
-  nextStepsCard: {backgroundColor: colors.white, borderRadius: 22, padding: 14, marginBottom: 16, ...shadow},
-  nextStepsTitle: {fontFamily: fonts.heading, color: colors.ink, fontSize: 15, marginBottom: 10},
+  nextStepsCard: {backgroundColor: dashboardColors.card, borderRadius: 17, borderWidth: 1, borderColor: dashboardColors.border, padding: 17, marginBottom: 16, ...cardShadow},
+  nextStepsTitle: {...dashboardTypography.h3, color: dashboardColors.ink, marginBottom: 10},
   nextStepsActions: {flexDirection: 'row', alignItems: 'center', gap: 9},
   attentionButton: {backgroundColor: '#4b5bbb', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10},
   attentionButtonText: {fontFamily: fonts.bodySemiBold, color: colors.white, fontSize: 12},
@@ -1126,6 +1208,20 @@ const styles = StyleSheet.create({
   greetingCaption: {fontFamily: fonts.body, fontSize: 12, color: colors.muted, marginTop: 4, maxWidth: 290},
   dateChip: {backgroundColor: colors.softPurple, borderRadius: 12, paddingHorizontal: 9, paddingVertical: 7, marginTop: 5},
   dateChipText: {fontFamily: fonts.bodySemiBold, fontSize: 10, letterSpacing: .6, color: '#685b88'},
+  bottomSafeArea: {backgroundColor: dashboardColors.card, borderTopWidth: 1, borderTopColor: '#ede4d9'},
+  bottomBar: {height: 70, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, backgroundColor: dashboardColors.card},
+  bottomTabButton: {flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 54},
+  bottomTabPill: {minWidth: 76, minHeight: 54, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 17, alignItems: 'center', justifyContent: 'center', gap: 2},
+  bottomTabPillActive: {backgroundColor: dashboardColors.soft},
+  bottomTabIcon: {fontSize: 18, lineHeight: 21, color: dashboardColors.muted},
+  bottomTabLabel: {...dashboardTypography.caption, color: dashboardColors.muted},
+  bottomTabTextActive: {color: dashboardColors.primary},
+  toolGrid: {flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12},
+  toolCard: {width: '48%', minHeight: 132, padding: 17, borderRadius: 17, borderWidth: 1, ...cardShadow},
+  toolCardPrimary: {backgroundColor: dashboardColors.soft, borderColor: dashboardColors.softBorder},
+  toolCardSecondary: {backgroundColor: dashboardColors.card, borderColor: dashboardColors.border},
+  toolCardTitle: {...dashboardTypography.h3, color: dashboardColors.ink, marginBottom: 8},
+  toolCardText: {...dashboardTypography.small, fontSize: 12, color: dashboardColors.muted},
   heroCard: {backgroundColor: '#ffe2a0', borderRadius: 24, minHeight: 214, padding: 18, overflow: 'hidden', marginBottom: 24, borderWidth: 1, borderColor: '#f4d58f'},
   heroBackgroundImage: {borderRadius: 23},
   heroImageFade: {position: 'absolute', left: 0, top: 0, bottom: 0, width: '66%', backgroundColor: '#ffe2a0', opacity: .9},
@@ -1145,20 +1241,20 @@ const styles = StyleSheet.create({
   heroCopy: {fontFamily: fonts.body, fontSize: 11, lineHeight: 16, color: '#716b5d', marginTop: 8, maxWidth: 183},
   heroPrimaryAction: {backgroundColor: '#4b5bbb', borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10, alignSelf: 'flex-start'},
   heroPrimaryActionText: {fontFamily: fonts.bodySemiBold, color: colors.white, fontSize: 11},
-  overviewTitle: {fontFamily: fonts.heading, color: colors.ink, fontSize: 19, marginBottom: 13},
+  overviewTitle: {...dashboardTypography.h3, color: dashboardColors.ink, marginBottom: 13},
   statsGrid: {flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12, marginBottom: 22},
-  section: {marginTop: 13},
-  sectionTitle: {fontFamily: fonts.heading, fontSize: 19, color: colors.ink, marginBottom: 12},
-  card: {backgroundColor: colors.white, padding: 18, borderRadius: 20, marginBottom: 12, ...shadow},
+  section: {marginTop: 0, marginBottom: 16, padding: 17, backgroundColor: dashboardColors.card, borderColor: dashboardColors.border, borderWidth: 1, borderBottomWidth: 4, borderBottomColor: dashboardColors.shadowSolid, borderRadius: 17, ...cardShadow},
+  sectionTitle: {...dashboardTypography.h3, color: dashboardColors.ink, marginBottom: 12},
+  card: {backgroundColor: dashboardColors.card, padding: 16, borderRadius: 14, marginBottom: 12, borderWidth: 1, borderColor: dashboardColors.border, ...cardShadow},
   cardTitle: {fontFamily: fonts.heading, fontSize: 16, color: colors.ink},
   value: {fontFamily: fonts.display, fontSize: 30, color: colors.ink, marginTop: 7},
   label: {fontFamily: fonts.body, fontSize: 13, lineHeight: 19, color: colors.muted, marginTop: 4},
-  branchCard: {backgroundColor: colors.white, padding: 18, borderRadius: 20, marginBottom: 12, ...shadow},
+  branchCard: {backgroundColor: dashboardColors.cardWarm, padding: 16, borderRadius: 14, marginBottom: 12, borderWidth: 1, borderColor: dashboardColors.border, ...cardShadow},
   branchName: {fontFamily: fonts.heading, fontSize: 17, color: colors.ink},
   branchCode: {fontFamily: fonts.bodySemiBold, fontSize: 11, letterSpacing: .5, color: colors.primary, marginTop: 5},
   branchInfo: {fontFamily: fonts.body, fontSize: 13, color: colors.muted, marginTop: 8, marginBottom: 10},
   branchStatus: {fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.success, marginTop: 8},
-  healthCard: {backgroundColor: colors.white, padding: 18, borderRadius: 20, marginBottom: 12, borderWidth: 1, borderColor: colors.line},
+  healthCard: {backgroundColor: dashboardColors.card, padding: 15, borderRadius: 14, marginBottom: 10, borderWidth: 1, borderColor: dashboardColors.border},
   healthTitle: {fontFamily: fonts.heading, fontSize: 16, color: colors.ink},
   healthStatus: {fontFamily: fonts.bodySemiBold, fontSize: 12, color: colors.primary, marginTop: 8},
   healthMessage: {fontFamily: fonts.body, fontSize: 13, lineHeight: 19, color: colors.muted, marginTop: 5},

@@ -14,7 +14,7 @@ const toneStyles: Record<Tone, {backgroundColor: string; color: string}> = {
   danger: {backgroundColor: colors.dangerSoft, color: colors.danger},
 };
 
-export const HiraHeader = ({onLogout}: {onLogout: () => void}) => (
+export const HiraHeader = ({onOpenSettings}: {onOpenSettings: () => void}) => (
   <View style={styles.header}>
     <View style={styles.logo}><Text style={styles.logoText}>H</Text></View>
     <View style={styles.headerCopy}>
@@ -24,8 +24,8 @@ export const HiraHeader = ({onLogout}: {onLogout: () => void}) => (
     <View style={styles.bell}><Text style={styles.bellText}>!</Text><View style={styles.bellDot} /></View>
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Log out"
-      onPress={onLogout}
+      accessibilityLabel="Open settings"
+      onPress={onOpenSettings}
       style={({pressed}) => [styles.menu, pressed && styles.pressed]}>
       <Text style={styles.menuText}>•••</Text>
     </Pressable>

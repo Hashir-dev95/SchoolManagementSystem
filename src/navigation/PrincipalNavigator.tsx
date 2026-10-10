@@ -1,26 +1,28 @@
-import React from 'react';
-import {createNativeStackNavigator} from '@react-navigation/native-stack';
+﻿import React from 'react';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-import PrincipalDashboardScreen from '../screens/principal/PrincipalDashboardScreen';
+import type { ApprovalRequest } from '../services/principal/principalService';
+import ApprovalDetailScreen from '../screens/principal/ApprovalDetailScreen';
+import NoticeDetailScreen from '../screens/principal/NoticeDetailScreen';
+import PrincipalWorkspaceScreen from '../screens/principal/PrincipalWorkspaceScreen';
 
 export type PrincipalStackParamList = {
-  PrincipalDashboard: undefined;
+  PrincipalWorkspace: undefined;
+  ApprovalDetail: { request: ApprovalRequest };
+  NoticeDetail: { noticeId: string };
 };
 
 const Stack = createNativeStackNavigator<PrincipalStackParamList>();
 
-const PrincipalNavigator = () => {
+export default function PrincipalNavigator() {
   return (
-    <Stack.Navigator>
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen
-        name="PrincipalDashboard"
-        component={PrincipalDashboardScreen}
-        options={{
-          headerShown: false,
-        }}
+        name="PrincipalWorkspace"
+        component={PrincipalWorkspaceScreen}
       />
+      <Stack.Screen name="ApprovalDetail" component={ApprovalDetailScreen} />
+      <Stack.Screen name="NoticeDetail" component={NoticeDetailScreen} />
     </Stack.Navigator>
   );
-};
-
-export default PrincipalNavigator;
+}

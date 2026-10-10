@@ -132,7 +132,6 @@ export interface AutomationConfig {
 
 export interface UserSession {
   _id: string;
-  token: string;
   userId: {
     _id: string;
     fullName: string;
@@ -183,6 +182,35 @@ interface RevokeSessionResponse {
   data: UserSession;
 }
 
+export interface CreatePrincipalPayload {
+  fullName: string;
+  email: string;
+  phone?: string;
+  password: string;
+  branchId: string;
+}
+
+export interface CreatePrincipalResponse {
+  success: boolean;
+  message: string;
+  data: {
+    id: string;
+    fullName: string;
+    email: string;
+    phone?: string;
+    role: string;
+    branchId: string;
+    isActive: boolean;
+    createdAt: string;
+  };
+}
+
+interface BranchesResponse {
+  success: boolean;
+  message: string;
+  branches: Branch[];
+}
+
 export const adminService = {
   getDashboard: async (
     accessToken: string,
@@ -216,6 +244,22 @@ export const adminService = {
         body: {status},
       },
     );
+  },
+  getBranches: async (accessToken: string): Promise<BranchesResponse> => {
+    return apiClient.request<BranchesResponse>('/branches', {
+      method: 'GET',
+      token: accessToken,
+    });
+  },
+  createPrincipal: async (
+    accessToken: string,
+    payload: CreatePrincipalPayload,
+  ): Promise<CreatePrincipalResponse> => {
+    return apiClient.request<CreatePrincipalResponse>('/admin/principals', {
+      method: 'POST',
+      token: accessToken,
+      body: payload,
+    });
   },
   getBranchById: async (
     accessToken: string,

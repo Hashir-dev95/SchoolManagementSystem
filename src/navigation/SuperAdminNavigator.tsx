@@ -1,10 +1,13 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-
 import SuperAdminDashboardScreen from '../screens/superAdmin/SuperAdminDashboardScreen';
 import SuperAdminBranchDetailsScreen from '../screens/superAdmin/SuperAdminBranchDetailsScreen';
+import CreatePrincipalScreen from '../screens/superAdmin/CreatePrincipalScreen';
+import SuperAdminSettingsScreen from '../screens/superAdmin/SuperAdminSettingsScreen';
 export type SuperAdminStackParamList = {
   SuperAdminDashboard: undefined;
+  SuperAdminSettings: undefined;
+  CreatePrincipal: undefined;
   SuperAdminBranchDetails: { branchId: string };
 };
 
@@ -21,6 +24,17 @@ const SuperAdminNavigator = () => {
         }}
       />
       <Stack.Screen
+        name="SuperAdminSettings"
+        component={SuperAdminSettingsScreen}
+        options={{
+          title: 'Settings',
+          headerStyle: {backgroundColor: '#fbf9f4'},
+          headerTintColor: '#23595a',
+          headerShadowVisible: false,
+          headerTitleStyle: {fontFamily: 'Nunito-Bold', fontSize: 18},
+        }}
+      />
+      <Stack.Screen
         name="SuperAdminBranchDetails"
         component={SuperAdminBranchDetailsScreen}
         options={{
@@ -31,7 +45,19 @@ const SuperAdminNavigator = () => {
           headerTitleStyle: {fontFamily: 'Nunito-Bold', fontSize: 18},
         }}
       />
+      <Stack.Screen
+        name="CreatePrincipal"
+        component={CreatePrincipalScreen}
+        options={{
+          title: 'Create Principal',
+          headerStyle: {backgroundColor: '#fbf9f4'},
+          headerTintColor: '#23595a',
+          headerShadowVisible: false,
+          headerTitleStyle: {fontFamily: 'Nunito-Bold', fontSize: 18},
+        }}
+      />
     </Stack.Navigator>
+
   );
 };
 
