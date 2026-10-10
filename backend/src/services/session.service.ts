@@ -21,15 +21,15 @@ export const registerSession = async (
 export const isTokenRevoked = async (token: string): Promise<boolean> => {
   const session = await Session.findOne({token});
 
-  if (session && session.isRevoked) {
-    return true;
-  }
-
-  return false;
+  // Every access token issued by the login flow is registered as a session.
+  // Treat a missing record as invalid so a missing session cannot turn an
+  // otherwise valid JWT into an unrevocable session.
+  return !session || session.isRevoked;
 };
 
 export const getSessions = async (): Promise<ISession[]> => {
   return Session.find()
+    .select('-token')
     .populate('userId', 'fullName email role')
     .sort({createdAt: -1});
 };
@@ -46,21 +46,21 @@ export const revokeSession = async (
     throw new Error('Invalid reviewer ID');
   }
 
-  const session = await Session.findById(sessionId);
+  const session = await Session.findOneAndUpdate(
+    { _id: sessionId, isRevoked: false },
+    {
+      $set: {
+        isRevoked: true,
+        revokedAt: new Date(),
+        revokedBy: new Types.ObjectId(revokedBy),
+      },
+    },
+    { new: true, runValidators: true },
+  ).select('-token');
 
-  if (!session) {
-    throw new Error('Session not found');
-  }
+  if (session) return session;
 
-  if (session.isRevoked) {
-    throw new Error('Session is already revoked');
-  }
-
-  session.isRevoked = true;
-  session.revokedAt = new Date();
-  session.revokedBy = new Types.ObjectId(revokedBy);
-
-  await session.save();
-
-  return session;
+  const exists = await Session.exists({ _id: sessionId });
+  if (!exists) throw new Error('Session not found');
+  throw new Error('Session is already revoked');
 };

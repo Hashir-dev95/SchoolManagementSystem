@@ -8,7 +8,9 @@ const connectDatabase = async (): Promise<void> => {
   }
 
   try {
-    await mongoose.connect(mongoUri);
+    await mongoose.connect(mongoUri, {
+      dbName: process.env.MONGODB_DB || 'school_management',
+    });
 
     console.log('MongoDB connected successfully');
   } catch (error) {

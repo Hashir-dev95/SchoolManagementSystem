@@ -2,6 +2,7 @@ import {NextFunction, Request, Response} from 'express';
 
 import {verifyAccessToken, JwtPayload} from '../services/jwt.service';
 import {isTokenRevoked} from '../services/session.service';
+import User from '../models/user';
 
 export interface AuthenticatedRequest extends Request {
   user?: JwtPayload;
@@ -36,10 +37,25 @@ export const authenticateToken = async (
       return;
     }
 
+    const activeUser = await User.findById(decodedToken.userId)
+      .select('_id role isActive')
+      .lean();
+    if (
+      !activeUser ||
+      !activeUser.isActive ||
+      activeUser.role !== decodedToken.role
+    ) {
+      res.status(401).json({
+        success: false,
+        message: 'User account is unavailable or authorization has changed',
+      });
+      return;
+    }
+
     req.user = decodedToken;
 
     next();
-  } catch (error) {
+  } catch {
     res.status(401).json({
       success: false,
       message: 'Invalid or expired access token',

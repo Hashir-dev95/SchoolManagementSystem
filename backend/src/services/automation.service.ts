@@ -1,36 +1,8 @@
 import {Types} from 'mongoose';
 import Automation, {IAutomation} from '../models/automation';
 
-const DEFAULT_AUTOMATIONS = [
-  {
-    key: 'attendance_alerts',
-    name: 'Automated Attendance Alerts',
-    description: 'Sends daily notifications to parents for unexcused student absences.',
-    isPaused: false,
-  },
-  {
-    key: 'fee_reminders',
-    name: 'Fee Due Date Reminders',
-    description: 'Sends automated fee reminder SMS and emails before due dates.',
-    isPaused: false,
-  },
-  {
-    key: 'report_card_generator',
-    name: 'Nightly Report Card Generator',
-    description: 'Generates PDF report cards for finished terms during off-peak hours.',
-    isPaused: false,
-  },
-];
-
 export const getAutomations = async (): Promise<IAutomation[]> => {
-  let automations = await Automation.find().sort({createdAt: 1});
-
-  if (automations.length === 0) {
-    await Automation.insertMany(DEFAULT_AUTOMATIONS);
-    automations = await Automation.find().sort({createdAt: 1});
-  }
-
-  return automations;
+  return Automation.find().sort({createdAt: 1});
 };
 
 export const toggleAutomationPause = async (
@@ -42,16 +14,8 @@ export const toggleAutomationPause = async (
     throw new Error('Invalid user ID');
   }
 
-  let automation = await Automation.findOne({key});
-
-  if (!automation) {
-    // Check if key is in default list and seed it if needed
-    const defaultAuto = DEFAULT_AUTOMATIONS.find(a => a.key === key);
-    if (!defaultAuto) {
-      throw new Error('Automation key not found');
-    }
-    automation = await Automation.create(defaultAuto);
-  }
+  const automation = await Automation.findOne({key});
+  if (!automation) throw new Error('Automation key not found');
 
   automation.isPaused = isPaused;
   automation.pausedBy = isPaused ? new Types.ObjectId(userId) : undefined;

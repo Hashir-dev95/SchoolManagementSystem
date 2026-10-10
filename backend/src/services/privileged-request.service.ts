@@ -30,21 +30,21 @@ export const reviewPrivilegedRequest = async (
     throw new Error('Invalid reviewer ID');
   }
 
-  const request = await PrivilegedRequest.findById(requestId);
+  const updated = await PrivilegedRequest.findOneAndUpdate(
+    { _id: requestId, status: 'pending' },
+    {
+      $set: {
+        status,
+        reviewedBy: new Types.ObjectId(reviewedBy),
+        reviewedAt: new Date(),
+      },
+    },
+    { new: true, runValidators: true },
+  );
 
-  if (!request) {
-    throw new Error('Privileged request not found');
-  }
+  if (updated) return updated;
 
-  if (request.status !== 'pending') {
-    throw new Error('Only pending requests can be reviewed');
-  }
-
-  request.status = status;
-  request.reviewedBy = new Types.ObjectId(reviewedBy);
-  request.reviewedAt = new Date();
-
-  await request.save();
-
-  return request;
+  const exists = await PrivilegedRequest.exists({ _id: requestId });
+  if (!exists) throw new Error('Privileged request not found');
+  throw new Error('Only pending requests can be reviewed');
 };

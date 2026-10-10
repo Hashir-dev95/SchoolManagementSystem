@@ -51,11 +51,13 @@ export const revokeSessionController = async (
     }
 
     const updatedSession = await revokeSession(sessionId, req.user.userId);
+    const sessionData = updatedSession.toObject();
+    delete sessionData.token;
 
     res.status(200).json({
       success: true,
       message: 'Session revoked successfully',
-      data: updatedSession,
+      data: sessionData,
     });
   } catch (error) {
     const message =
@@ -69,9 +71,13 @@ export const revokeSessionController = async (
       return;
     }
 
+    if (message === 'Session is already revoked') {
+      res.status(409).json({ success: false, message });
+      return;
+    }
+
     if (
       message === 'Invalid session ID' ||
-      message === 'Session is already revoked' ||
       message === 'Invalid reviewer ID'
     ) {
       res.status(400).json({

@@ -87,8 +87,12 @@ export const reviewPrivilegedRequestController = async (
       return;
     }
 
+    if (message === 'Only pending requests can be reviewed') {
+      res.status(409).json({ success: false, message });
+      return;
+    }
+
     if (
-      message === 'Only pending requests can be reviewed' ||
       message === 'Invalid request ID' ||
       message === 'Invalid status' ||
       message === 'Invalid reviewer ID'

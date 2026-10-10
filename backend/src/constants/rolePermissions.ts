@@ -1,6 +1,6 @@
-import {UserRole, USER_ROLES} from '../models/user';
-import {PERMISSIONS} from './permissions';
-import type {Permission} from './permissions';
+import { UserRole, USER_ROLES } from '../models/user';
+import { PERMISSIONS } from './permissions';
+import type { Permission } from './permissions';
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   [USER_ROLES.SUPER_ADMIN]: Object.values(PERMISSIONS),
@@ -10,6 +10,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     PERMISSIONS.STUDENTS_CREATE,
     PERMISSIONS.STUDENTS_UPDATE,
     PERMISSIONS.STUDENTS_DELETE,
+    PERMISSIONS.PRINCIPAL_DASHBOARD_VIEW,
+
+    PERMISSIONS.PRINCIPAL_APPROVALS_VIEW,
+    PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE,
+    PERMISSIONS.PRINCIPAL_TASKS_MANAGE,
 
     PERMISSIONS.TEACHERS_VIEW,
     PERMISSIONS.TEACHERS_CREATE,
