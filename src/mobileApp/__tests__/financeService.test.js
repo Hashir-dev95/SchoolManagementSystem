@@ -53,3 +53,14 @@ test('payment queries omit empty filters without adding another delimiter', asyn
     '/finance/payments?status=confirmed',
   ]);
 });
+
+test('Parent payment reconciliation uses the branch-scoped Finance API', async () => {
+  await financeApi.getParentPaymentReconciliation();
+
+  expect(authRequest).toHaveBeenCalledWith(
+    '/finance/reconciliation/parent-payments',
+    {},
+    true,
+    true,
+  );
+});

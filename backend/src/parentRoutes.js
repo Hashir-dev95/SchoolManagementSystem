@@ -2,7 +2,18 @@ const express = require('express');
 const { ObjectId } = require('mongodb');
 const { getDatabase } = require('./database');
 const { createClassTeacherApplication } = require('./applicationService');
+const { normalizeInvoiceStatuses } = require('./invoiceStatus');
 const parentPaymentRoutes = require('./parentPaymentRoutes');
+const {
+  apiId,
+  assertSameBranch,
+  referenceFieldQuery,
+  referenceValues,
+  resolveRecordReference,
+  resolveUserReference,
+  resolveUserForRole,
+  unresolvedClassReference,
+} = require('./identityReferenceAdapter');
 
 const router = express.Router();
 
@@ -18,13 +29,22 @@ function requireParentContext(req, res, next) {
       .status(403)
       .json({ success: false, error: 'Parent access is required.' });
   }
-  req.parentUserId = userId;
-  return next();
+  resolveUserForRole(getDatabase(), userId, 'parent')
+    .then(identity => {
+      req.parentIdentity = identity;
+      req.parentUserId = apiId(identity);
+      return next();
+    })
+    .catch(next);
 }
 
 function verifiedLinkFilter(parentUserId, studentId) {
   const filter = {
-    parentUserId,
+    parentUserId: Array.isArray(parentUserId)
+      ? { $in: parentUserId }
+      : parentUserId && typeof parentUserId === 'object'
+      ? { $in: referenceValues(parentUserId) }
+      : parentUserId,
     revokedAt: null,
     status: { $ne: 'revoked' },
     $or: [{ status: 'verified' }, { verified: true }],
@@ -35,25 +55,60 @@ function verifiedLinkFilter(parentUserId, studentId) {
 
 async function getVerifiedChild(parentUserId, studentId) {
   const db = getDatabase();
-  const link = await db
-    .collection('parentChildLinks')
-    .findOne(verifiedLinkFilter(parentUserId, studentId));
+  const parentIdentity = parentUserId && typeof parentUserId === 'object'
+    ? parentUserId
+    : await resolveUserForRole(db, parentUserId, 'parent');
+  const requestedStudent = referenceFieldQuery('studentId', studentId);
+  if (!requestedStudent) return null;
+  const candidates = await db.collection('parentChildLinks')
+    .find({
+      revokedAt: null,
+      status: { $ne: 'revoked' },
+      $or: [{ status: 'verified' }, { verified: true }],
+      $and: [{ $or: requestedStudent.$or }],
+    })
+    .limit(50)
+    .toArray();
+  let link = null;
+  for (const candidate of candidates) {
+    const linkedParent = await resolveUserReference(db, candidate.parentUserId);
+    if (String(linkedParent._id) === String(parentIdentity._id)) {
+      link = candidate;
+      break;
+    }
+  }
   if (!link) return null;
-  return db.collection('students').findOne(
-    { id: link.studentId },
-    {
-      projection: {
-        _id: 0,
-        id: 1,
-        name: 1,
-        fullName: 1,
-        grade: 1,
-        section: 1,
-        classId: 1,
-        status: 1,
-      },
-    },
-  );
+  const linkedStudent = await resolveRecordReference(db, 'students', link.studentId, { label: 'Student' });
+  const requestedRecord = await resolveRecordReference(db, 'students', studentId, { label: 'Student' });
+  if (String(linkedStudent._id) !== String(requestedRecord._id)) return null;
+  await assertSameBranch(db, parentIdentity.branchId, linkedStudent.branchId);
+  const response = {
+    id: apiId(linkedStudent),
+    name: linkedStudent.name,
+    fullName: linkedStudent.fullName,
+    grade: linkedStudent.grade,
+    section: linkedStudent.section,
+    classId: linkedStudent.classId,
+    status: linkedStudent.status,
+  };
+  return response;
+}
+
+async function listVerifiedChildren(parentIdentity) {
+  const db = getDatabase();
+  const links = await db.collection('parentChildLinks')
+    .find(verifiedLinkFilter(parentIdentity))
+    .limit(500)
+    .toArray();
+  const unique = new Map();
+  for (const link of links) {
+    const linkedParent = await resolveUserReference(db, link.parentUserId);
+    if (String(linkedParent._id) !== String(parentIdentity._id)) continue;
+    const student = await resolveRecordReference(db, 'students', link.studentId, { label: 'Student' });
+    await assertSameBranch(db, parentIdentity.branchId, student.branchId);
+    unique.set(String(student._id), student);
+  }
+  return [...unique.values()];
 }
 
 function dateRange(query, field) {
@@ -102,22 +157,7 @@ router.use('/payments', parentPaymentRoutes);
 
 router.get('/notifications', async (req, res, next) => {
   try {
-    const links = await getDatabase()
-      .collection('parentChildLinks')
-      .find(verifiedLinkFilter(req.parentUserId))
-      .toArray();
-    const studentIds = [
-      ...new Set(links.map(link => link.studentId).filter(Boolean)),
-    ];
-    const children = studentIds.length
-      ? await getDatabase()
-          .collection('students')
-          .find(
-            { id: { $in: studentIds } },
-            { projection: { id: 1, classId: 1 } },
-          )
-          .toArray()
-      : [];
+    const children = await listVerifiedChildren(req.parentIdentity);
     const classIds = [
       ...new Set(children.map(child => child.classId).filter(Boolean)),
     ];
@@ -200,7 +240,7 @@ router.post('/notifications/:notificationId/read', async (req, res, next) => {
 
     const links = await getDatabase()
       .collection('parentChildLinks')
-      .find(verifiedLinkFilter(req.parentUserId))
+      .find(verifiedLinkFilter(req.parentIdentity))
       .toArray();
     const studentIds = [
       ...new Set(links.map(link => link.studentId).filter(Boolean)),
@@ -268,7 +308,7 @@ router.get('/notifications/:notificationId', async (req, res, next) => {
 
     const links = await getDatabase()
       .collection('parentChildLinks')
-      .find(verifiedLinkFilter(req.parentUserId))
+      .find(verifiedLinkFilter(req.parentIdentity))
       .toArray();
     const studentIds = [
       ...new Set(links.map(link => link.studentId).filter(Boolean)),
@@ -312,33 +352,16 @@ router.get('/notifications/:notificationId', async (req, res, next) => {
 
 router.get('/children', async (req, res, next) => {
   try {
-    const links = await getDatabase()
-      .collection('parentChildLinks')
-      .find(verifiedLinkFilter(req.parentUserId))
-      .toArray();
-    const studentIds = [
-      ...new Set(links.map(link => link.studentId).filter(Boolean)),
-    ];
-    const data = studentIds.length
-      ? await getDatabase()
-          .collection('students')
-          .find(
-            { id: { $in: studentIds } },
-            {
-              projection: {
-                _id: 0,
-                id: 1,
-                name: 1,
-                fullName: 1,
-                grade: 1,
-                section: 1,
-                classId: 1,
-                status: 1,
-              },
-            },
-          )
-          .toArray()
-      : [];
+    const children = await listVerifiedChildren(req.parentIdentity);
+    const data = children.map(child => ({
+      id: apiId(child),
+      name: child.name,
+      fullName: child.fullName,
+      grade: child.grade,
+      section: child.section,
+      classId: child.classId,
+      status: child.status,
+    }));
     return res.json({ success: true, data });
   } catch (error) {
     return next(error);
@@ -348,7 +371,7 @@ router.get('/children', async (req, res, next) => {
 router.use('/children/:studentId', async (req, res, next) => {
   try {
     const child = await getVerifiedChild(
-      req.parentUserId,
+      req.parentIdentity,
       req.params.studentId,
     );
     if (!child) {
@@ -426,6 +449,7 @@ router.get('/children/:studentId/attendance', async (req, res, next) => {
 
 router.get('/children/:studentId/timetable', async (req, res, next) => {
   try {
+    if (req.parentChild.classId) unresolvedClassReference();
     const data = await getDatabase()
       .collection('timetable')
       .find(childScheduleFilter(req.parentChild))
@@ -618,7 +642,7 @@ router.get('/children/:studentId/fees', async (req, res, next) => {
         { $sort: { dueDate: -1 } },
       ])
       .toArray();
-    return res.json({ success: true, data });
+    return res.json({ success: true, data: normalizeInvoiceStatuses(data) });
   } catch (error) {
     return next(error);
   }
@@ -713,5 +737,6 @@ module.exports.__test = {
   ownedChildFilter,
   publishedFilter,
   requireParentContext,
+  listVerifiedChildren,
   verifiedLinkFilter,
 };

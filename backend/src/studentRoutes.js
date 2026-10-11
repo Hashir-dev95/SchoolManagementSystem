@@ -6,7 +6,15 @@ const multer = require('multer');
 const { ObjectId } = require('mongodb');
 const { getDatabase } = require('./database');
 const { createClassTeacherApplication } = require('./applicationService');
+const { normalizeInvoiceStatuses } = require('./invoiceStatus');
 const { createUserNotificationRouter } = require('./userNotificationRoutes');
+const {
+  apiId,
+  assertSameBranch,
+  referenceValues,
+  resolveUserForRole,
+  unresolvedClassReference,
+} = require('./identityReferenceAdapter');
 
 const router = express.Router();
 const MAX_SUBMISSION_FILE_BYTES = 5 * 1024 * 1024;
@@ -38,20 +46,32 @@ function requireStudentContext(req, res, next) {
       .status(403)
       .json({ success: false, error: 'Student access is required.' });
   }
-  getDatabase()
-    .collection('students')
-    .findOne({ userId })
-    .then(student => {
-      if (!student || !student.id) {
-        return res.status(403).json({
-          success: false,
-          error: 'No student record is linked to this user.',
-        });
-      }
-      req.studentRecord = student;
-      return next();
-    })
-    .catch(next);
+  (async () => {
+    const db = getDatabase();
+    const identity = await resolveUserForRole(db, userId, 'student');
+    const students = await db.collection('students')
+      .find({ userId: { $in: referenceValues(identity) } })
+      .limit(3)
+      .toArray();
+    if (students.length > 1) {
+      const error = new Error('User reference links to multiple student records; resolve the conflicting IDs before access.');
+      error.statusCode = 409;
+      error.code = 'INTEGRATION_REFERENCE_CONFLICT';
+      throw error;
+    }
+    const student = students[0];
+    if (!student) {
+      const error = new Error('Student reference does not resolve to a record linked to this user.');
+      error.statusCode = 503;
+      error.code = 'INTEGRATION_REFERENCE_UNRESOLVED';
+      throw error;
+    }
+    await assertSameBranch(db, identity.branchId, student.branchId);
+    req.authenticatedIdentity = identity;
+    req.apiUserId = apiId(identity);
+    req.studentRecord = student;
+    return next();
+  })().catch(next);
 }
 
 function dateFilter(query, field) {
@@ -239,6 +259,7 @@ router.get('/', async (req, res, next) => {
 
 router.get('/timetable', async (req, res, next) => {
   try {
+    if (req.studentRecord.classId) unresolvedClassReference();
     const data = await getDatabase()
       .collection('timetable')
       .find(studentClassFilter(req.studentRecord))
@@ -418,7 +439,7 @@ router.get('/fees', async (req, res, next) => {
         { $sort: { dueDate: -1 } },
       ])
       .toArray();
-    return res.json({ success: true, data });
+    return res.json({ success: true, data: normalizeInvoiceStatuses(data) });
   } catch (error) {
     return next(error);
   }

@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { invoiceStatusFromCents } = require('./invoiceStatus');
 
 const {
   gatewayConfiguration,
@@ -7,7 +8,9 @@ const {
   publicGatewayConfiguration,
   statusResponse,
   validateMerchantStatus,
+  ensurePaymentIndexes,
 } = require('./parentPaymentRoutes').__test;
+const { checkoutIdempotencyKey, checkoutRequestHash } = require('./invoiceReservations');
 
 const configuredEnv = {
   EASYPAISA_CHECKOUT_URL: 'https://merchant.example/checkout',
@@ -96,4 +99,31 @@ test('receipts are hidden until the canonical payment is confirmed', () => {
   });
   assert.equal(confirmed.receipt.receiptNumber, 'RCT-1');
   assert.equal(confirmed.receipt.method, 'card');
+});
+
+test('confirmed parent checkout uses the shared canonical invoice status', () => {
+  assert.equal(invoiceStatusFromCents(10000, 3000), 'partially_paid');
+  assert.equal(invoiceStatusFromCents(10000, 10000), 'paid');
+  assert.equal(invoiceStatusFromCents(10000, 0), 'due');
+});
+
+test('checkout retries reuse the same key and changed payloads are detectable', () => {
+  const key = checkoutIdempotencyKey('P-1', 'S-1', 'INV-1', 'card', 'retry-key-0001');
+  assert.equal(checkoutIdempotencyKey('P-1', 'S-1', 'INV-1', 'card', 'retry-key-0001'), key);
+  assert.equal(checkoutRequestHash('S-1', 'INV-1', 'card'), checkoutRequestHash('S-1', 'INV-1', 'card'));
+  assert.notEqual(checkoutRequestHash('S-1', 'INV-1', 'card'), checkoutRequestHash('S-1', 'INV-1', 'easypaisa'));
+});
+
+test('payment indexes enforce one active reservation per invoice and one settlement per checkout', async () => {
+  const calls = [];
+  const db = { collection: name => ({ createIndex: async (fields, options) => {
+    calls.push({ name, fields, options });
+    return options.name;
+  } }) };
+  await ensurePaymentIndexes(db);
+  assert.ok(calls.some(call => call.options.name === 'unique_active_parent_invoice_checkout' && call.options.unique && call.options.partialFilterExpression.activeKey === 'active'));
+  assert.ok(calls.some(call => call.options.name === 'unique_active_parent_invoice_reservation' && call.options.unique && call.options.partialFilterExpression.activeKey === 'active' && call.fields.invoiceId === 1));
+  assert.ok(calls.some(call => call.options.name === 'unique_parent_checkout_idempotency' && call.options.unique));
+  assert.ok(calls.some(call => call.options.name === 'unique_parent_online_provider_transaction' && call.options.unique && call.options.partialFilterExpression.providerTransactionId.$type === 'string'));
+  assert.ok(calls.some(call => call.options.name === 'unique_confirmed_online_payment' && call.options.unique && call.fields.onlinePaymentId === 1));
 });

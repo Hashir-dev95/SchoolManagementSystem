@@ -126,6 +126,7 @@ export default function FinanceDashboard({
   const [paymentHistory, setPaymentHistory] = useState(
     previewOnly ? financePreview.paymentHistory : [],
   );
+  const [parentReconciliation, setParentReconciliation] = useState([]);
   const [receipts, setReceipts] = useState(
     previewOnly ? financePreview.receipts : [],
   );
@@ -183,6 +184,7 @@ export default function FinanceDashboard({
           duesResult,
           pendingPaymentResult,
           paymentHistoryResult,
+          parentReconciliationResult,
         ] = await Promise.all([
           financeApi.getSummary({
             from: activeFilters.from,
@@ -206,12 +208,14 @@ export default function FinanceDashboard({
           financeApi.getDues(activeFilters),
           financeApi.getPendingPayments(activeFilters),
           financeApi.getPaymentHistory(activeFilters),
+          financeApi.getParentPaymentReconciliation(),
         ]);
         setSummary(summaryResult.data);
         setInvoices(invoiceResult.data);
         setDues(duesResult.data);
         setPendingPayments(pendingPaymentResult.data);
         setPaymentHistory(paymentHistoryResult.data);
+        setParentReconciliation(parentReconciliationResult.data);
         setReceipts(receiptResult.data);
         setReport(reportResult.data);
       } catch (error) {
@@ -843,6 +847,44 @@ export default function FinanceDashboard({
                   Preview only · no real verification
                 </Text>
               )}
+            </View>
+          ))}
+        </>
+      )}
+      {(page === 'All' || page === 'Exceptions & Closing') && (
+        <>
+          <Text style={styles.section}>Parent payment reconciliation</Text>
+          <Text style={styles.muted}>
+            Payments with an unresolved merchant result remain reserved. Closing checkout does not cancel a payment.
+          </Text>
+          {!loading && !loadError && parentReconciliation.length === 0 ? (
+            <Text style={styles.empty}>
+              No Parent payments currently require reconciliation.
+            </Text>
+          ) : null}
+          {parentReconciliation.map((item) => (
+            <View key={String(item.paymentId)} style={styles.card}>
+              <Text style={styles.cardTitle}>
+                Invoice {item.invoiceId || 'unavailable'} · {item.status}
+              </Text>
+              <Text style={styles.cardText}>
+                Student {item.studentId || 'unavailable'} · {formatMoney(item.amount, item.currency)} · {item.provider || 'Payment provider'}
+              </Text>
+              <Text style={styles.cardText}>
+                Merchant status: {item.merchantStatus || 'unknown'} · {item.reconciliationReason || 'Awaiting verified merchant status'}
+              </Text>
+              <Text style={styles.cardText}>
+                Attempts: {item.reconciliationAttempts || 0}
+                {item.orderRef ? ` · Order ${item.orderRef}` : ''}
+                {item.providerTransactionId ? ` · Transaction ${item.providerTransactionId}` : ''}
+              </Text>
+              <Text style={styles.muted}>
+                {item.reconciliationExhaustedAt
+                  ? 'Automatic checks exhausted. Reservation retained; manual reconciliation is required.'
+                  : item.reconciliationNextAt
+                    ? `Next automatic check: ${new Date(item.reconciliationNextAt).toLocaleString()}`
+                    : 'Reconciliation is pending. Reservation retained until verified settlement or terminal failure.'}
+              </Text>
             </View>
           ))}
         </>

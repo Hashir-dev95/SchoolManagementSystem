@@ -1,4 +1,15 @@
 // Fictional, development-only UI preview records. Never sent to an API.
+export const parentReferenceNotifications = [
+  { id: 'PREVIEW-PARENT-DLP', title: 'Teacher DLP received', body: 'Miss Ayesha · Class 6-A · Fractions in daily life', previewDlpVersion: { id: 'PREVIEW-DLP-V1', version: 1, className: '6-A', title: 'Fractions in daily life', content: 'We practised adding fractions with everyday examples. Homework: Exercise 4.2, questions 1–4.' } },
+  { id: 'PREVIEW-PARENT-HW1', title: 'Homework assigned', body: 'Ahmed Khan · Fractions', needsAction: true },
+  { id: 'PREVIEW-PARENT-HW2', title: 'Homework assigned', body: 'Sara Khan · Reading practice', needsAction: true },
+  { id: 'PREVIEW-PARENT-FB1', title: 'Teacher feedback published', body: 'Ahmed Khan · September 2026' },
+  { id: 'PREVIEW-PARENT-FB2', title: 'Teacher feedback published', body: 'Sara Khan · September 2026' },
+  { id: 'PREVIEW-PARENT-E1', title: 'School event · Science Fair', body: '2026-10-15 · Academic' },
+  { id: 'PREVIEW-PARENT-E2', title: 'School event · Parent–Teacher Meetings', body: '2026-10-07 · PTM' },
+  { id: 'PREVIEW-PARENT-E3', title: 'School event · Sports Day', body: '2026-10-22 · Sports' },
+  { id: 'PREVIEW-PARENT-E4', title: 'School event · Autumn break', body: '2026-10-26 · Holiday' },
+];
 export const previewNotifications = [
   {
     id: 'PREVIEW-NOTICE-01',

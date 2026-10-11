@@ -28,6 +28,7 @@ export const rolePages = {
     'Progress',
     'Fees',
     'Applications',
+    'Notifications',
     'Inbox',
   ],
   Student: [
@@ -39,6 +40,7 @@ export const rolePages = {
     'Progress',
     'Homework',
     'Applications',
+    'Notifications',
     'Inbox',
   ],
   Finance: [
@@ -52,6 +54,7 @@ export const rolePages = {
     'Payment history',
     'Receipts',
     'Collection report',
+    'Notifications',
     'Inbox',
   ],
   Teacher: [

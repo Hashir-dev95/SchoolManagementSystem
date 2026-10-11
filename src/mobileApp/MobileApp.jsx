@@ -27,6 +27,10 @@ import MessagesInbox from './MessagesInbox';
 import RoleDashboard from './RoleDashboard';
 import HiraHome from './HiraHome';
 import ParentSchoolStory from './ParentSchoolStory';
+import ParentReferencePages from './ParentReferencePages';
+import ParentMultiChildPayment from './ParentMultiChildPayment';
+import ReferenceNotifications from './ReferenceNotifications';
+import RoleNavigationHub from './RoleNavigationHub';
 import FeaturePage from './FeaturePage';
 import TeacherApplicationsPage from './TeacherApplicationsPage';
 import { features, staffFeatures } from './featureScreens';
@@ -38,6 +42,12 @@ import {
 } from './hiraTheme';
 import { checkSessionExpiry, subscribeSessionExpiry } from './authSession';
 import { validateSession } from './authService';
+import {
+  buildRoleDrawerPages,
+  defaultRoleNavigationRoute,
+  getRoleNavigationGroups,
+  resolveRoleNavigation,
+} from './roleNavigation';
 
 const roles = Object.keys(rolePages);
 const roleNames = {
@@ -87,7 +97,9 @@ export default function MobileApp({
     developmentPreview && typeof __DEV__ !== 'undefined' && __DEV__;
   const [previewRole, setPreviewRole] = useState('Parent');
   const [page, setPage] = useState('Home');
+  const [hubRoute, setHubRoute] = useState('');
   const [childId, setChildId] = useState('');
+  const [notificationRefreshKey, setNotificationRefreshKey] = useState(0);
   const [drawer, setDrawer] = useState(false);
   const [rolePicker, setRolePicker] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -99,6 +111,10 @@ export default function MobileApp({
   const availablePages = useMemo(
     () => (previewOnly ? previewRolePages[role] : rolePages[role]) || [],
     [previewOnly, role],
+  );
+  const drawerPages = useMemo(
+    () => buildRoleDrawerPages(role, availablePages),
+    [role, availablePages],
   );
   const { width } = useWindowDimensions();
   const drawerWidth = Math.min(width * 0.91, 370);
@@ -213,11 +229,15 @@ export default function MobileApp({
     setPage(currentPage =>
       availablePages.includes(currentPage) ? currentPage : 'Home',
     );
+    setHubRoute('');
     setChildId('');
   }, [role, availablePages]);
   const navigate = (next, selectedChildId) => {
     if (selectedChildId) setChildId(selectedChildId);
-    setPage(next);
+    if (next === 'Notifications') setNotificationRefreshKey(value => value + 1);
+    const destination = resolveRoleNavigation(role, next, availablePages);
+    setPage(destination.page);
+    setHubRoute(destination.route);
     if (drawer) closeDrawer();
   };
   useEffect(() => {
@@ -226,14 +246,32 @@ export default function MobileApp({
         closeDrawer();
         return true;
       }
+      const activeGroup = getRoleNavigationGroups(role, availablePages).find(
+        group => group.title === page,
+      );
+      if (activeGroup) {
+        const defaultRoute = defaultRoleNavigationRoute(
+          role,
+          page,
+          availablePages,
+        );
+        if (hubRoute && hubRoute !== defaultRoute) {
+          setHubRoute(defaultRoute);
+          return true;
+        }
+        setHubRoute('');
+        setPage('Home');
+        return true;
+      }
       if (page !== 'Home') {
         setPage('Home');
+        setHubRoute('');
         return true;
       }
       return false;
     });
     return () => sub.remove();
-  }, [drawer, page, closeDrawer]);
+  }, [drawer, page, hubRoute, role, availablePages, closeDrawer]);
   if (!previewOnly && (sessionExpired || authLoading || !user || !role)) {
     return (
       <SafeAreaView style={s.safe}>
@@ -264,9 +302,19 @@ export default function MobileApp({
     );
   }
   const PartnerScreen = roleScreens[role];
+  const activeGroup = getRoleNavigationGroups(role, availablePages).find(
+    group => group.title === page,
+  );
+  const contentPage = activeGroup
+    ? activeGroup.routes.includes(hubRoute)
+      ? hubRoute
+      : activeGroup.routes[0]
+    : page;
   const activeBottomPage =
-    role === 'Parent' && page === 'Student Progress Tracking'
+    role === 'Parent' && contentPage === 'Student Progress Tracking'
       ? 'Progress'
+      : bottomPages[role].includes(contentPage)
+      ? contentPage
       : page;
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
@@ -316,6 +364,8 @@ export default function MobileApp({
             key={`${role}-${previewOnly ? 'preview' : 'live'}`}
             role={role}
             previewOnly={previewOnly}
+            onNavigate={navigate}
+            refreshKey={page}
           />
         ) : null}
       </View>
@@ -335,15 +385,42 @@ export default function MobileApp({
           },
         ]}
       >
-        {page === 'Inbox' ? (
+        {activeGroup ? (
+          <RoleNavigationHub
+            role={role}
+            page={page}
+            route={contentPage}
+            authorizedPages={availablePages}
+            onNavigate={navigate}
+          />
+        ) : null}
+        {contentPage === 'Inbox' ? (
           <MessagesInbox
             key={`${role}-${previewOnly ? 'preview' : 'live'}`}
             role={role}
+            userId={user?.id}
             previewOnly={previewOnly}
             onNavigate={navigate}
           />
+        ) : contentPage === 'Notifications' && ownedRoles.includes(role) ? (
+          <ReferenceNotifications
+            key={`${role}-${previewOnly ? 'preview' : 'live'}`}
+            role={role}
+            previewOnly={previewOnly}
+            refreshKey={notificationRefreshKey}
+          />
+        ) : (role === 'Parent' && ['My children', 'Attendance', 'Attendance Calendar', 'Timetable'].includes(contentPage)) || (role === 'Student' && ['Attendance', 'Attendance Calendar', 'Timetable'].includes(contentPage)) ? (
+          <ParentReferencePages
+            key={`${role}-${contentPage}-${previewOnly ? 'preview' : 'live'}`}
+            role={role}
+            page={contentPage}
+            previewOnly={previewOnly}
+            initialChildId={childId}
+            onChildChange={setChildId}
+            onNavigate={navigate}
+          />
         ) : role === 'Parent' &&
-          ['Progress', 'Student Progress Tracking'].includes(page) ? (
+          ['Progress', 'Student Progress Tracking'].includes(contentPage) ? (
           <ParentSchoolStory
             key={`${role}-${previewOnly ? 'preview' : 'live'}`}
             previewOnly={previewOnly}
@@ -351,23 +428,31 @@ export default function MobileApp({
             onChildChange={setChildId}
             onNavigate={navigate}
           />
-        ) : page === 'Applications' && role === 'Teacher' ? (
+        ) : contentPage === 'Applications' && role === 'Teacher' ? (
           <TeacherApplicationsPage />
-        ) : page === 'Teachers DLP' &&
+        ) : contentPage === 'Teachers DLP' &&
           ['Teacher', 'Principal', 'Super Admin'].includes(role) ? (
-          <RoleDashboard role={role} page={page} previewOnly={previewOnly} />
-        ) : features[page] && ownedRoles.includes(role) ? (
+          <RoleDashboard role={role} page={contentPage} previewOnly={previewOnly} />
+        ) :
+          role === 'Parent' &&
+          ['Fees', 'Student Fees', 'Online Payment'].includes(contentPage) ? (
+          <ParentMultiChildPayment
+            key={`parent-payment-${user?.id || 'preview'}-${previewOnly ? 'preview' : 'live'}`}
+            previewOnly={previewOnly}
+            onNavigate={navigate}
+          />
+        ) : features[contentPage] && ownedRoles.includes(role) ? (
           <FeaturePage
-            key={`${role}-${page}-${previewOnly ? 'preview' : 'live'}`}
+            key={`${role}-${contentPage}-${previewOnly ? 'preview' : 'live'}`}
             role={role}
-            page={page}
+            page={contentPage}
             previewOnly={previewOnly}
             childId={childId}
-            provider={featureProviders[role]?.[page]}
+            provider={featureProviders[role]?.[contentPage]}
             onNavigate={navigate}
           />
         ) : ownedRoles.includes(role) ? (
-          page === 'Home' ? (
+          contentPage === 'Home' ? (
             <HiraHome
               key={`${role}-${previewOnly ? 'preview' : 'live'}`}
               role={role}
@@ -378,27 +463,27 @@ export default function MobileApp({
             />
           ) : (
             <RoleDashboard
-              key={`${role}-${page}-${previewOnly ? 'preview' : 'live'}`}
-              role={role}
-              previewOnly={previewOnly}
-              page={page}
+            key={`${role}-${contentPage}-${previewOnly ? 'preview' : 'live'}`}
+            role={role}
+            previewOnly={previewOnly}
+            page={contentPage}
               initialChildId={childId}
               searchQuery=""
             />
           )
-        ) : staffFeatures[role]?.[page] ? (
+        ) : staffFeatures[role]?.[contentPage] ? (
           <FeaturePage
-            key={`${role}-${page}-${previewOnly ? 'preview' : 'live'}`}
+            key={`${role}-${contentPage}-${previewOnly ? 'preview' : 'live'}`}
             role={role}
-            page={page}
-            definition={staffFeatures[role][page]}
+            page={contentPage}
+            definition={staffFeatures[role][contentPage]}
             previewOnly={previewOnly}
-            provider={featureProviders[role]?.[page]}
+            provider={featureProviders[role]?.[contentPage]}
             onNavigate={navigate}
           />
         ) : PartnerScreen ? (
           <PartnerScreen
-            page={page}
+            page={contentPage}
             previewOnly={previewOnly}
             onNavigate={navigate}
           />
@@ -441,7 +526,7 @@ export default function MobileApp({
                 <PageIcon
                   name={item}
                   size={24}
-                  color={page === item ? t.primary : t.muted}
+                  color={activeBottomPage === item ? t.primary : t.muted}
                 />
               )}
             </View>
@@ -536,10 +621,12 @@ export default function MobileApp({
                   </View>
                 ) : null}
                 <Text style={s.group}>YOUR SCHOOL DAY</Text>
-                {availablePages.map(item => (
+                {drawerPages.map(item => (
                   <Pressable
                     key={item}
                     accessibilityRole="button"
+                    accessibilityLabel={item}
+                    accessibilityState={{ selected: page === item }}
                     onPress={() => navigate(item)}
                     style={[s.row, page === item && s.activeRow]}
                   >

@@ -2,12 +2,32 @@ const crypto = require('node:crypto');
 const express = require('express');
 const { ObjectId } = require('mongodb');
 const { getClient, getDatabase } = require('./database');
+const {
+  apiId,
+  referenceValues,
+  resolveBranchReference,
+  resolveUserForRole,
+} = require('./identityReferenceAdapter');
 const studentRoutes = require('./studentRoutes');
 const parentRoutes = require('./parentRoutes');
 const { createUserNotificationRouter } = require('./userNotificationRoutes');
 const { authenticateRequest } = require('./auth');
 const authRoutes = require('./authRoutes');
 const applicationReviewRoutes = require('./applicationReviewRoutes');
+const {
+  PARTIAL_INVOICE_STATUS,
+  normalizeInvoiceStatus,
+  normalizeInvoiceStatuses,
+  invoiceStatusFromCents,
+  financeInvoiceStatusMatch,
+  isFinanceInvoiceStatus,
+} = require('./invoiceStatus');
+const { lockInvoice, invoiceReservedCents } = require('./invoiceReservations');
+const {
+  createChatRouter,
+  initializeChatIndexes,
+  setChatRealtimePublisher,
+} = require('./chatRoutes');
 
 const router = express.Router();
 let paymentIdempotencyIndexPromise;
@@ -41,11 +61,11 @@ function ensurePaymentReferenceIndex(payments) {
   return paymentReferenceIndexPromise;
 }
 
-async function getInvoicePaymentTotals(payments, invoiceId, branchId, session) {
+async function getInvoicePaymentTotals(payments, invoiceId, branchValues, session) {
   const [totals] = await payments
     .aggregate(
       [
-        { $match: { invoiceId, branchId } },
+        { $match: { invoiceId, branchId: { $in: branchValues } } },
         {
           $group: {
             _id: null,
@@ -95,8 +115,20 @@ function requireFinanceContext(req, res, next) {
       error: 'Trusted Finance branch context is required.',
     });
   }
-  req.financeContext = { userId, branchId };
-  return next();
+  (async () => {
+    const db = getDatabase();
+    const identity = await resolveUserForRole(db, userId, 'finance');
+    const branch = await resolveBranchReference(db, identity.branchId);
+    req.authenticatedIdentity = identity;
+    req.financeContext = {
+      userId: apiId(identity),
+      branchId,
+      branch,
+      branchValues: referenceValues(branch, '_id'),
+      branchFilter: { $in: referenceValues(branch, '_id') },
+    };
+    return next();
+  })().catch(next);
 }
 
 const notFound = (res, entity, id) =>
@@ -108,6 +140,7 @@ router.use('/auth', authRoutes);
 router.use(authenticateRequest);
 router.use('/students/me', studentRoutes);
 router.use('/parents/me', parentRoutes);
+router.use('/chat', createChatRouter());
 router.use('/applications', applicationReviewRoutes);
 router.use('/finance', requireFinanceContext);
 router.use(
@@ -177,7 +210,10 @@ function rejectedInvoiceState(invoiceAmount, totals, rejectedAmount) {
     paidAmount,
     pendingPaymentAmount,
     balanceDue,
-    status: balanceDue === 0 ? 'paid' : paidAmount > 0 ? 'partial' : 'due',
+    status: invoiceStatusFromCents(
+      Math.round(Number(invoiceAmount) * 100),
+      Math.round(paidAmount * 100),
+    ),
     paymentStatus:
       balanceDue === 0 ? 'paid' : paidAmount > 0 ? 'partial' : 'unpaid',
     availableBalance: Math.max(balanceDue - pendingPaymentAmount, 0),
@@ -198,9 +234,12 @@ function financeListFilters(query) {
   return { range, studentId, method };
 }
 
-function financePaymentMatch(branchId, status, filters) {
+function financePaymentMatch(branchValues, status, filters) {
   const { range, studentId, method } = filters;
-  const match = { branchId, status };
+  const match = {
+    branchId: { $in: Array.isArray(branchValues) ? branchValues : [branchValues] },
+    status,
+  };
   if (studentId) match.studentId = studentId;
   if (method) match.method = method;
   if (range.filter)
@@ -491,7 +530,7 @@ router.get('/finance/students', async (req, res, next) => {
         .status(400)
         .json({ success: false, error: 'Search query is too long.' });
     }
-    const filter = { branchId: req.financeContext.branchId };
+    const filter = { branchId: req.financeContext.branchFilter };
     if (query) {
       const pattern = escapedRegex(query);
       filter.$or = [
@@ -531,7 +570,7 @@ router.get('/finance/summary', async (req, res, next) => {
     const { range, studentId, method } = filters;
     const invoices = getDatabase().collection('invoices');
     const payments = getDatabase().collection('payments');
-    const invoiceFilter = { branchId: req.financeContext.branchId };
+    const invoiceFilter = { branchId: req.financeContext.branchFilter };
     if (studentId) invoiceFilter.studentId = studentId;
     if (range.from || range.to) {
       invoiceFilter.dueDate = {};
@@ -539,7 +578,7 @@ router.get('/finance/summary', async (req, res, next) => {
       if (range.to) invoiceFilter.dueDate.$lte = range.to;
     }
     const collectionFilter = {
-      branchId: req.financeContext.branchId,
+      branchId: req.financeContext.branchFilter,
       status: 'confirmed',
     };
     if (studentId) collectionFilter.studentId = studentId;
@@ -687,10 +726,10 @@ router.get('/finance/invoices', async (req, res, next) => {
     const status = String(req.query.status || '')
       .trim()
       .toLowerCase();
-    if (status && !['due', 'overdue', 'partial', 'paid'].includes(status)) {
+    if (status && !isFinanceInvoiceStatus(status)) {
       return res.status(400).json({
         success: false,
-        error: 'status must be due, overdue, partial, or paid',
+        error: `status must be due, overdue, ${PARTIAL_INVOICE_STATUS}, or paid`,
       });
     }
     const query = String(req.query.q || '').trim();
@@ -700,8 +739,8 @@ router.get('/finance/invoices', async (req, res, next) => {
         .json({ success: false, error: 'Search query is too long.' });
     }
     const match = {
-      branchId: req.financeContext.branchId,
-      ...(status ? { status } : {}),
+      branchId: req.financeContext.branchFilter,
+      ...financeInvoiceStatusMatch(status),
       ...(studentId ? { studentId } : {}),
     };
     if (range.from || range.to) {
@@ -802,7 +841,7 @@ router.get('/finance/invoices', async (req, res, next) => {
         { $limit: 500 },
       ])
       .toArray();
-    return res.json({ success: true, data });
+    return res.json({ success: true, data: normalizeInvoiceStatuses(data) });
   } catch (error) {
     return next(error);
   }
@@ -827,7 +866,7 @@ router.get('/finance/dues', async (req, res, next) => {
         error: `method must be one of: ${FINANCE_PAYMENT_METHODS.join(', ')}.`,
       });
     }
-    const match = { branchId: req.financeContext.branchId };
+    const match = { branchId: req.financeContext.branchFilter };
     if (studentId) match.studentId = studentId;
     if (range.from || range.to) {
       match.dueDate = {};
@@ -973,7 +1012,7 @@ router.get('/finance/dues', async (req, res, next) => {
         invoice.paidAmount > 0
           ? String(invoice.dueDate || '').slice(0, 10) < today
             ? 'overdue'
-            : 'partial'
+            : PARTIAL_INVOICE_STATUS
           : String(invoice.dueDate || '').slice(0, 10) < today
           ? 'overdue'
           : 'due',
@@ -993,7 +1032,7 @@ router.get('/finance/vouchers/:code/verify', async (req, res, next) => {
         .json({ success: false, error: 'Voucher code is required.' });
     const invoice = await getDatabase()
       .collection('invoices')
-      .findOne({ voucherCode: code, branchId: req.financeContext.branchId });
+      .findOne({ voucherCode: code, branchId: req.financeContext.branchFilter });
     if (!invoice)
       return res.status(404).json({
         success: false,
@@ -1003,13 +1042,13 @@ router.get('/finance/vouchers/:code/verify', async (req, res, next) => {
     const student = await getDatabase()
       .collection('students')
       .findOne(
-        { id: invoice.studentId, branchId: req.financeContext.branchId },
+        { id: invoice.studentId, branchId: req.financeContext.branchFilter },
         { projection: { name: 1, fullName: 1 } },
       );
     const totals = await getInvoicePaymentTotals(
       getDatabase().collection('payments'),
       invoice.id,
-      req.financeContext.branchId,
+      req.financeContext.branchValues,
     );
     const { paidAmount, pendingAmount } = totals;
     const balanceDue = Math.max(Number(invoice.amount) - paidAmount, 0);
@@ -1030,7 +1069,7 @@ router.get('/finance/vouchers/:code/verify', async (req, res, next) => {
         balanceDue,
         availableBalance,
         currency: invoice.currency || 'PKR',
-        invoiceStatus: invoice.status,
+        invoiceStatus: normalizeInvoiceStatus(invoice.status),
         paymentStatus:
           balanceDue === 0
             ? 'paid'
@@ -1062,7 +1101,7 @@ router.get('/finance/payments', async (req, res, next) => {
     if (filters.error)
       return res.status(400).json({ success: false, error: filters.error });
     const match = financePaymentMatch(
-      req.financeContext.branchId,
+      req.financeContext.branchValues,
       status,
       filters,
     );
@@ -1076,6 +1115,51 @@ router.get('/finance/payments', async (req, res, next) => {
       .limit(500)
       .toArray();
     return res.json({ success: true, data });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get('/finance/reconciliation/parent-payments', async (req, res, next) => {
+  try {
+    const data = await getDatabase().collection('parentOnlinePayments').find(
+      {
+        branchId: req.financeContext.branchFilter,
+        activeKey: 'active',
+        status: { $in: ['initiated', 'pending', 'reconciliation_required'] },
+      },
+      {
+        projection: {
+          parentUserId: 0,
+          checkoutUrl: 0,
+          idempotencyKey: 0,
+          requestHash: 0,
+          activeKey: 0,
+          workerLeaseId: 0,
+        },
+      },
+    ).sort({ reconciliationNextAt: 1, createdAt: 1 }).limit(500).toArray();
+    return res.json({ success: true, data: data.map(payment => ({
+      paymentId: String(payment._id),
+      invoiceId: payment.invoiceId,
+      studentId: payment.studentId,
+      branchId: payment.branchId,
+      provider: payment.provider,
+      providerTransactionId: payment.providerTransactionId || null,
+      orderRef: payment.orderRef,
+      amount: payment.amount,
+      currency: payment.currency,
+      method: payment.method,
+      status: payment.status,
+      merchantStatus: payment.merchantStatus || null,
+      reconciliationReason: payment.reconciliationReason || null,
+      reconciliationAttempts: payment.reconciliationAttempts || 0,
+      reconciliationNextAt: payment.reconciliationNextAt || null,
+      reconciliationExhaustedAt: payment.reconciliationExhaustedAt || null,
+      lastCheckedAt: payment.lastCheckedAt || null,
+      expiresAt: payment.expiresAt || null,
+      createdAt: payment.createdAt,
+    })) });
   } catch (error) {
     return next(error);
   }
@@ -1099,14 +1183,14 @@ router.post('/finance/payments/:paymentId/verify', async (req, res, next) => {
       const payment = await payments.findOne(
         {
           _id: new ObjectId(paymentId),
-          branchId: actor.branchId,
+          branchId: actor.branchFilter,
           status: 'pending_verification',
         },
         { session },
       );
       if (!payment) {
         const existing = await payments.findOne(
-          { _id: new ObjectId(paymentId), branchId: actor.branchId },
+          { _id: new ObjectId(paymentId), branchId: actor.branchFilter },
           { session, projection: { _id: 1, status: 1 } },
         );
         const error = new Error(
@@ -1118,10 +1202,10 @@ router.post('/finance/payments/:paymentId/verify', async (req, res, next) => {
         throw error;
       }
 
-      const invoice = await db
+      let invoice = await db
         .collection('invoices')
         .findOne(
-          { id: payment.invoiceId, branchId: actor.branchId },
+          { id: payment.invoiceId, branchId: actor.branchFilter },
           { session },
         );
       if (!invoice) {
@@ -1129,19 +1213,21 @@ router.post('/finance/payments/:paymentId/verify', async (req, res, next) => {
         error.statusCode = 404;
         throw error;
       }
+      invoice = await lockInvoice(db.collection('invoices'), invoice, session);
       const totals = await getInvoicePaymentTotals(
         payments,
         payment.invoiceId,
-        actor.branchId,
+        actor.branchValues,
         session,
       );
+      const reservations = await invoiceReservedCents(db, invoice, session);
       const amountTotal = Number(invoice.amount);
       const paidCents = Math.round(totals.paidAmount * 100);
       const paymentCents = Math.round(Number(payment.amount) * 100);
       const totalCents = Math.round(amountTotal * 100);
       if (
         !Number.isFinite(amountTotal) ||
-        paidCents + paymentCents > totalCents
+        paidCents + Math.round(totals.pendingAmount * 100) + reservations.parentReservedCents > totalCents
       ) {
         const error = new Error(
           'Verifying this payment would exceed the invoice total.',
@@ -1155,7 +1241,7 @@ router.post('/finance/payments/:paymentId/verify', async (req, res, next) => {
       const updated = await payments.updateOne(
         {
           _id: payment._id,
-          branchId: actor.branchId,
+          branchId: actor.branchFilter,
           status: 'pending_verification',
         },
         {
@@ -1182,14 +1268,13 @@ router.post('/finance/payments/:paymentId/verify', async (req, res, next) => {
       const balanceDue =
         Math.max(totalCents - paidCents - paymentCents, 0) / 100;
       const invoiceUpdate = await db.collection('invoices').updateOne(
-        { _id: invoice._id, branchId: actor.branchId },
+        { _id: invoice._id, branchId: actor.branchFilter },
         {
           $set: {
             paidAmount,
             pendingPaymentAmount: remainingPending,
             balanceDue,
-            status:
-              balanceDue === 0 ? 'paid' : paidAmount > 0 ? 'partial' : 'due',
+            status: invoiceStatusFromCents(totalCents, paidCents + paymentCents),
             paymentStatus:
               balanceDue === 0 ? 'paid' : paidAmount > 0 ? 'partial' : 'unpaid',
             updatedAt: now,
@@ -1208,7 +1293,7 @@ router.post('/finance/payments/:paymentId/verify', async (req, res, next) => {
         {
           id: crypto.randomUUID(),
           event: 'payment.verified',
-          branchId: actor.branchId,
+          branchId: invoice.branchId,
           actorUserId: actor.userId,
           invoiceId: payment.invoiceId,
           paymentId: payment._id,
@@ -1267,14 +1352,14 @@ router.post('/finance/payments/:paymentId/reject', async (req, res, next) => {
       const payment = await payments.findOne(
         {
           _id: new ObjectId(paymentId),
-          branchId: actor.branchId,
+          branchId: actor.branchFilter,
           status: 'pending_verification',
         },
         { session },
       );
       if (!payment) {
         const existing = await payments.findOne(
-          { _id: new ObjectId(paymentId), branchId: actor.branchId },
+          { _id: new ObjectId(paymentId), branchId: actor.branchFilter },
           { session, projection: { status: 1 } },
         );
         const error = new Error(
@@ -1286,7 +1371,7 @@ router.post('/finance/payments/:paymentId/reject', async (req, res, next) => {
         throw error;
       }
       const invoice = await db.collection('invoices').findOne(
-        { id: payment.invoiceId, branchId: actor.branchId },
+        { id: payment.invoiceId, branchId: actor.branchFilter },
         { session },
       );
       if (!invoice) {
@@ -1297,14 +1382,14 @@ router.post('/finance/payments/:paymentId/reject', async (req, res, next) => {
       const totals = await getInvoicePaymentTotals(
         payments,
         payment.invoiceId,
-        actor.branchId,
+        actor.branchValues,
         session,
       );
       const now = new Date();
       const updated = await payments.updateOne(
         {
           _id: payment._id,
-          branchId: actor.branchId,
+          branchId: actor.branchFilter,
           status: 'pending_verification',
         },
         {
@@ -1328,7 +1413,7 @@ router.post('/finance/payments/:paymentId/reject', async (req, res, next) => {
         payment.amount,
       );
       const invoiceUpdate = await db.collection('invoices').updateOne(
-        { _id: invoice._id, branchId: actor.branchId },
+        { _id: invoice._id, branchId: actor.branchFilter },
         {
           $set: {
             ...invoiceState,
@@ -1346,7 +1431,7 @@ router.post('/finance/payments/:paymentId/reject', async (req, res, next) => {
         {
           id: crypto.randomUUID(),
           event: 'payment.rejected',
-          branchId: actor.branchId,
+          branchId: invoice.branchId,
           actorUserId: actor.userId,
           invoiceId: payment.invoiceId,
           paymentId: payment._id,
@@ -1442,7 +1527,7 @@ router.post('/finance/payments', async (req, res, next) => {
     ]);
     const actor = req.financeContext;
     const idempotencyFilter = {
-      branchId: actor.branchId,
+      branchId: actor.branchFilter,
       createdByUserId: actor.userId,
       idempotencyKey,
     };
@@ -1477,9 +1562,9 @@ router.post('/finance/payments', async (req, res, next) => {
           return;
         }
 
-        const invoice = await db
+        let invoice = await db
           .collection('invoices')
-          .findOne({ id: invoiceId, branchId: actor.branchId }, { session });
+          .findOne({ id: invoiceId, branchId: actor.branchFilter }, { session });
         if (!invoice) {
           const missing = new Error(
             'Invoice was not found in this Finance branch.',
@@ -1487,6 +1572,7 @@ router.post('/finance/payments', async (req, res, next) => {
           missing.statusCode = 404;
           throw missing;
         }
+        invoice = await lockInvoice(db.collection('invoices'), invoice, session);
         if (
           !Number.isFinite(Number(invoice.amount)) ||
           Number(invoice.amount) <= 0
@@ -1499,13 +1585,14 @@ router.post('/finance/payments', async (req, res, next) => {
         const totals = await getInvoicePaymentTotals(
           payments,
           invoiceId,
-          actor.branchId,
+          actor.branchValues,
           session,
         );
+        const reservations = await invoiceReservedCents(db, invoice, session);
         const availableCents = Math.max(
           Math.round(Number(invoice.amount) * 100) -
             Math.round(totals.paidAmount * 100) -
-            Math.round(totals.pendingAmount * 100),
+            Math.round(totals.pendingAmount * 100) - reservations.parentReservedCents,
           0,
         );
         const available = availableCents / 100;
@@ -1523,7 +1610,7 @@ router.post('/finance/payments', async (req, res, next) => {
         const payment = {
           invoiceId,
           studentId: invoice.studentId,
-          branchId: actor.branchId,
+          branchId: invoice.branchId,
           amount,
           currency: invoice.currency || 'PKR',
           method,
@@ -1536,7 +1623,7 @@ router.post('/finance/payments', async (req, res, next) => {
         };
         const inserted = await payments.insertOne(payment, { session });
         const invoiceUpdate = await db.collection('invoices').updateOne(
-          { _id: invoice._id, branchId: actor.branchId },
+          { _id: invoice._id, branchId: actor.branchFilter },
           {
             $set: {
               paidAmount: totals.paidAmount,
@@ -1566,7 +1653,7 @@ router.post('/finance/payments', async (req, res, next) => {
           {
             id: crypto.randomUUID(),
             event: 'payment.entry_created',
-            branchId: actor.branchId,
+            branchId: invoice.branchId,
             actorUserId: actor.userId,
             invoiceId,
             paymentId: inserted.insertedId,
@@ -1649,7 +1736,7 @@ router.get('/finance/receipts', async (req, res, next) => {
       return res.status(400).json({ success: false, error: filters.error });
     const { range, studentId, method } = filters;
     const match = {
-      branchId: req.financeContext.branchId,
+      branchId: req.financeContext.branchFilter,
       status: 'confirmed',
     };
     if (studentId) match.studentId = studentId;
@@ -1736,7 +1823,7 @@ router.get('/finance/receipts/:paymentId', async (req, res, next) => {
       .collection('payments')
       .findOne({
         _id: new ObjectId(paymentId),
-        branchId: req.financeContext.branchId,
+        branchId: req.financeContext.branchFilter,
         status: 'confirmed',
       });
     if (!payment || !payment.receiptNumber) {
@@ -1748,13 +1835,13 @@ router.get('/finance/receipts/:paymentId', async (req, res, next) => {
       getDatabase()
         .collection('invoices')
         .findOne(
-          { id: payment.invoiceId, branchId: req.financeContext.branchId },
+          { id: payment.invoiceId, branchId: req.financeContext.branchFilter },
           { projection: { id: 1, description: 1, amount: 1, currency: 1 } },
         ),
       getDatabase()
         .collection('students')
         .findOne(
-          { id: payment.studentId, branchId: req.financeContext.branchId },
+          { id: payment.studentId, branchId: req.financeContext.branchFilter },
           { projection: { id: 1, name: 1, fullName: 1 } },
         ),
     ]);
@@ -1784,7 +1871,7 @@ router.get('/finance/reports/collections', async (req, res, next) => {
       return res.status(400).json({ success: false, error: filters.error });
     const { range, studentId, method } = filters;
     const match = {
-      branchId: req.financeContext.branchId,
+      branchId: req.financeContext.branchFilter,
       status: 'confirmed',
     };
     if (studentId) match.studentId = studentId;
@@ -1844,6 +1931,11 @@ router.__test = {
   requireFinanceContext,
   requiresPaymentReference,
   rejectedInvoiceState,
+  normalizeInvoiceStatus,
+  normalizeInvoiceStatuses,
+  financeInvoiceStatusMatch,
+  invoiceStatusFromCents,
+  isFinanceInvoiceStatus,
   ensurePaymentIdempotencyIndex,
   ensurePaymentReferenceIndex,
   SAFE_PARENT_DIRECTORY_FIELDS,
@@ -1860,5 +1952,7 @@ router.initializeFinanceIndexes = async function initializeFinanceIndexes() {
     ensurePaymentReferenceIndex(payments),
   ]);
 };
+router.initializeChatIndexes = initializeChatIndexes;
+router.setChatRealtimePublisher = setChatRealtimePublisher;
 
 module.exports = router;

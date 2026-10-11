@@ -62,6 +62,8 @@ export const financeApi = {
     request(`/finance/payments${paymentQuery('pending_verification', filters)}`),
   getPaymentHistory: filters =>
     request(`/finance/payments${paymentQuery('confirmed', filters)}`),
+  getParentPaymentReconciliation: () =>
+    request('/finance/reconciliation/parent-payments'),
   verifyPayment: paymentId =>
     request(`/finance/payments/${encodeURIComponent(paymentId)}/verify`, {
       method: 'POST',

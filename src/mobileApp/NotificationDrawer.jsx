@@ -72,7 +72,7 @@ function Details({ value }) {
 }
 
 const NotificationDrawer = forwardRef(function NotificationDrawer(
-  { role, previewOnly = false },
+  { role, previewOnly = false, onNavigate, refreshKey },
   ref,
 ) {
   const [visible, setVisible] = useState(false);
@@ -145,7 +145,7 @@ const NotificationDrawer = forwardRef(function NotificationDrawer(
     return () => {
       requestVersion.current += 1;
     };
-  }, [loadNotifications, previewOnly]);
+  }, [loadNotifications, previewOnly, refreshKey]);
 
   const openNotification = useCallback(
     async (item) => {
@@ -225,6 +225,10 @@ const NotificationDrawer = forwardRef(function NotificationDrawer(
         accessibilityRole="button"
         accessibilityLabel={`Open ${role} notifications, ${unreadCount} unread`}
         onPress={() => {
+          if (onNavigate) {
+            onNavigate('Notifications');
+            return;
+          }
           setSelected(null);
           setVisible(true);
           loadNotifications();

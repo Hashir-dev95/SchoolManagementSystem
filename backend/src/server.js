@@ -4,6 +4,8 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 const express = require('express');
 const cors = require('cors');
 const apiRoutes = require('./routes');
+const { attachChatRealtime } = require('./chatRealtime');
+const { startParentPaymentReconciler } = require('./parentPaymentReconciler');
 const { connectDatabase, closeDatabase, getDatabase } = require('./database');
 
 const app = express();
@@ -37,21 +39,35 @@ app.get('/', (_req, res) =>
 app.use('/api', apiRoutes);
 app.use((error, _req, res, _next) => {
   console.error(`Request failed (${error.name}): ${error.message}`);
-  res.status(500).json({ success: false, error: 'Unexpected server error' });
+  const reportableIntegrationError =
+    typeof error.code === 'string' &&
+    (error.code.startsWith('INTEGRATION_REFERENCE_') ||
+      error.code === 'ROLE_ACCESS_DENIED' ||
+      error.code === 'BRANCH_ACCESS_DENIED');
+  res.status(reportableIntegrationError ? error.statusCode || 503 : 500).json({
+    success: false,
+    error: reportableIntegrationError ? error.message : 'Unexpected server error',
+    ...(reportableIntegrationError ? { code: error.code } : {}),
+  });
 });
 
 async function startServer() {
   const port = Number(process.env.PORT) || 5000;
   await connectDatabase();
   await apiRoutes.initializeFinanceIndexes();
+  await apiRoutes.initializeChatIndexes();
+  const parentPaymentReconciler = startParentPaymentReconciler();
   const server = app.listen(port, () =>
     console.log(
       `JavaScript API server listening on port ${port}; MongoDB connected`,
     ),
   );
+  const chatRealtime = attachChatRealtime(server);
+  apiRoutes.setChatRealtimePublisher(chatRealtime.publish);
 
   const shutdown = signal => {
     console.log(`${signal} received; shutting down`);
+    parentPaymentReconciler.stop();
     server.close(async error => {
       try {
         await closeDatabase();

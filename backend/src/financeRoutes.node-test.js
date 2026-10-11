@@ -1,5 +1,28 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { ObjectId } = require('mongodb');
+const databasePath = require.resolve('./database');
+const branchObjectId = new ObjectId();
+const financeIdentity = { _id: new ObjectId(), id: 'finance-a', role: 'finance', branchId: branchObjectId.toHexString() };
+require.cache[databasePath] = {
+  id: databasePath,
+  filename: databasePath,
+  loaded: true,
+  exports: {
+    getDatabase: () => ({
+      collection: name => ({
+        find: query => ({
+          limit: count => ({
+            toArray: async () => (name === 'users' && query.$or.some(item => item.id === 'finance-a') ? [financeIdentity] : []).slice(0, count),
+          }),
+        }),
+        findOne: async query => name === 'branches' && String(query._id) === String(branchObjectId)
+          ? { _id: branchObjectId }
+          : null,
+      }),
+    }),
+  },
+};
 const { __test } = require('./routes');
 
 function responseRecorder() {
@@ -17,25 +40,40 @@ function responseRecorder() {
   };
 }
 
-test('Finance context requires an authenticated Finance user with a branch', () => {
+test('Finance context requires persisted Finance identity and a resolvable branch', async () => {
   for (const [user, expected] of [
-    [{ id: 'finance-a', role: 'finance', branchId: 'branch-a' }, 200],
-    [{ id: 'finance-a', role: 'student', branchId: 'branch-a' }, 403],
+    [{ id: 'finance-a', role: 'finance', branchId: branchObjectId.toHexString() }, 200],
+    [{ id: 'finance-a', role: 'student', branchId: branchObjectId.toHexString() }, 403],
     [{ id: 'finance-a', role: 'finance' }, 403],
     [null, 401],
   ]) {
     const req = { user };
     const res = responseRecorder();
     let passed = false;
-    __test.requireFinanceContext(req, res, () => {
-      passed = true;
+    await new Promise((resolve, reject) => {
+      const originalJson = res.json.bind(res);
+      res.json = body => {
+        originalJson(body);
+        resolve();
+        return res;
+      };
+      __test.requireFinanceContext(req, res, error => {
+        if (error) reject(error);
+        else resolve();
+      });
     });
+    if (res.statusCode === 200) {
+      passed = true;
+    }
     assert.equal(passed, expected === 200);
     assert.equal(res.statusCode, expected);
     if (passed) {
       assert.deepEqual(req.financeContext, {
         userId: 'finance-a',
-        branchId: 'branch-a',
+        branchId: branchObjectId.toHexString(),
+        branch: { _id: branchObjectId },
+        branchValues: [branchObjectId, branchObjectId.toHexString()],
+        branchFilter: { $in: [branchObjectId, branchObjectId.toHexString()] },
       });
     }
   }
@@ -60,7 +98,7 @@ test('payment history filters retain branch, status, student, dates, and method'
     'pending_verification',
     filters,
   );
-  assert.equal(pending.branchId, 'branch-a');
+  assert.deepEqual(pending.branchId, { $in: ['branch-a'] });
   assert.equal(pending.status, 'pending_verification');
   assert.equal(pending.studentId, 'STU 002');
   assert.equal(pending.method, 'bank_transfer');
@@ -72,7 +110,7 @@ test('payment history filters retain branch, status, student, dates, and method'
     'confirmed',
     filters,
   );
-  assert.equal(confirmed.branchId, 'branch-b');
+  assert.deepEqual(confirmed.branchId, { $in: ['branch-b'] });
   assert.equal(confirmed.status, 'confirmed');
   assert.deepEqual(confirmed.confirmedAt, filters.range.filter);
   assert.equal(confirmed.createdAt, undefined);
@@ -95,10 +133,33 @@ test('rejecting a partial payment releases only that pending reservation', () =>
     paidAmount: 300,
     pendingPaymentAmount: 150,
     balanceDue: 700,
-    status: 'partial',
+    status: 'partially_paid',
     paymentStatus: 'partial',
     availableBalance: 550,
   });
+});
+
+test('invoice status filters and reads expose the canonical partial status', () => {
+  assert.equal(__test.isFinanceInvoiceStatus('partially_paid'), true);
+  assert.equal(__test.isFinanceInvoiceStatus('partial'), false);
+  assert.deepEqual(__test.financeInvoiceStatusMatch('partially_paid'), {
+    status: { $in: ['partially_paid', 'partial'] },
+  });
+  assert.deepEqual(__test.financeInvoiceStatusMatch('paid'), { status: 'paid' });
+  assert.deepEqual(
+    __test.normalizeInvoiceStatuses([
+      { id: 'INV-1', status: 'partial', amount: 100 },
+      { id: 'INV-2', status: 'partially_paid', amount: 100 },
+      { id: 'INV-3', amount: 100 },
+    ]),
+    [
+      { id: 'INV-1', status: 'partially_paid', amount: 100 },
+      { id: 'INV-2', status: 'partially_paid', amount: 100 },
+      { id: 'INV-3', amount: 100 },
+    ],
+  );
+  assert.equal(__test.normalizeInvoiceStatus('partial'), 'partially_paid');
+  assert.equal(__test.normalizeInvoiceStatus('due'), 'due');
 });
 
 test('payment indexes protect idempotency per actor and references per branch', async () => {
