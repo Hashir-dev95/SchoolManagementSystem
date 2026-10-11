@@ -1,258 +1,68 @@
 import {Response} from 'express';
-
-import {
-  getPendingApprovalRequests,
-  processApprovalRequest,
-   getApprovalRequestById,
-   ApprovalAction,
-} from '../services/approval-request.service';
 import {BranchScopedRequest} from '../middleware/branch.middleware';
-export const getPendingApprovalRequestsController = async (
-  req: BranchScopedRequest,
-  res: Response,
-): Promise<void> => {
-  try {
-    if (!req.branchId) {
-      res.status(403).json({
-        success: false,
-        message: 'Branch scope is required',
-      });
-      return;
-    }
+import {ApprovalAccessError} from '../services/approval-authority.policy';
+import {ApprovalAction, getPendingApprovalRequests, getApprovalRequestById, processApprovalRequest} from '../services/approval-request.service';
 
-    const requests = await getPendingApprovalRequests(req.branchId);
-
-    res.status(200).json({
-      success: true,
-      message: 'Pending approval requests fetched successfully',
-      data: {
-        requests,
-        total: requests.length,
-      },
-    });
-  } catch (error) {
-    console.error('Pending approval requests error:', error);
-
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'Failed to fetch pending approval requests';
-
-    res.status(500).json({
-      success: false,
-      message,
-    });
-  }
+const failure = (res: Response, error: unknown) => {
+  res.status(error instanceof ApprovalAccessError ? error.status : 500).json({
+    success: false,
+    message: error instanceof ApprovalAccessError ? error.message : 'Approval request operation failed',
+  });
+};
+const scope = (req: BranchScopedRequest) => {
+  if (!req.user) throw new ApprovalAccessError(401, 'Authentication required');
+  if (!req.branchId) throw new ApprovalAccessError(403, 'Branch scope is required');
+  return {actorId: req.user.userId, branchId: req.branchId};
 };
 
-export const processApprovalRequestController = async (
-  req: BranchScopedRequest,
-  res: Response,
-): Promise<void> => {
+export const getPendingApprovalRequestsController = async (req: BranchScopedRequest, res: Response): Promise<void> => {
   try {
-    if (!req.user) {
-      res.status(401).json({
-        success: false,
-        message: 'Authentication required',
-      });
-      return;
+    const {actorId, branchId} = scope(req);
+    const requests = await getPendingApprovalRequests(branchId, actorId);
+    res.status(200).json({success: true, message: 'Pending approval requests fetched successfully', data: {requests, total: requests.length}});
+  } catch (error) {failure(res, error);}
+};
+
+export const getApprovalRequestByIdController = async (req: BranchScopedRequest, res: Response): Promise<void> => {
+  try {
+    const {actorId, branchId} = scope(req);
+    const data = await getApprovalRequestById(String(req.params.requestId), branchId, actorId);
+    res.status(200).json({success: true, message: 'Approval request fetched successfully', data});
+  } catch (error) {failure(res, error);}
+};
+
+export const processApprovalRequestController = async (req: BranchScopedRequest, res: Response): Promise<void> => {
+  try {
+    const {actorId, branchId} = scope(req);
+    const body: unknown = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ApprovalAccessError(400, 'Invalid approval request body');
+    const input = body as Record<string, unknown>;
+    if (Object.keys(input).some(key => !['action', 'reason', 'delegatedTo', 'delegationExpiresAt'].includes(key))) {
+      throw new ApprovalAccessError(400, 'Unsupported approval request fields');
     }
-
-    if (!req.branchId) {
-      res.status(403).json({
-        success: false,
-        message: 'Branch scope is required',
-      });
-      return;
+    if (typeof input.action !== 'string' || !['approved', 'rejected', 'changes_requested', 'delegated'].includes(input.action)) {
+      throw new ApprovalAccessError(400, 'Invalid approval action');
     }
-
-    const requestId = String(req.params.requestId);
-    const {
-      action,
-      reason,
-      delegatedTo,
-      delegationExpiresAt,
-    } = req.body;
-
-    const allowedActions: ApprovalAction[] = [
-      'approved',
-      'rejected',
-      'changes_requested',
-      'delegated',
-    ];
-
-    if (!allowedActions.includes(action)) {
-      res.status(400).json({
-        success: false,
-        message: 'Invalid approval action',
-      });
-      return;
+    if (input.reason !== undefined && (typeof input.reason !== 'string' || input.reason.trim().length > 500)) {
+      throw new ApprovalAccessError(400, 'Invalid decision reason');
     }
-
-    let parsedDelegationExpiry: Date | undefined;
-
-    if (delegationExpiresAt !== undefined) {
-      parsedDelegationExpiry = new Date(delegationExpiresAt);
-
-      if (Number.isNaN(parsedDelegationExpiry.getTime())) {
-        res.status(400).json({
-          success: false,
-          message: 'Invalid delegation expiry',
-        });
-        return;
+    let delegatedTo: string | undefined;
+    let delegationExpiresAt: Date | undefined;
+    if (input.action === 'delegated') {
+      if (typeof input.delegatedTo !== 'string' || typeof input.delegationExpiresAt !== 'string') {
+        throw new ApprovalAccessError(400, 'Delegate and expiry are required');
       }
+      delegatedTo = input.delegatedTo;
+      delegationExpiresAt = new Date(input.delegationExpiresAt);
+      if (!Number.isFinite(delegationExpiresAt.getTime())) throw new ApprovalAccessError(400, 'Invalid delegation expiry');
+    } else if (input.delegatedTo !== undefined || input.delegationExpiresAt !== undefined) {
+      throw new ApprovalAccessError(400, 'Delegation fields require a delegation action');
     }
-
-    const approvalRequest = await processApprovalRequest({
-      requestId,
-      actorId: req.user.userId,
-      branchId: req.branchId,
-      action,
-      reason,
-      delegatedTo,
-      delegationExpiresAt: parsedDelegationExpiry,
+    const request = await processApprovalRequest({
+      requestId: String(req.params.requestId), actorId, branchId,
+      action: input.action as ApprovalAction,
+      reason: input.reason as string | undefined, delegatedTo, delegationExpiresAt,
     });
-
-    res.status(200).json({
-      success: true,
-      message: `Approval request ${action} successfully`,
-      data: {
-        request: approvalRequest,
-      },
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'Failed to process approval request';
-
-    if (
-      message === 'Invalid request ID' ||
-      message === 'Invalid actor ID' ||
-      message === 'Invalid branch ID' ||
-      message === 'Invalid approval action' ||
-      message === 'Invalid delegation expiry' ||
-      message === 'Reason is required for rejection or change request' ||
-      message === 'Delegate user is required' ||
-      message === 'Delegation expiry is required' ||
-      message === 'Delegation expiry must be in the future' ||
-      message === 'Requester cannot approve their own request' ||
-      message === 'Requester cannot be assigned as delegate' ||
-      message === 'Approver cannot delegate to themselves'
-    ) {
-      res.status(400).json({
-        success: false,
-        message,
-      });
-      return;
-    }
-
-    if (
-      message === 'Approval request not found' ||
-      message === 'Approver not found' ||
-      message === 'Delegate user not found'
-    ) {
-      res.status(404).json({
-        success: false,
-        message,
-      });
-      return;
-    }
-
-    if (
-      message === 'Approval request is outside branch scope' ||
-      message === 'Approver is outside branch scope' ||
-      message === 'Approver is not authorized' ||
-      message === 'Delegate is outside branch scope' ||
-      message === 'Approver account is inactive' ||
-      message === 'Delegate account is inactive' ||
-      message === 'Only pending approval requests can be processed'
-    ) {
-      res.status(
-        message === 'Only pending approval requests can be processed'
-          ? 409
-          : 403,
-      ).json({
-        success: false,
-        message,
-      });
-      return;
-    }
-
-    console.error('Process approval request error:', error);
-
-    res.status(500).json({
-      success: false,
-      message,
-    });
-  }
-};
-export const getApprovalRequestByIdController = async (
-  req: BranchScopedRequest,
-  res: Response,
-): Promise<void> => {
-  try {
-    if (!req.branchId) {
-      res.status(403).json({
-        success: false,
-        message: 'Branch scope is required',
-      });
-      return;
-    }
-
-    const requestId = String(req.params.requestId);
-
-    if (!requestId || requestId === 'undefined') {
-      res.status(400).json({
-        success: false,
-        message: 'Approval request ID is required',
-      });
-      return;
-    }
-
-    const data = await getApprovalRequestById(
-      requestId,
-      req.branchId,
-    );
-
-    res.status(200).json({
-      success: true,
-      message: 'Approval request fetched successfully',
-      data,
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'Failed to fetch approval request';
-
-    if (message === 'Invalid request ID') {
-      res.status(400).json({
-        success: false,
-        message,
-      });
-      return;
-    }
-
-    if (message === 'Invalid branch ID') {
-      res.status(400).json({
-        success: false,
-        message,
-      });
-      return;
-    }
-
-    if (message === 'Approval request not found') {
-      res.status(404).json({
-        success: false,
-        message,
-      });
-      return;
-    }
-
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch approval request',
-    });
-  }
+    res.status(200).json({success: true, message: 'Approval request processed successfully', data: {request}});
+  } catch (error) {failure(res, error);}
 };

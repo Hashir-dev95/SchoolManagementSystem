@@ -27,6 +27,8 @@ export interface IApprovalHistory {
     | 'changes_requested'
     | 'delegated';
   performedBy: Types.ObjectId;
+  authority?: 'direct' | 'delegated';
+  delegatedBy?: Types.ObjectId;
   reason?: string;
   createdAt: Date;
 }
@@ -55,6 +57,7 @@ export interface IApprovalRequest {
   reviewedAt?: Date;
 
   delegatedTo?: Types.ObjectId;
+  delegatedBy?: Types.ObjectId;
   delegationExpiresAt?: Date;
 
   history: IApprovalHistory[];
@@ -87,6 +90,8 @@ const approvalHistorySchema = new Schema<IApprovalHistory>(
       trim: true,
       maxlength: 500,
     },
+    authority: {type: String, enum: ['direct', 'delegated']},
+    delegatedBy: {type: Schema.Types.ObjectId, ref: 'User'},
   },
   {
     timestamps: {createdAt: true, updatedAt: false},
@@ -131,6 +136,7 @@ const approvalRequestSchema = new Schema<IApprovalRequest>(
     amount: {
       type: Number,
       min: 0,
+      validate: {validator: (value: number | undefined) => value === undefined || Number.isFinite(value), message: 'Invalid approval amount'},
     },
 
     reason: {
@@ -180,6 +186,7 @@ const approvalRequestSchema = new Schema<IApprovalRequest>(
       type: Schema.Types.ObjectId,
       ref: 'User',
     },
+    delegatedBy: {type: Schema.Types.ObjectId, ref: 'User'},
 
     delegationExpiresAt: {
       type: Date,

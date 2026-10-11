@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "test:bootstrap": "tsx --test tests/bootstrap.security.test.ts",
+    "test:approvals": "tsx --test tests/approval-authority.security.test.ts",
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js"
