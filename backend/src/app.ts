@@ -51,4 +51,18 @@ app.use('/api/sessions', sessionRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/api/approval-requests', approvalRequestRoutes);
 
+// Scope parser failures to Principal APIs; leave bootstrap and other API error
+// behavior unchanged. Never echo submitted JSON or the parser's stack/message.
+const principalParseError: ErrorRequestHandler = (error, _req, res, next) => {
+  if (error?.type === 'entity.parse.failed' || error?.type === 'entity.too.large') {
+    res.status(400).json({
+      success: false, message: 'Invalid Principal request body',
+    });
+    return;
+  }
+  next(error);
+};
+app.use('/api/principal', principalParseError);
+app.use('/api/approval-requests', principalParseError);
+
 export default app;

@@ -1,12 +1,14 @@
 import {Response} from 'express';
 import {BranchScopedRequest} from '../middleware/branch.middleware';
 import {ApprovalAccessError} from '../services/approval-authority.policy';
+import {dateField, objectBody, objectIdField, RequestContractError} from '../utils/request-validation';
 import {ApprovalAction, getPendingApprovalRequests, getApprovalRequestById, processApprovalRequest} from '../services/approval-request.service';
 
 const failure = (res: Response, error: unknown) => {
-  res.status(error instanceof ApprovalAccessError ? error.status : 500).json({
+  const expected = error instanceof ApprovalAccessError || error instanceof RequestContractError;
+  res.status(expected ? error.status : 500).json({
     success: false,
-    message: error instanceof ApprovalAccessError ? error.message : 'Approval request operation failed',
+    message: expected ? error.message : 'Approval request operation failed',
   });
 };
 const scope = (req: BranchScopedRequest) => {
@@ -34,12 +36,7 @@ export const getApprovalRequestByIdController = async (req: BranchScopedRequest,
 export const processApprovalRequestController = async (req: BranchScopedRequest, res: Response): Promise<void> => {
   try {
     const {actorId, branchId} = scope(req);
-    const body: unknown = req.body;
-    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ApprovalAccessError(400, 'Invalid approval request body');
-    const input = body as Record<string, unknown>;
-    if (Object.keys(input).some(key => !['action', 'reason', 'delegatedTo', 'delegationExpiresAt'].includes(key))) {
-      throw new ApprovalAccessError(400, 'Unsupported approval request fields');
-    }
+    const input = objectBody(req.body, ['action', 'reason', 'delegatedTo', 'delegationExpiresAt']);
     if (typeof input.action !== 'string' || !['approved', 'rejected', 'changes_requested', 'delegated'].includes(input.action)) {
       throw new ApprovalAccessError(400, 'Invalid approval action');
     }
@@ -52,9 +49,8 @@ export const processApprovalRequestController = async (req: BranchScopedRequest,
       if (typeof input.delegatedTo !== 'string' || typeof input.delegationExpiresAt !== 'string') {
         throw new ApprovalAccessError(400, 'Delegate and expiry are required');
       }
-      delegatedTo = input.delegatedTo;
-      delegationExpiresAt = new Date(input.delegationExpiresAt);
-      if (!Number.isFinite(delegationExpiresAt.getTime())) throw new ApprovalAccessError(400, 'Invalid delegation expiry');
+      delegatedTo = objectIdField(input.delegatedTo, 'delegate user ID');
+      delegationExpiresAt = dateField(input.delegationExpiresAt, 'delegation expiry');
     } else if (input.delegatedTo !== undefined || input.delegationExpiresAt !== undefined) {
       throw new ApprovalAccessError(400, 'Delegation fields require a delegation action');
     }

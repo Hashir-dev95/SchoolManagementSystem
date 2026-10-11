@@ -1,6 +1,8 @@
 import {Types} from 'mongoose';
 
 import User from '../models/user';
+import {principalWriteActor, principalWriteAssignee} from './principal-write-access.service';
+import {enumField, objectIdField, RequestContractError} from '../utils/request-validation';
 import SafetyAlert, {
   SAFETY_ALERT_SEVERITIES,
   SAFETY_ALERT_STATUSES,
@@ -186,7 +188,7 @@ export const getBranchSafetyAlerts = async (
     assignedUserIds.length > 0
       ? await User.find({
           _id: {$in: assignedUserIds},
-        }).select('_id fullName role')
+        }).where('branchId').equals(branchId).select('_id fullName role')
       : [];
 
   const assignedUserMap: Map<
@@ -234,143 +236,46 @@ export const getBranchSafetyAlerts = async (
   }));
 };
 
-export type SafetyAlertAction =
-  | 'assign'
-  | 'resolve'
-  | 'escalate';
-
+export type SafetyAlertAction = 'assign' | 'resolve' | 'escalate';
 export interface SafetyAlertActionInput {
-  alertId: string;
-  actorId: string;
-  branchId: string;
-  action: SafetyAlertAction;
-  assignedTo?: string;
+  alertId: string; actorId: string; branchId: string; action: SafetyAlertAction; assignedTo?: string;
 }
 
-export const processSafetyAlertAction = async (
-  data: SafetyAlertActionInput,
-): Promise<void> => {
-  validateObjectId(data.alertId, 'alert ID');
-  validateObjectId(data.actorId, 'actor ID');
-  validateObjectId(data.branchId, 'branch ID');
-
-  const alertId = new Types.ObjectId(data.alertId);
-  const branchObjectId = new Types.ObjectId(data.branchId);
-
-  const alert = await SafetyAlert.collection.findOne({
-    _id: alertId,
-    branchId: branchObjectId,
-  });
-
-  if (!alert) {
-    throw new Error('Safety alert not found');
+export const processSafetyAlertAction = async (data: SafetyAlertActionInput): Promise<void> => {
+  objectIdField(data.alertId, 'alert ID');
+  const action = enumField(data.action, 'safety alert action', ['assign', 'resolve', 'escalate'] as const);
+  if (action !== 'assign' && data.assignedTo !== undefined) throw new RequestContractError(400, 'Unsupported assignment field');
+  const actor = await principalWriteActor(data.actorId, data.branchId);
+  const alert = await SafetyAlert.findById(data.alertId).where('branchId').equals(data.branchId);
+  if (!alert) throw new RequestContractError(404, 'Safety alert not found');
+  if (![SAFETY_ALERT_STATUSES.OPEN, SAFETY_ALERT_STATUSES.IN_PROGRESS].includes(alert.status as 'open' | 'in_progress')) {
+    throw new RequestContractError(409, 'Safety alert action is not allowed in its current state');
   }
-
-  if (alert.status === SAFETY_ALERT_STATUSES.RESOLVED) {
-    throw new Error('Resolved safety alert cannot be modified');
-  }
-
-  const actor = await User.findById(data.actorId)
-    .select('_id role branchId isActive')
-    .exec();
-
-  if (!actor) {
-    throw new Error('Actor not found');
-  }
-
-  if (!actor.isActive) {
-    throw new Error('Actor account is inactive');
-  }
-
-  if (
-    !actor.branchId ||
-    actor.branchId.toString() !== data.branchId
-  ) {
-    throw new Error('Actor is outside branch scope');
-  }
-
-  if (
-    data.action !== 'assign' &&
-    data.action !== 'resolve' &&
-    data.action !== 'escalate'
-  ) {
-    throw new Error('Invalid safety alert action');
-  }
-
-  const update: {
-    assignedTo?: Types.ObjectId;
-    status?: string;
-    resolvedAt?: Date;
-    severity?: string;
-  } = {};
-
-  if (data.action === 'assign') {
-    if (!data.assignedTo) {
-      throw new Error('Assigned user is required');
+  const update: {assignedTo?: Types.ObjectId; status: string; resolvedAt?: Date; severity?: string} = {
+    status: action === 'resolve' ? SAFETY_ALERT_STATUSES.RESOLVED : SAFETY_ALERT_STATUSES.IN_PROGRESS,
+  };
+  if (action === 'assign') {
+    const assignee = await principalWriteAssignee(data.assignedTo, data.branchId);
+    if (String(alert.assignedTo) === assignee._id.toString() && alert.status === SAFETY_ALERT_STATUSES.IN_PROGRESS) {
+      throw new RequestContractError(409, 'Safety alert is already assigned to this user');
     }
-
-    validateObjectId(
-      data.assignedTo,
-      'assigned user ID',
-    );
-
-    const assignedUser = await User.findById(
-      data.assignedTo,
-    )
-      .select('_id role branchId isActive')
-      .exec();
-
-    if (!assignedUser) {
-      throw new Error('Assigned user not found');
+    update.assignedTo = assignee._id;
+  }
+  if (action === 'resolve') update.resolvedAt = new Date();
+  if (action === 'escalate') {
+    if (alert.severity === SAFETY_ALERT_SEVERITIES.CRITICAL && alert.status === SAFETY_ALERT_STATUSES.IN_PROGRESS) {
+      throw new RequestContractError(409, 'Safety alert is already escalated');
     }
-
-    if (!assignedUser.isActive) {
-      throw new Error(
-        'Assigned user account is inactive',
-      );
-    }
-
-    if (
-      !assignedUser.branchId ||
-      assignedUser.branchId.toString() !== data.branchId
-    ) {
-      throw new Error(
-        'Assigned user is outside branch scope',
-      );
-    }
-
-    update.assignedTo = assignedUser._id;
-    update.status = SAFETY_ALERT_STATUSES.IN_PROGRESS;
+    update.severity = SAFETY_ALERT_SEVERITIES.CRITICAL;
   }
-
-  if (data.action === 'resolve') {
-    update.status = SAFETY_ALERT_STATUSES.RESOLVED;
-    update.resolvedAt = new Date();
-  }
-
-  if (data.action === 'escalate') {
-    update.severity =
-      SAFETY_ALERT_SEVERITIES.CRITICAL;
-    update.status =
-      SAFETY_ALERT_STATUSES.IN_PROGRESS;
-  }
-
-  const result = await SafetyAlert.collection.updateOne(
-    {
-      _id: alertId,
-      branchId: branchObjectId,
-      status: {
-        $ne: SAFETY_ALERT_STATUSES.RESOLVED,
-      },
-    },
-    {
-      $set: update,
-    },
-  );
-
-  if (result.matchedCount === 0) {
-    throw new Error(
-      'Safety alert was already resolved or no longer available',
-    );
-  }
+  const updated = await SafetyAlert.findOneAndUpdate({
+    _id: alert._id, branchId: alert.branchId, status: alert.status,
+    severity: alert.severity, assignedTo: alert.assignedTo ?? null,
+    updatedAt: alert.updatedAt, __v: alert.__v ?? {$exists: false},
+  }, {
+    $set: update,
+    $push: {history: {action, performedBy: actor._id, ...(update.assignedTo ? {assignedTo: update.assignedTo} : {}), createdAt: new Date()}},
+    $inc: {__v: 1},
+  }, {returnDocument: 'after', runValidators: true});
+  if (!updated) throw new RequestContractError(409, 'Safety alert changed or was already processed');
 };

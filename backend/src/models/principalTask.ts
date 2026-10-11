@@ -29,7 +29,8 @@ export interface IPrincipalTask extends Document {
   assignedTo: Schema.Types.ObjectId;
   createdBy: Schema.Types.ObjectId;
   dueDate?: Date;
-  completedAt?: Date;
+  completedAt?: Date | null;
+  history: Array<{action: 'start' | 'complete' | 'cancel'; performedBy: Schema.Types.ObjectId; createdAt: Date}>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,6 +41,7 @@ const principalTaskSchema = new Schema<IPrincipalTask>(
       type: Schema.Types.ObjectId,
       ref: 'Branch',
       required: true,
+      immutable: true,
       index: true,
     },
     title: {
@@ -78,6 +80,7 @@ const principalTaskSchema = new Schema<IPrincipalTask>(
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
+      immutable: true,
       index: true,
     },
     dueDate: {
@@ -86,6 +89,14 @@ const principalTaskSchema = new Schema<IPrincipalTask>(
     },
     completedAt: {
       type: Date,
+    },
+    history: {
+      type: [{
+        action: {type: String, enum: ['start', 'complete', 'cancel'], required: true},
+        performedBy: {type: Schema.Types.ObjectId, ref: 'User', required: true},
+        createdAt: {type: Date, required: true},
+      }],
+      default: [],
     },
   },
   {

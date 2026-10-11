@@ -1,274 +1,69 @@
-import { Types } from 'mongoose';
+import {Types} from 'mongoose';
+import PrincipalTask, {IPrincipalTask, PRINCIPAL_TASK_PRIORITIES, PRINCIPAL_TASK_STATUSES} from '../models/principalTask';
+import {principalWriteActor, principalWriteAssignee} from './principal-write-access.service';
+import {enumField, validDate, objectIdField, RequestContractError, textField} from '../utils/request-validation';
 
-import PrincipalTask, {
-  IPrincipalTask,
-  PRINCIPAL_TASK_STATUSES,
-  PrincipalTaskStatus,
-} from '../models/principalTask';
-import User from '../models/user';
-
-const validateObjectId = (value: string, fieldName: string): void => {
-  if (!Types.ObjectId.isValid(value)) {
-    throw new Error(`Invalid ${fieldName}`);
-  }
+export const getBranchPrincipalTasks = async (branchId: string): Promise<IPrincipalTask[]> => {
+  objectIdField(branchId, 'branch ID');
+  return PrincipalTask.find().where('branchId').equals(branchId).sort({createdAt: -1});
 };
 
-export const getBranchPrincipalTasks = async (
-  branchId: string,
-): Promise<IPrincipalTask[]> => {
-  validateObjectId(branchId, 'branch ID');
-
-  const branchObjectId = new Types.ObjectId(branchId);
-
-  const tasks = await PrincipalTask.collection
-    .find({
-      branchId: branchObjectId,
-    })
-    .sort({ createdAt: -1 })
-    .toArray();
-
-  return tasks as unknown as IPrincipalTask[];
-};
-
-export const getPrincipalTaskById = async (
-  taskId: string,
-  branchId: string,
-): Promise<IPrincipalTask> => {
-  validateObjectId(taskId, 'task ID');
-  validateObjectId(branchId, 'branch ID');
-
-  const task = await PrincipalTask.collection.findOne({
-    _id: new Types.ObjectId(taskId),
-    branchId: new Types.ObjectId(branchId),
-  });
-
-  if (!task) {
-    throw new Error('Principal task not found');
-  }
-
-  return task as unknown as IPrincipalTask;
+export const getPrincipalTaskById = async (taskId: string, branchId: string): Promise<IPrincipalTask> => {
+  objectIdField(taskId, 'task ID');
+  objectIdField(branchId, 'branch ID');
+  const task = await PrincipalTask.findById(taskId).where('branchId').equals(branchId);
+  if (!task) throw new RequestContractError(404, 'Principal task not found');
+  return task;
 };
 
 export interface CreatePrincipalTaskInput {
-  branchId: string;
-  actorId: string;
-  title: string;
-  description?: string;
-  priority?: string;
-  assignedTo: string;
-  dueDate?: Date;
+  branchId: string; actorId: string; title: string; description?: string;
+  priority?: string; assignedTo: string; dueDate?: Date;
 }
 
-export const createPrincipalTask = async (
-  data: CreatePrincipalTaskInput,
-): Promise<IPrincipalTask> => {
-  validateObjectId(data.branchId, 'branch ID');
-  validateObjectId(data.actorId, 'actor ID');
-  validateObjectId(data.assignedTo, 'assigned user ID');
-
-  const title = data.title.trim();
-
-  if (!title) {
-    throw new Error('Task title is required');
-  }
-
-  const actor = await User.findById(data.actorId)
-    .select('_id role branchId isActive')
-    .exec();
-
-  if (!actor) {
-    throw new Error('Actor not found');
-  }
-
-  if (!actor.isActive) {
-    throw new Error('Actor account is inactive');
-  }
-
-  if (!actor.branchId || actor.branchId.toString() !== data.branchId) {
-    throw new Error('Actor is outside branch scope');
-  }
-
-  const assignedUser = await User.findById(data.assignedTo)
-    .select('_id role branchId isActive')
-    .exec();
-
-  if (!assignedUser) {
-    throw new Error('Assigned user not found');
-  }
-
-  if (!assignedUser.isActive) {
-    throw new Error('Assigned user account is inactive');
-  }
-
-  if (
-    !assignedUser.branchId ||
-    assignedUser.branchId.toString() !== data.branchId
-  ) {
-    throw new Error('Assigned user is outside branch scope');
-  }
-
-  const taskDocument = {
-    branchId: new Types.ObjectId(data.branchId),
-    title,
-    ...(data.description?.trim()
-      ? { description: data.description.trim() }
-      : {}),
-    ...(data.priority ? { priority: data.priority } : {}),
-    status: PRINCIPAL_TASK_STATUSES.PENDING,
-    assignedTo: new Types.ObjectId(data.assignedTo),
-    createdBy: new Types.ObjectId(data.actorId),
-    ...(data.dueDate ? { dueDate: data.dueDate } : {}),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-
-  const result = await PrincipalTask.collection.insertOne(taskDocument);
-
-  if (!result.insertedId) {
-    throw new Error('Failed to create principal task');
-  }
-
-  const createdTask = await PrincipalTask.collection.findOne({
-    _id: result.insertedId,
-  });
-
-  if (!createdTask) {
-    throw new Error('Created principal task could not be retrieved');
-  }
-
-  return createdTask as unknown as IPrincipalTask;
+export const createPrincipalTask = async (data: CreatePrincipalTaskInput): Promise<IPrincipalTask> => {
+  const title = textField(data.title, 'task title', 150, 2);
+  const description = data.description === undefined ? undefined : textField(data.description, 'task description', 2000);
+  const priority = data.priority === undefined ? undefined : enumField(data.priority, 'task priority', Object.values(PRINCIPAL_TASK_PRIORITIES));
+  const dueDate = data.dueDate === undefined ? undefined : validDate(data.dueDate, 'Due date');
+  const actor = await principalWriteActor(data.actorId, data.branchId);
+  const assignee = await principalWriteAssignee(data.assignedTo, data.branchId);
+  // Explicit fields only: model validation/defaults/timestamps now run on save.
+  return new PrincipalTask({
+    branchId: new Types.ObjectId(data.branchId), createdBy: actor._id,
+    assignedTo: assignee._id, title, description, priority, dueDate,
+  }).save();
 };
-export type PrincipalTaskAction =
-  | 'start'
-  | 'complete'
-  | 'cancel';
 
+export type PrincipalTaskAction = 'start' | 'complete' | 'cancel';
 export interface PrincipalTaskActionInput {
-  taskId: string;
-  actorId: string;
-  branchId: string;
-  action: PrincipalTaskAction;
+  taskId: string; actorId: string; branchId: string; action: PrincipalTaskAction;
 }
 
-export const processPrincipalTaskAction = async (
-  data: PrincipalTaskActionInput,
-): Promise<IPrincipalTask> => {
-  validateObjectId(data.taskId, 'task ID');
-  validateObjectId(data.actorId, 'actor ID');
-  validateObjectId(data.branchId, 'branch ID');
-
-  const taskId = new Types.ObjectId(data.taskId);
-  const branchObjectId = new Types.ObjectId(data.branchId);
-  const actorId = new Types.ObjectId(data.actorId);
-
-  const task = await PrincipalTask.collection.findOne({
-    _id: taskId,
-    branchId: branchObjectId,
-  });
-
-  if (!task) {
-    throw new Error('Principal task not found');
+export const processPrincipalTaskAction = async (data: PrincipalTaskActionInput): Promise<IPrincipalTask> => {
+  objectIdField(data.taskId, 'task ID');
+  const action = enumField(data.action, 'task action', ['start', 'complete', 'cancel'] as const);
+  const actor = await principalWriteActor(data.actorId, data.branchId);
+  const task = await PrincipalTask.findById(data.taskId).where('branchId').equals(data.branchId);
+  if (!task) throw new RequestContractError(404, 'Principal task not found');
+  if (String(task.assignedTo) !== actor._id.toString() && String(task.createdBy) !== actor._id.toString()) {
+    throw new RequestContractError(403, 'Actor is not authorized for this task');
   }
-
-  const actor = await User.findById(actorId)
-    .select('_id role branchId isActive')
-    .exec();
-
-  if (!actor) {
-    throw new Error('Actor not found');
+  const active = [PRINCIPAL_TASK_STATUSES.PENDING, PRINCIPAL_TASK_STATUSES.IN_PROGRESS] as string[];
+  if ((action === 'start' && task.status !== PRINCIPAL_TASK_STATUSES.PENDING) || !active.includes(task.status)) {
+    throw new RequestContractError(409, 'Task action is not allowed in its current state');
   }
-
-  if (!actor.isActive) {
-    throw new Error('Actor account is inactive');
-  }
-
-  if (
-    !actor.branchId ||
-    actor.branchId.toString() !== data.branchId
-  ) {
-    throw new Error('Actor is outside branch scope');
-  }
-
-  if (
-    data.action !== 'start' &&
-    data.action !== 'complete' &&
-    data.action !== 'cancel'
-  ) {
-    throw new Error('Invalid principal task action');
-  }
-
-  if (
-    task.assignedTo.toString() !== data.actorId &&
-    task.createdBy.toString() !== data.actorId
-  ) {
-    throw new Error('Actor is not authorized for this task');
-  }
-
-  const update: {
-    status?: PrincipalTaskStatus;
-    completedAt?: Date | null;
-  } = {};
-
-  if (data.action === 'start') {
-    if (task.status !== PRINCIPAL_TASK_STATUSES.PENDING) {
-      throw new Error('Only pending tasks can be started');
-    }
-
-    update.status = PRINCIPAL_TASK_STATUSES.IN_PROGRESS;
-  }
-
-  if (data.action === 'complete') {
-    if (
-      task.status !== PRINCIPAL_TASK_STATUSES.PENDING &&
-      task.status !== PRINCIPAL_TASK_STATUSES.IN_PROGRESS
-    ) {
-      throw new Error('Only active tasks can be completed');
-    }
-
-    update.status = PRINCIPAL_TASK_STATUSES.COMPLETED;
-    update.completedAt = new Date();
-  }
-
-  if (data.action === 'cancel') {
-    if (
-      task.status === PRINCIPAL_TASK_STATUSES.COMPLETED ||
-      task.status === PRINCIPAL_TASK_STATUSES.CANCELLED
-    ) {
-      throw new Error('Completed or cancelled task cannot be cancelled');
-    }
-
-    update.status = PRINCIPAL_TASK_STATUSES.CANCELLED;
-    update.completedAt = null;
-  }
-
-  const result = await PrincipalTask.collection.updateOne(
-    {
-      _id: taskId,
-      branchId: branchObjectId,
-      status: task.status,
-    },
-    {
-      $set: {
-        ...update,
-        updatedAt: new Date(),
-      },
-    },
-  );
-
-  if (result.matchedCount === 0) {
-    throw new Error(
-      'Principal task was already modified or is no longer available',
-    );
-  }
-
-  const updatedTask = await PrincipalTask.collection.findOne({
-    _id: taskId,
-    branchId: branchObjectId,
-  });
-
-  if (!updatedTask) {
-    throw new Error('Principal task not found');
-  }
-
-  return updatedTask as unknown as IPrincipalTask;
+  const now = new Date();
+  const status = action === 'start' ? 'in_progress' : action === 'complete' ? 'completed' : 'cancelled';
+  const updated = await PrincipalTask.findOneAndUpdate({
+    _id: task._id, branchId: task.branchId, status: task.status,
+    assignedTo: task.assignedTo, createdBy: task.createdBy, updatedAt: task.updatedAt,
+    __v: task.__v ?? {$exists: false},
+  }, {
+    $set: {status, ...(action === 'complete' ? {completedAt: now} : action === 'cancel' ? {completedAt: null} : {})},
+    $push: {history: {action, performedBy: actor._id, createdAt: now}},
+    $inc: {__v: 1},
+  }, {returnDocument: 'after', runValidators: true});
+  if (!updated) throw new RequestContractError(409, 'Principal task changed or was already processed');
+  return updated;
 };
