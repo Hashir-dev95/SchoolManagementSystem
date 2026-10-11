@@ -1,28 +1,28 @@
 import { Request, Response } from 'express';
-import { createUser } from '../services/auth.service';
+import {createHash, timingSafeEqual} from 'node:crypto';
+import {BootstrapError, provisionBootstrapSuperAdmin} from '../services/bootstrap.service';
 
 export const bootstrapSuperAdmin = async (
   req: Request,
   res: Response,
 ): Promise<void> => {
   try {
-    const { fullName, email, password, phone } = req.body;
-
-    if (!fullName || !email || !password) {
-      res.status(400).json({
+    const configuredSecret = process.env.SUPER_ADMIN_BOOTSTRAP_SECRET;
+    if (!configuredSecret || configuredSecret.trim().length < 32) {
+      res.status(503).json({
         success: false,
-        message: 'Full name, email and password are required',
+        message: 'Super Admin bootstrap is disabled',
       });
       return;
     }
-
-    const user = await createUser({
-      fullName,
-      email,
-      password,
-      phone,
-      role: 'super_admin',
-    });
+    // Header only: never accept the secret in a URL, request body or frontend config.
+    const suppliedSecret = req.get('X-Bootstrap-Secret');
+    const digest = (value: string) => createHash('sha256').update(value).digest();
+    if (!suppliedSecret || !timingSafeEqual(digest(suppliedSecret), digest(configuredSecret))) {
+      res.status(403).json({success: false, message: 'Bootstrap authorization failed'});
+      return;
+    }
+    const user = await provisionBootstrapSuperAdmin(req.body);
 
     res.status(201).json({
       success: true,
@@ -36,14 +36,9 @@ export const bootstrapSuperAdmin = async (
       },
     });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'Failed to create Super Admin';
-
-    res.status(400).json({
+    res.status(error instanceof BootstrapError ? error.status : 500).json({
       success: false,
-      message,
+      message: error instanceof BootstrapError ? error.message : 'Failed to provision Super Admin',
     });
   }
 };

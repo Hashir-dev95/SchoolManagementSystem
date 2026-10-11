@@ -9,6 +9,12 @@ export const USER_ROLES = {
 
 export type UserRole = (typeof USER_ROLES)[keyof typeof USER_ROLES];
 
+export const SUPER_ADMIN_BOOTSTRAP_INDEX = {
+  name: 'unique_super_admin_bootstrap',
+  unique: true,
+  partialFilterExpression: {bootstrapKey: {$type: 'string'}},
+} as const;
+
 export interface IUser extends Document {
   fullName: string;
   email: string;
@@ -17,6 +23,7 @@ export interface IUser extends Document {
   role: UserRole;
   branchId?: Schema.Types.ObjectId;
   isActive: boolean;
+  bootstrapKey?: 'super-admin';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -66,11 +73,21 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: true,
     },
+
+    // Internal singleton marker; ordinary provisioned users have no marker.
+    bootstrapKey: {
+      type: String,
+      enum: ['super-admin'],
+      immutable: true,
+      select: false,
+    },
   },
   {
     timestamps: true,
   },
 );
+
+userSchema.index({bootstrapKey: 1}, SUPER_ADMIN_BOOTSTRAP_INDEX);
 
 const User = model<IUser>('User', userSchema);
 

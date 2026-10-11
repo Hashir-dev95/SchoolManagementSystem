@@ -1,4 +1,4 @@
-import express from 'express';
+import express, {ErrorRequestHandler} from 'express';
 import cors from 'cors';
 import branchRoutes from './routes/branch.routes';
 import authRoutes from './routes/auth.routes';
@@ -33,6 +33,16 @@ app.use('/api/branches', branchRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/principal', principalRoutes);
 app.use('/api/bootstrap', bootstrapRoutes);
+// Sanitize bootstrap JSON parser errors: Express's default development error
+// response can include the submitted credential body and a stack trace.
+const bootstrapParseError: ErrorRequestHandler = (error, _req, res, next) => {
+  if (error?.type === 'entity.parse.failed') {
+    res.status(400).json({success: false, message: 'Invalid bootstrap request'});
+    return;
+  }
+  next(error);
+};
+app.use('/api/bootstrap', bootstrapParseError);
 app.use('/api/usage', usageRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/privileged-requests', privilegedRequestRoutes);

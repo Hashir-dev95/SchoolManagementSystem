@@ -11,7 +11,13 @@ interface CreateUserInput {
   branchId?: string;
 }
 
-export const createUser = async (data: CreateUserInput): Promise<IUser> => {
+export const createUser = async (
+  data: CreateUserInput,
+  options: {bootstrap?: true} = {},
+): Promise<IUser> => {
+  if (options.bootstrap && data.role !== 'super_admin') {
+    throw new Error('Bootstrap requires the Super Admin role');
+  }
   const existingUser = await User.findOne({
     email: data.email.toLowerCase(),
   });
@@ -46,6 +52,7 @@ export const createUser = async (data: CreateUserInput): Promise<IUser> => {
     password: hashedPassword,
     role: data.role,
     branchId: data.branchId,
+    ...(options.bootstrap ? {bootstrapKey: 'super-admin'} : {}),
   });
 
   await user.save();
