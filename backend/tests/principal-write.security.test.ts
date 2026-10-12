@@ -562,6 +562,8 @@ test('all Principal writes require authentication and existing role/permission',
     ROLE_PERMISSIONS.principal = permissions.filter(permission => permission !== PERMISSIONS.PRINCIPAL_TASKS_MANAGE);
     assert.equal((await create()).status, 403);
     assert.equal((await taskAction(item._id)).status, 403);
+    assert.equal((await safetyAction(incident._id)).status, 200);
+    ROLE_PERMISSIONS.principal = permissions.filter(permission => permission !== PERMISSIONS.PRINCIPAL_SAFETY_MANAGE);
     assert.equal((await safetyAction(incident._id)).status, 403);
   } finally {ROLE_PERMISSIONS.principal = permissions;}
 });
@@ -643,4 +645,174 @@ test('task creation retries still create duplicates without an idempotency ident
   assert.equal((await create()).status, 201);
   assert.equal((await create()).status, 201);
   assert.equal(await PrincipalTask.countDocuments(), 2);
+});
+
+test('safety overview covers all stored categories with branch scope and strict filters', async () => {
+  const types = ['missing_attendance', 'substitute_gap', 'bus_exception', 'gate_exception', 'incident', 'helpdesk', 'backup_failure'];
+  for (const type of types) await alert({type, severity: 'high'});
+  const resolved = await alert({status: 'resolved'});
+  const outside = await alert({branchId: otherBranch, title: 'Foreign private safety'});
+  const result = await http(`/principal/safety-alerts?branchId=${otherBranch}`, 'GET', undefined);
+  assert.equal(result.status, 200);
+  assert.equal(result.data.data.length, 7);
+  assert.deepEqual(result.data.data.map((entry: {type: string}) => entry.type).sort(), [...types].sort());
+  assert.equal(result.raw.includes(String(resolved._id)), false);
+  assert.equal(result.raw.includes(String(outside._id)), false);
+  assert.equal((await http('/principal/safety-alerts?status=resolved', 'GET', undefined)).data.data[0].id, String(resolved._id));
+  assert.equal((await http('/principal/safety-alerts?type=helpdesk&severity=high&status=open', 'GET', undefined)).data.data.length, 1);
+  for (const query of ['status=invalid', 'severity=urgent', 'type=student', 'status=open&status=resolved', 'actorId=other', 'search=.*']) {
+    assert.equal((await http(`/principal/safety-alerts?${query}`, 'GET', undefined)).status, 400);
+  }
+});
+
+test('safety officers expose only eligible same-branch public identities', async () => {
+  const item = await alert();
+  const inactive = await actor('inactive-officer', 'teacher', branch);
+  await User.updateOne({_id: inactive.id}, {$set: {isActive: false}});
+  const result = await http(`/principal/safety-alerts/${item._id}/eligible-officers`, 'GET', undefined);
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.data.map((user: {_id: string}) => user._id).sort(), [principal, peer, teacher].map(user => String(user.id)).sort());
+  for (const user of result.data.data) assert.deepEqual(Object.keys(user).sort(), ['_id', 'fullName', 'role']);
+  for (const excluded of [inactive, student, admin, foreign]) assert.equal(result.raw.includes(String(excluded.id)), false);
+  for (const field of ['email', 'password', 'phone', 'permissions', 'branchId', 'sessions']) assert.equal(result.raw.includes(`"${field}"`), false);
+  const assigned = await safetyAction(item._id, {action: 'assign', assignedTo: result.data.data.find((user: {_id: string}) => user._id === String(teacher.id))._id});
+  assert.equal(assigned.status, 200);
+  assert.equal(assigned.data.data, null); // Existing mutation envelope remains compatible.
+  assert.equal(assigned.data.alert.assignedTo.id, String(teacher.id));
+  assert.equal(assigned.data.alert.status, 'in_progress');
+  const next = await http(`/principal/safety-alerts/${item._id}/eligible-officers`, 'GET', undefined);
+  assert.equal(next.raw.includes(String(teacher.id)), false); // Repeating assignment would be 409.
+});
+
+test('officer candidates cannot authorize a selection that becomes invalid before PATCH', async () => {
+  const item = await alert();
+  const path = `/principal/safety-alerts/${item._id}/eligible-officers`;
+  assert.equal((await http(path, 'GET', undefined)).raw.includes(String(teacher.id)), true);
+  await User.updateOne({_id: teacher.id}, {$set: {isActive: false}});
+  assert.equal((await safetyAction(item._id, {action: 'assign', assignedTo: String(teacher.id)})).status, 403);
+  assert.equal((await safetyAction(item._id, {action: 'assign', assignedTo: String(foreign.id)})).status, 404);
+  assert.equal((await safetyAction(item._id, {action: 'assign', assignedTo: String(student.id)})).status, 403);
+  assert.equal((await safetyAction(item._id, {action: 'assign', assignedTo: String(admin.id)})).status, 404);
+  assert.equal((await safetyAction(item._id, {action: 'assign', assignedTo: String(peer.id), branchId: String(otherBranch)})).status, 400);
+});
+
+test('safety detail and candidates conceal foreign IDs and reject spoofed context', async () => {
+  const own = await alert(), outside = await alert({branchId: otherBranch});
+  for (const suffix of ['', '/eligible-officers']) {
+    assert.equal((await http(`/principal/safety-alerts/${outside._id}${suffix}`, 'GET', undefined)).status, 404);
+    for (const query of ['branchId', 'actorId', 'role', 'severity']) {
+      assert.equal((await http(`/principal/safety-alerts/${own._id}${suffix}?${query}=spoof`, 'GET', undefined)).status, 400);
+    }
+  }
+  await safetyAction(own._id);
+  assert.equal((await http(`/principal/safety-alerts/${own._id}/eligible-officers`, 'GET', undefined)).status, 409);
+});
+
+test('safety detail/history whitelist display fields and conceal foreign, missing and student identities', async () => {
+  const missing = new mongoose.Types.ObjectId();
+  const item = await alert({assignedTo: foreign.id, description: 'Operational detail', history: [
+    {action: 'assign', performedBy: principal.id, assignedTo: teacher.id, createdAt: new Date()},
+    ...[foreign.id, missing, student.id].map(id => ({action: 'escalate', performedBy: id, createdAt: new Date()})),
+  ]});
+  const detail = await http(`/principal/safety-alerts/${item._id}`, 'GET', undefined);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.data.data.assignedTo, null);
+  assert.equal(detail.data.data.description, 'Operational detail');
+  assert.equal(detail.data.data.history.length, 4);
+  assert.deepEqual(detail.data.data.history.map((entry: {_id: string}) => entry._id), item.toObject().history.map((entry: {_id?: unknown}) => String(entry._id)));
+  assert.deepEqual(Object.keys(detail.data.data.history[0].performer).sort(), ['fullName', 'id', 'role']);
+  assert.deepEqual(Object.keys(detail.data.data.history[0].assignedOfficer).sort(), ['fullName', 'id', 'role']);
+  assert.ok(detail.data.data.history.slice(1).every((entry: {performer: unknown}) => entry.performer === null));
+  for (const field of ['email', 'password', 'phone', 'permissions', 'branchId', 'sessions', 'performedBy', '__v']) assert.equal(detail.raw.includes(`"${field}"`), false);
+  for (const id of [foreign.id, student.id, missing]) assert.equal(detail.raw.includes(String(id)), false);
+  const updated = await safetyAction(item._id, {action: 'escalate'});
+  assert.equal(updated.data.alert.history.length, 5);
+  assert.equal(updated.data.alert.history[0]._id, detail.data.data.history[0]._id);
+  assert.ok(updated.data.alert.history[4]._id);
+});
+
+test('safety-view alone allows scoped list/detail and cannot look up officers or mutate alerts', async () => {
+  const item = await alert({description: 'Sensitive support detail', history: [{action: 'escalate', performedBy: principal.id, createdAt: new Date()}]});
+  const original = ROLE_PERMISSIONS.principal;
+  ROLE_PERMISSIONS.principal = [PERMISSIONS.PRINCIPAL_SAFETY_VIEW];
+  try {
+    const list = await http('/principal/safety-alerts', 'GET', undefined);
+    assert.equal(list.status, 200);
+    assert.equal(list.raw.includes('Sensitive support detail'), true);
+    assert.deepEqual(list.data.data[0].capabilities, {allowedActions: [], canViewDetail: true});
+    const detail = await http(`/principal/safety-alerts/${item._id}`, 'GET', undefined);
+    assert.equal(detail.status, 200);
+    assert.equal(detail.data.data.description, 'Sensitive support detail');
+    assert.equal(detail.data.data.history.length, 1);
+    const outside = await alert({branchId: otherBranch});
+    assert.equal((await http(`/principal/safety-alerts/${outside._id}`, 'GET', undefined)).status, 404);
+    assert.equal((await http(`/principal/safety-alerts/${item._id}/eligible-officers`, 'GET', undefined)).status, 403);
+    for (const body of [{action: 'assign', assignedTo: String(teacher.id)}, {action: 'resolve'}, {action: 'escalate'}]) {
+      assert.equal((await safetyAction(item._id, body)).status, 403);
+    }
+    assert.equal((await SafetyAlert.findById(item._id))?.history.length, 1);
+  } finally {ROLE_PERMISSIONS.principal = original;}
+});
+
+test('safety action response confirms exact transitions and terminal capabilities', async () => {
+  const item = await alert();
+  const escalated = await safetyAction(item._id, {action: 'escalate'});
+  assert.equal(escalated.data.alert.severity, 'critical');
+  assert.equal(escalated.data.alert.status, 'in_progress');
+  assert.deepEqual(escalated.data.alert.capabilities.allowedActions, ['assign', 'resolve']);
+  assert.equal((await safetyAction(item._id, {action: 'escalate'})).status, 409);
+  const beforeResolve = Date.now();
+  const resolved = await safetyAction(item._id);
+  assert.equal(resolved.data.alert.status, 'resolved');
+  assert.ok(new Date(resolved.data.alert.resolvedAt).getTime() >= beforeResolve);
+  assert.deepEqual(resolved.data.alert.capabilities.allowedActions, []);
+  for (const body of [{action: 'resolve'}, {action: 'escalate'}, {action: 'assign', assignedTo: String(peer.id)}]) assert.equal((await safetyAction(item._id, body)).status, 409);
+});
+
+test('dashboard and task permissions do not grant safety access while dashboard aggregates and task actions remain available', async () => {
+  const item = await alert({description: 'Private support text'});
+  const original = ROLE_PERMISSIONS.principal;
+  ROLE_PERMISSIONS.principal = [PERMISSIONS.PRINCIPAL_DASHBOARD_VIEW, PERMISSIONS.PRINCIPAL_TASKS_MANAGE];
+  try {
+    const dashboard = await http('/principal/dashboard', 'GET', undefined);
+    assert.equal(dashboard.status, 200);
+    assert.equal(dashboard.data.data.safetyAlerts.total, 1);
+    assert.equal(dashboard.raw.includes('Private support text'), false);
+    for (const path of ['/principal/safety-alerts', `/principal/safety-alerts/${item._id}`, `/principal/safety-alerts/${item._id}/eligible-officers`]) {
+      assert.equal((await http(path, 'GET', undefined)).status, 403);
+    }
+    for (const body of [{action: 'assign', assignedTo: String(teacher.id)}, {action: 'resolve'}, {action: 'escalate'}]) {
+      assert.equal((await safetyAction(item._id, body)).status, 403);
+    }
+    const created = await create({title: 'Task permission still works', assignedTo: String(principal.id)});
+    assert.equal(created.status, 201);
+    assert.equal((await http(`/principal/tasks/${created.data.data._id}`, 'GET', undefined)).status, 200);
+    assert.equal((await taskAction(created.data.data._id, {action: 'start'})).status, 200);
+  } finally {ROLE_PERMISSIONS.principal = original;}
+});
+
+test('dedicated safety-manage permits officer lookup and all safety actions without task grants', async () => {
+  const item = await alert(), outside = await alert({branchId: otherBranch});
+  const original = ROLE_PERMISSIONS.principal;
+  ROLE_PERMISSIONS.principal = [PERMISSIONS.PRINCIPAL_SAFETY_MANAGE];
+  try {
+    assert.equal((await http('/principal/safety-alerts', 'GET', undefined)).status, 403);
+    assert.equal((await http(`/principal/safety-alerts/${item._id}`, 'GET', undefined)).status, 403);
+    assert.equal((await http(`/principal/safety-alerts/${item._id}/eligible-officers`, 'GET', undefined)).status, 200);
+    assert.equal((await http(`/principal/safety-alerts/${outside._id}/eligible-officers`, 'GET', undefined)).status, 404);
+    assert.equal((await safetyAction(outside._id)).status, 404);
+    assert.equal((await safetyAction(item._id, {action: 'assign', assignedTo: String(teacher.id)})).status, 200);
+    assert.equal((await safetyAction(item._id, {action: 'escalate'})).status, 200);
+    assert.equal((await safetyAction(item._id)).status, 200);
+    assert.equal((await create()).status, 403);
+  } finally {ROLE_PERMISSIONS.principal = original;}
+});
+
+test('Principal safety defaults do not broaden other role permission sets', () => {
+  for (const permission of [PERMISSIONS.PRINCIPAL_SAFETY_VIEW, PERMISSIONS.PRINCIPAL_SAFETY_MANAGE]) {
+    assert.ok(ROLE_PERMISSIONS.principal.includes(permission));
+    for (const role of ['teacher', 'student', 'super_admin'] as const) assert.equal(ROLE_PERMISSIONS[role].includes(permission), false);
+  }
+  assert.deepEqual(ROLE_PERMISSIONS.super_admin, Object.values(PERMISSIONS).filter(permission =>
+    permission !== PERMISSIONS.PRINCIPAL_SAFETY_VIEW && permission !== PERMISSIONS.PRINCIPAL_SAFETY_MANAGE));
 });

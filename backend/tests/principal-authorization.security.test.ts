@@ -131,12 +131,15 @@ const http = async (route: Route, token: string | undefined) => {
 };
 const get = (path: string): Route => ({method: 'GET', path});
 const principalRoutes = (): Route[] => [
-  ...['/principal/dashboard', '/principal/safety-alerts', '/principal/notices', `/principal/notices/${noticeA}`,
+  ...['/principal/dashboard', '/principal/notices', `/principal/notices/${noticeA}`,
     '/principal/tasks', `/principal/tasks/${taskA}`].map(path => ({...get(path), permission: PERMISSIONS.PRINCIPAL_DASHBOARD_VIEW})),
   {...get('/principal/task-assignees'), permission: PERMISSIONS.PRINCIPAL_TASKS_MANAGE},
+  {...get('/principal/safety-alerts'), permission: PERMISSIONS.PRINCIPAL_SAFETY_VIEW},
+  {...get(`/principal/safety-alerts/${alertA}`), permission: PERMISSIONS.PRINCIPAL_SAFETY_VIEW},
+  {...get(`/principal/safety-alerts/${alertA}/eligible-officers`), permission: PERMISSIONS.PRINCIPAL_SAFETY_MANAGE},
   {method: 'POST', path: '/principal/tasks', permission: PERMISSIONS.PRINCIPAL_TASKS_MANAGE, body: {title: 'Valid task', assignedTo: String(teacher.id)}},
   {method: 'PATCH', path: `/principal/tasks/${taskA}`, permission: PERMISSIONS.PRINCIPAL_TASKS_MANAGE, body: {action: 'start'}},
-  {method: 'PATCH', path: `/principal/safety-alerts/${alertA}`, permission: PERMISSIONS.PRINCIPAL_TASKS_MANAGE, body: {action: 'escalate'}},
+  {method: 'PATCH', path: `/principal/safety-alerts/${alertA}`, permission: PERMISSIONS.PRINCIPAL_SAFETY_MANAGE, body: {action: 'escalate'}},
   ...['/approval-requests/pending', `/approval-requests/${approvalA}`].map(path => ({...get(path), permission: PERMISSIONS.PRINCIPAL_APPROVALS_VIEW})),
   {...get(`/approval-requests/${approvalA}/eligible-delegates`), permission: PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE},
   {method: 'PATCH', path: `/approval-requests/${approvalA}`, permission: PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE, body: {action: 'approved'}},
@@ -175,6 +178,7 @@ test('students, teachers and Super Admins cannot use Principal-only endpoints', 
   for (const person of [student, teacher]) assert.equal((await http(get('/branches/my-branch'), person.token)).status, 200);
 });
 for (const permission of [PERMISSIONS.PRINCIPAL_DASHBOARD_VIEW, PERMISSIONS.PRINCIPAL_TASKS_MANAGE,
+  PERMISSIONS.PRINCIPAL_SAFETY_VIEW, PERMISSIONS.PRINCIPAL_SAFETY_MANAGE,
   PERMISSIONS.PRINCIPAL_APPROVALS_VIEW, PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE]) {
   test(`role alone cannot bypass removed permission ${permission}`, async () => {
     const original = ROLE_PERMISSIONS.principal;

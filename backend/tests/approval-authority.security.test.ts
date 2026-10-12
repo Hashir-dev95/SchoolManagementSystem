@@ -462,7 +462,9 @@ test('Principal dangerous permissions are removed, supporting reads and Super Ad
   for (const permission of [PERMISSIONS.PRINCIPAL_DASHBOARD_VIEW, PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE, PERMISSIONS.PRINCIPAL_TASKS_MANAGE, PERMISSIONS.STUDENTS_VIEW, PERMISSIONS.FINANCE_VIEW, PERMISSIONS.RESULTS_VIEW]) {
     assert.equal(ROLE_PERMISSIONS.principal.includes(permission), true);
   }
-  assert.deepEqual(ROLE_PERMISSIONS.super_admin, Object.values(PERMISSIONS));
+  // Newly introduced Principal-only safety grants must not broaden Super Admin.
+  assert.deepEqual(ROLE_PERMISSIONS.super_admin, Object.values(PERMISSIONS).filter(permission =>
+    permission !== PERMISSIONS.PRINCIPAL_SAFETY_VIEW && permission !== PERMISSIONS.PRINCIPAL_SAFETY_MANAGE));
 });
 
 test('approval routes enforce permission middleware in addition to role and grant', async () => {

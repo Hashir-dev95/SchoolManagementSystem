@@ -8,6 +8,7 @@ import SafetyAlert, {
   SAFETY_ALERT_STATUSES,
   SAFETY_ALERT_TYPES,
   SafetyAlertType,
+  ISafetyAlert,
 } from '../models/safetyAlert';
 
 export interface SafetyAlertSummary {
@@ -241,7 +242,7 @@ export interface SafetyAlertActionInput {
   alertId: string; actorId: string; branchId: string; action: SafetyAlertAction; assignedTo?: string;
 }
 
-export const processSafetyAlertAction = async (data: SafetyAlertActionInput): Promise<void> => {
+export const processSafetyAlertAction = async (data: SafetyAlertActionInput): Promise<ISafetyAlert> => {
   objectIdField(data.alertId, 'alert ID');
   const action = enumField(data.action, 'safety alert action', ['assign', 'resolve', 'escalate'] as const);
   if (action !== 'assign' && data.assignedTo !== undefined) throw new RequestContractError(400, 'Unsupported assignment field');
@@ -278,4 +279,5 @@ export const processSafetyAlertAction = async (data: SafetyAlertActionInput): Pr
     $inc: {__v: 1},
   }, {returnDocument: 'after', runValidators: true});
   if (!updated) throw new RequestContractError(409, 'Safety alert changed or was already processed');
+  return updated;
 };

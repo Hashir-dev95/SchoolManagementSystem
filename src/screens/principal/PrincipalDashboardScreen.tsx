@@ -22,12 +22,14 @@ interface PrincipalDashboardScreenProps {
   onOpenApprovals: () => void;
   onOpenInbox: () => void;
   onOpenTasks: () => void;
+  onOpenSafety: () => void;
 }
 
 export default function PrincipalDashboardScreen({
   onOpenApprovals,
   onOpenInbox,
   onOpenTasks,
+  onOpenSafety,
 }: PrincipalDashboardScreenProps) {
   const { data, loading, error, reload } = usePrincipalDashboardData();
   const today = new Date().toLocaleDateString('en-PK', {
@@ -41,6 +43,18 @@ export default function PrincipalDashboardScreen({
     <DashboardShell safeArea={false}>
       <ScreenHeading title="Principal overview" subtitle={data?.branch.name} />
       <DashboardStateCard loading={loading} error={error} onRetry={reload} />
+      <SectionCard title="Safety / School Overview">
+        <Text style={styles.note}>
+          {data
+            ? `${data.safetyAlerts.total} active alerts · ${data.safetyAlerts.critical} critical`
+            : 'Review operational alerts in your branch.'}
+        </Text>
+        <Button
+          title="Open Safety Overview"
+          variant="secondary"
+          onPress={onOpenSafety}
+        />
+      </SectionCard>
       <SectionCard title="Tasks">
         <Text style={styles.note}>
           {data?.tasks

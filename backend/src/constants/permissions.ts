@@ -8,6 +8,8 @@ export const PERMISSIONS = {
   PRINCIPAL_APPROVALS_VIEW: 'principal.approvals.view',
   PRINCIPAL_APPROVALS_MANAGE: 'principal.approvals.manage',
   PRINCIPAL_TASKS_MANAGE: 'principal.tasks.manage',
+  PRINCIPAL_SAFETY_VIEW: 'principal.safety.view',
+  PRINCIPAL_SAFETY_MANAGE: 'principal.safety.manage',
   BRANCHES_VIEW: 'branches.view',
   BRANCHES_MANAGE: 'branches.manage',
   PRIVILEGED_REQUESTS_MANAGE: 'privileged_requests.manage',

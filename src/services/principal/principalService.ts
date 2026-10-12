@@ -121,6 +121,47 @@ export interface PrincipalApiResult<T> {
 }
 
 export const principalService = {
+  getSafetyAlerts: async (token: string, filters: SafetyFilters = {}) => {
+    const { status, severity, type } = filters;
+    const query = Object.entries({ status, severity, type })
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => `${key}=${encodeURIComponent(value!)}`)
+      .join('&');
+    const response = await apiClient.request<ApiEnvelope<SafetyAlert[]>>(
+      `/principal/safety-alerts${query ? `?${query}` : ''}`,
+      { token },
+    );
+    return { data: response.data, message: response.message };
+  },
+  getSafetyAlert: async (token: string, alertId: string) => {
+    const response = await apiClient.request<ApiEnvelope<SafetyAlert>>(
+      `/principal/safety-alerts/${alertId}`,
+      { token },
+    );
+    return { data: response.data, message: response.message };
+  },
+  getSafetyOfficers: async (token: string, alertId: string) => {
+    const response = await apiClient.request<ApiEnvelope<TaskUser[]>>(
+      `/principal/safety-alerts/${alertId}/eligible-officers`,
+      { token },
+    );
+    return { data: response.data, message: response.message };
+  },
+  processSafetyAlert: async (
+    token: string,
+    alertId: string,
+    action: SafetyAction,
+    assignedTo?: string,
+  ) => {
+    const response = await apiClient.request<
+      ApiEnvelope<null> & { alert: SafetyAlert }
+    >(`/principal/safety-alerts/${alertId}`, {
+      method: 'PATCH',
+      token,
+      body: { action, ...(action === 'assign' ? { assignedTo } : {}) },
+    });
+    return { data: response.alert, message: response.message };
+  },
   getTasks: async (token: string, filters: TaskFilters = {}) => {
     const { status, priority, search } = filters;
     const query = Object.entries({ status, priority, search })
@@ -250,6 +291,47 @@ export const principalService = {
 };
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+export type SafetyType =
+  | 'missing_attendance'
+  | 'substitute_gap'
+  | 'bus_exception'
+  | 'gate_exception'
+  | 'incident'
+  | 'helpdesk'
+  | 'backup_failure';
+export type SafetyStatus = 'open' | 'in_progress' | 'resolved';
+export type SafetySeverity = 'low' | 'medium' | 'high' | 'critical';
+export type SafetyAction = 'assign' | 'resolve' | 'escalate';
+export interface SafetyFilters {
+  status?: SafetyStatus;
+  severity?: SafetySeverity;
+  type?: SafetyType;
+}
+export interface SafetyIdentity {
+  id: string;
+  fullName: string;
+  role: string;
+}
+export interface SafetyAlert {
+  id: string;
+  type: SafetyType;
+  title: string;
+  description?: string;
+  severity: SafetySeverity;
+  status: SafetyStatus;
+  assignedTo: SafetyIdentity | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string;
+  history?: Array<{
+    _id?: string;
+    action: SafetyAction;
+    createdAt: string;
+    performer: SafetyIdentity | null;
+    assignedOfficer: SafetyIdentity | null;
+  }>;
+  capabilities: { allowedActions: SafetyAction[]; canViewDetail: boolean };
+}
 export type TaskPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type TaskAction = 'start' | 'complete' | 'cancel';
 export interface TaskUser {

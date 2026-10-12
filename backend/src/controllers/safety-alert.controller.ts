@@ -1,52 +1,41 @@
 import {Response} from 'express';
-
 import {BranchScopedRequest} from '../middleware/branch.middleware';
-import {objectIdField, writeFailure, writeScope} from '../utils/request-validation';
+import {objectIdField, RequestContractError, writeFailure, writeScope} from '../utils/request-validation';
 import {safetyActionBody} from '../utils/principal-write.validation';
-import {
-  getBranchSafetyAlerts,
-  processSafetyAlertAction,
-} from '../services/safety-alert.service';
+import {processSafetyAlertAction} from '../services/safety-alert.service';
+import {getSafetyOverview, getSafetyAlertById, getEligibleSafetyOfficers, serializeSafetyAlerts, canViewSafetyAlerts} from '../services/safety-overview.service';
 
-export const getSafetyAlertsController = async (
-  req: BranchScopedRequest,
-  res: Response,
-): Promise<void> => {
+const checkQuery = (req: BranchScopedRequest, allowed: string[]) => {
+  if (Object.keys(req.query).some(key => !allowed.includes(key))) throw new RequestContractError(400, 'Unsupported safety filter');
+};
+
+export const getSafetyAlertsController = async (req: BranchScopedRequest, res: Response): Promise<void> => {
   try {
-    if (!req.branchId) {
-      res.status(403).json({
-        success: false,
-        message: 'Branch scope is required',
-      });
-      return;
-    }
+    const {branchId} = writeScope(req);
+    // Preserve legacy branchId-query behavior: ignored, never used as scope.
+    checkQuery(req, ['status', 'severity', 'type', 'branchId']);
+    const data = await getSafetyOverview(branchId, req.query, canViewSafetyAlerts());
+    res.status(200).json({success: true, message: 'Safety alerts fetched successfully', data});
+  } catch (error) {writeFailure(res, error);}
+};
 
-    const data = await getBranchSafetyAlerts(req.branchId);
+export const getSafetyAlertDetailController = async (req: BranchScopedRequest, res: Response): Promise<void> => {
+  try {
+    const {branchId} = writeScope(req);
+    checkQuery(req, []);
+    const alert = await getSafetyAlertById(objectIdField(req.params.alertId, 'alert ID'), branchId);
+    const data = (await serializeSafetyAlerts([alert], true))[0];
+    res.status(200).json({success: true, message: 'Safety alert fetched successfully', data});
+  } catch (error) {writeFailure(res, error);}
+};
 
-    res.status(200).json({
-      success: true,
-      message: 'Safety alerts fetched successfully',
-      data,
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'Failed to fetch safety alerts';
-
-    if (message === 'Invalid branch ID') {
-      res.status(400).json({
-        success: false,
-        message,
-      });
-      return;
-    }
-
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch safety alerts',
-    });
-  }
+export const getSafetyOfficersController = async (req: BranchScopedRequest, res: Response): Promise<void> => {
+  try {
+    const {branchId, actorId} = writeScope(req);
+    checkQuery(req, []);
+    const data = await getEligibleSafetyOfficers(objectIdField(req.params.alertId, 'alert ID'), branchId, actorId);
+    res.status(200).json({success: true, message: 'Eligible officers fetched successfully', data});
+  } catch (error) {writeFailure(res, error);}
 };
 
 export const processSafetyAlertActionController = async (req: BranchScopedRequest, res: Response): Promise<void> => {
@@ -54,7 +43,9 @@ export const processSafetyAlertActionController = async (req: BranchScopedReques
     const actor = writeScope(req);
     const input = safetyActionBody(req.body);
     const alertId = objectIdField(req.params.alertId, 'alert ID');
-    await processSafetyAlertAction({...actor, ...input, alertId});
-    res.status(200).json({success: true, message: 'Safety alert action completed successfully', data: null});
+    const updated = await processSafetyAlertAction({...actor, ...input, alertId});
+    const alert = (await serializeSafetyAlerts([updated], true))[0];
+    // Preserve data:null for existing callers. Confirmed state is additive.
+    res.status(200).json({success: true, message: 'Safety alert action completed successfully', data: null, alert});
   } catch (error) {writeFailure(res, error);}
 };
