@@ -137,6 +137,7 @@ const principalRoutes = (): Route[] => [
   {method: 'PATCH', path: `/principal/tasks/${taskA}`, permission: PERMISSIONS.PRINCIPAL_TASKS_MANAGE, body: {action: 'start'}},
   {method: 'PATCH', path: `/principal/safety-alerts/${alertA}`, permission: PERMISSIONS.PRINCIPAL_TASKS_MANAGE, body: {action: 'escalate'}},
   ...['/approval-requests/pending', `/approval-requests/${approvalA}`].map(path => ({...get(path), permission: PERMISSIONS.PRINCIPAL_APPROVALS_VIEW})),
+  {...get(`/approval-requests/${approvalA}/eligible-delegates`), permission: PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE},
   {method: 'PATCH', path: `/approval-requests/${approvalA}`, permission: PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE, body: {action: 'approved'}},
 ];
 const identityRoutes = () => [...principalRoutes(), get('/branches/my-branch')];
@@ -191,7 +192,7 @@ test('missing branch assignment fails closed on every Principal endpoint', async
 
 test('foreign branch query cannot widen any read family', async () => {
   for (const path of ['/principal/dashboard', '/principal/tasks', `/principal/tasks/${taskA}`, '/principal/safety-alerts',
-    '/principal/notices', `/principal/notices/${noticeA}`, '/approval-requests/pending', `/approval-requests/${approvalA}`, '/branches/my-branch']) {
+    '/principal/notices', `/principal/notices/${noticeA}`, '/approval-requests/pending', `/approval-requests/${approvalA}`, `/approval-requests/${approvalA}/eligible-delegates`, '/branches/my-branch']) {
     const result = await http(get(`${path}?branchId=${branchB}`), principal.token);
     assert.equal(result.status, 200, path);
     assert.equal(result.raw.includes('FOREIGN PRIVATE'), false, path);

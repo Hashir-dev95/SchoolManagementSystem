@@ -10,11 +10,23 @@ export interface PrincipalRequester {
 
 export type ApprovalAction = 'approved' | 'rejected' | 'changes_requested';
 
+export interface EligibleDelegate {
+  _id: string;
+  fullName: string;
+}
+
+export interface DelegationInput {
+  delegatedTo: string;
+  delegationExpiresAt: string;
+}
+
 export interface ApprovalHistoryEntry {
   action: ApprovalAction | 'delegated';
   performedBy: string | PrincipalRequester;
   reason?: string;
   createdAt: string;
+  authority?: 'direct' | 'delegated';
+  delegatedBy?: string | PrincipalRequester;
 }
 
 export interface ApprovalRequest {
@@ -25,12 +37,13 @@ export interface ApprovalRequest {
   approvalType: string;
   amount?: number;
   reason: string;
-  supportingFileUrl?: string;
-  beforeData?: unknown;
-  afterData?: unknown;
   status: 'pending' | 'approved' | 'rejected' | 'changes_requested';
   reviewedBy?: string | PrincipalRequester;
   reviewedAt?: string;
+  delegatedTo?: string | PrincipalRequester;
+  delegatedBy?: string | PrincipalRequester;
+  delegationExpiresAt?: string;
+  capabilities?: { canReview: boolean; canDelegate: boolean };
   history: ApprovalHistoryEntry[];
   createdAt: string;
   updatedAt: string;
@@ -133,17 +146,26 @@ export const principalService = {
   processApproval: async (
     token: string,
     requestId: string,
-    action: ApprovalAction,
+    action: ApprovalAction | 'delegated',
     reason?: string,
+    delegation?: DelegationInput,
   ) => {
     const response = await apiClient.request<
       ApiEnvelope<{ request: ApprovalRequest }>
     >(`/approval-requests/${requestId}`, {
       method: 'PATCH',
       token,
-      body: { action, ...(reason ? { reason } : {}) },
+      body: { action, ...(reason ? { reason } : {}), ...delegation },
     });
     return { data: response.data.request, message: response.message };
+  },
+
+  getEligibleDelegates: async (token: string, requestId: string) => {
+    const response = await apiClient.request<ApiEnvelope<EligibleDelegate[]>>(
+      `/approval-requests/${requestId}/eligible-delegates`,
+      { token },
+    );
+    return { data: response.data, message: response.message };
   },
 
   getNotices: async (token: string) => {

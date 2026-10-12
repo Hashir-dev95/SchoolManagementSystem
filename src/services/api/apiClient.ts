@@ -1,6 +1,13 @@
 const API_BASE_URL = 'http://192.168.1.25:5000/api';
 const DEFAULT_TIMEOUT_MS = 10000;
 
+export class ApiError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 interface ApiOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
@@ -34,7 +41,7 @@ export const apiClient = {
       const data = (await response.json()) as T & { message?: string };
 
       if (!response.ok) {
-        throw new Error((data as { message?: string }).message || 'API request failed');
+        throw new ApiError(response.status, (data as { message?: string }).message || 'API request failed');
       }
 
       return data;

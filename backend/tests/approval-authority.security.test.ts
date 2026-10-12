@@ -111,6 +111,101 @@ const delegate = (id: unknown, person = peer) => decide(id, principal, {
   action: 'delegated', delegatedTo: person.id.toString(), delegationExpiresAt: new Date(Date.now() + 60000).toISOString(),
 });
 
+const candidates = (id: unknown, person?: Actor) => http(`/approval-requests/${String(id)}/eligible-delegates`, person);
+
+test('eligible candidates require authentication, role and manage permission', async () => {
+  const item = await request();
+  assert.equal((await candidates(item._id)).status, 401);
+  const student = await actor('wrongRoleStudent', 'student', branchA);
+  for (const person of [teacher, admin, student]) assert.equal((await candidates(item._id, person)).status, 403);
+  const permissions = ROLE_PERMISSIONS.principal;
+  const index = permissions.indexOf(PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE);
+  permissions.splice(index, 1);
+  try {
+    assert.equal((await candidates(item._id, principal)).status, 403);
+    assert.deepEqual((await detail(item._id)).data.data.capabilities, {canReview: false, canDelegate: false});
+  } finally {
+    permissions.splice(index, 0, PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE);
+  }
+});
+
+test('eligible candidates contain only same-branch active authorized Principals with minimal fields', async () => {
+  const inactive = await actor('inactive', 'principal', branchA);
+  const unconfigured = await actor('unconfigured', 'principal', branchA);
+  const wrongCategory = await actor('wrongCategory', 'principal', branchA);
+  await User.updateOne({_id: inactive.id}, {$set: {isActive: false}});
+  const policy = JSON.parse(process.env.PRINCIPAL_APPROVAL_AUTHORITY!);
+  policy[String(inactive.id)] = policy[String(peer.id)];
+  policy[String(wrongCategory.id)] = {branchId: String(branchA), types: ['certificate']};
+  process.env.PRINCIPAL_APPROVAL_AUTHORITY = JSON.stringify(policy);
+  const item = await request();
+  const result = await candidates(item._id, principal);
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.data, [{_id: String(peer.id), fullName: 'peer'}]);
+  assert.deepEqual(Object.keys(result.data.data[0]).sort(), ['_id', 'fullName']);
+  for (const excluded of [inactive, unconfigured, wrongCategory, foreign, teacher, admin, principal]) {
+    assert.ok(!result.raw.includes(String(excluded.id)));
+    assert.equal((await delegate(item._id, excluded)).status, 403);
+  }
+});
+
+test('eligible candidates exclude a Principal requester and direct forcing still fails', async () => {
+  const item = await request({requesterId: peer.id});
+  assert.deepEqual((await candidates(item._id, principal)).data.data, []);
+  assert.equal((await delegate(item._id)).status, 403);
+  assert.equal((await candidates(item._id, peer)).status, 403);
+});
+
+test('eligible candidates enforce financial ceilings and category grants', async () => {
+  const item = await request({approvalType: 'refund', entityType: 'fee', entityId: fee, amount: 100});
+  const policy = JSON.parse(process.env.PRINCIPAL_APPROVAL_AUTHORITY!);
+  policy[String(peer.id)].limits.refund = 99;
+  process.env.PRINCIPAL_APPROVAL_AUTHORITY = JSON.stringify(policy);
+  assert.deepEqual((await candidates(item._id, principal)).data.data, []);
+  assert.equal((await delegate(item._id)).status, 403);
+  policy[String(peer.id)].limits.refund = 100;
+  process.env.PRINCIPAL_APPROVAL_AUTHORITY = JSON.stringify(policy);
+  assert.deepEqual((await candidates(item._id, principal)).data.data.map((user: {_id: string}) => user._id), [String(peer.id)]);
+});
+
+test('eligible candidates conceal foreign requests and reject missing authority and unsupported entities', async () => {
+  const foreignItem = await request({branchId: branchB, requesterId: foreign.id, entityId: studentB});
+  assert.equal((await candidates(foreignItem._id, principal)).status, 404);
+  const unsupported = await request({entityType: 'arbitrary'});
+  assert.equal((await candidates(unsupported._id, principal)).status, 403);
+  const unsupportedCategory = await request({approvalType: 'paper'});
+  assert.equal((await candidates(unsupportedCategory._id, principal)).status, 403);
+  const item = await request();
+  delete process.env.PRINCIPAL_APPROVAL_AUTHORITY;
+  assert.equal((await candidates(item._id, principal)).status, 403);
+});
+
+test('eligible candidate successfully delegates and capabilities prohibit repeated delegation', async () => {
+  const item = await request();
+  assert.deepEqual((await detail(item._id)).data.data.capabilities, {canReview: true, canDelegate: true});
+  const list = await candidates(item._id, principal);
+  const result = await decide(item._id, principal, {action: 'delegated', delegatedTo: list.data.data[0]._id, delegationExpiresAt: new Date(Date.now() + 60000).toISOString()});
+  assert.equal(result.status, 200);
+  assert.equal(result.data.data.request.delegatedTo._id, String(peer.id));
+  assert.equal(result.data.data.request.history[0].action, 'delegated');
+  assert.equal((await candidates(item._id, principal)).status, 409);
+  assert.equal((await candidates(item._id, peer)).status, 403);
+  assert.deepEqual((await detail(item._id, peer)).data.data.capabilities, {canReview: true, canDelegate: false});
+  await ApprovalRequest.updateOne({_id: item._id}, {$set: {delegationExpiresAt: new Date(Date.now() - 1000)}});
+  assert.deepEqual((await detail(item._id, peer)).data.data.capabilities, {canReview: false, canDelegate: false});
+});
+
+test('eligible candidates reject finalized requests and revalidate a candidate that becomes inactive', async () => {
+  const item = await request();
+  assert.equal((await candidates(item._id, principal)).status, 200);
+  await User.updateOne({_id: peer.id}, {$set: {isActive: false}});
+  assert.equal((await delegate(item._id)).status, 403);
+  assert.deepEqual((await candidates(item._id, principal)).data.data, []);
+  await decide(item._id);
+  assert.equal((await candidates(item._id, principal)).status, 409);
+  assert.deepEqual((await detail(item._id)).data.data.capabilities, {canReview: false, canDelegate: false});
+});
+
 test('list, detail and mutation require authentication and Principal role', async () => {
   const item = await request();
   for (const person of [undefined, teacher, admin]) {

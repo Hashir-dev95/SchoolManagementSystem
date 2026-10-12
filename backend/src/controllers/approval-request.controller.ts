@@ -2,7 +2,7 @@ import {Response} from 'express';
 import {BranchScopedRequest} from '../middleware/branch.middleware';
 import {ApprovalAccessError} from '../services/approval-authority.policy';
 import {dateField, objectBody, objectIdField, RequestContractError} from '../utils/request-validation';
-import {ApprovalAction, getPendingApprovalRequests, getApprovalRequestById, processApprovalRequest} from '../services/approval-request.service';
+import {ApprovalAction, getEligibleApprovalDelegates, getPendingApprovalRequests, getApprovalRequestById, processApprovalRequest} from '../services/approval-request.service';
 
 const failure = (res: Response, error: unknown) => {
   const expected = error instanceof ApprovalAccessError || error instanceof RequestContractError;
@@ -60,5 +60,13 @@ export const processApprovalRequestController = async (req: BranchScopedRequest,
       reason: input.reason as string | undefined, delegatedTo, delegationExpiresAt,
     });
     res.status(200).json({success: true, message: 'Approval request processed successfully', data: {request}});
+  } catch (error) {failure(res, error);}
+};
+
+export const getEligibleApprovalDelegatesController = async (req: BranchScopedRequest, res: Response): Promise<void> => {
+  try {
+    const {actorId, branchId} = scope(req);
+    const data = await getEligibleApprovalDelegates(String(req.params.requestId), branchId, actorId);
+    res.status(200).json({success: true, message: 'Eligible delegates fetched successfully', data});
   } catch (error) {failure(res, error);}
 };

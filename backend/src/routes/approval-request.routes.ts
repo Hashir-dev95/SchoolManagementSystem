@@ -8,6 +8,7 @@ import {PERMISSIONS} from '../constants/permissions';
 
 import {
   getPendingApprovalRequestsController,
+  getEligibleApprovalDelegatesController,
    getApprovalRequestByIdController,
   processApprovalRequestController,
 } from '../controllers/approval-request.controller';
@@ -21,6 +22,15 @@ router.get(
   requirePermission(PERMISSIONS.PRINCIPAL_APPROVALS_VIEW),
   requireBranchScope,
   getPendingApprovalRequestsController,
+);
+
+router.get(
+  '/:requestId/eligible-delegates',
+  authenticateToken,
+  requireRole('principal'),
+  requirePermission(PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE),
+  requireBranchScope,
+  getEligibleApprovalDelegatesController,
 );
 
 router.get(
