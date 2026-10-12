@@ -1,4 +1,5 @@
-﻿import React, { useCallback, useEffect, useState } from 'react';
+﻿import React, { useCallback, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -37,8 +38,10 @@ export default function PrincipalInboxScreen({
   const [notices, setNotices] = useState<SchoolNotice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const generation = useRef(0);
 
   const load = useCallback(async () => {
+    const current = ++generation.current;
     if (!accessToken) {
       setError('Your session is unavailable. Please sign in again.');
       setLoading(false);
@@ -48,21 +51,27 @@ export default function PrincipalInboxScreen({
     setError(null);
     try {
       const response = await principalService.getNotices(accessToken);
-      setNotices(response.data);
+      if (current === generation.current) setNotices(response.data);
     } catch (requestError: unknown) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : 'Unable to load school notices.',
-      );
+      if (current === generation.current)
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : 'Unable to load school notices.',
+        );
     } finally {
-      setLoading(false);
+      if (current === generation.current) setLoading(false);
     }
   }, [accessToken]);
 
-  useEffect(() => {
-    load().catch(() => undefined);
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load().catch(() => undefined);
+      return () => {
+        ++generation.current;
+      };
+    }, [load]),
+  );
 
   return (
     <DashboardShell

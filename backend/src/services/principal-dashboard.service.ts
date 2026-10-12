@@ -4,7 +4,12 @@ import Branch from '../models/branch';
 import Student from '../models/student';
 import SchoolClass from '../models/schoolClass';
 import Section from '../models/section';
-import ApprovalRequest, {
+import User from '../models/user';
+import { PERMISSIONS } from '../constants/permissions';
+import { ROLE_PERMISSIONS } from '../constants/rolePermissions';
+import { ApprovalAccessError } from './approval-authority.policy';
+import { validateApprovalId } from './approval-scope.service';
+import {
   APPROVAL_TYPES,
   ApprovalType,
 } from '../models/approvalRequest';
@@ -12,6 +17,7 @@ import { getBranchAttendanceSummary } from './attendance.service';
 import { getBranchFeeSummary } from './fee.service';
 import { getBranchSafetyAlertSummary } from './safety-alert.service';
 import { getBranchSchoolNotices } from './school-notice.service';
+import { getReviewablePendingApprovalRequests } from './approval-request.service';
 
 export interface PrincipalDashboardData {
   branch: {
@@ -66,12 +72,19 @@ const createEmptyApprovalCounts = (): Record<ApprovalType, number> => ({
 
 export const getPrincipalDashboard = async (
   branchId: string,
+  actorId: string,
 ): Promise<PrincipalDashboardData> => {
   if (!Types.ObjectId.isValid(branchId)) {
     throw new Error('Invalid branch ID');
   }
 
   const branchObjectId = new Types.ObjectId(branchId);
+
+  validateApprovalId(actorId, 'actor ID');
+  const actor = await User.findById(actorId).where('branchId').equals(branchId)
+    .where('role').equals('principal').where('isActive').equals(true).select('role');
+  if (!actor) throw new ApprovalAccessError(403, 'Principal dashboard actor is not authorized');
+  const canViewApprovals = ROLE_PERMISSIONS[actor.role].includes(PERMISSIONS.PRINCIPAL_APPROVALS_VIEW);
 
   const schoolNoticesPromise = getBranchSchoolNotices(branchId);
 
@@ -96,8 +109,7 @@ export const getPrincipalDashboard = async (
     activeClasses,
     totalSections,
     activeSections,
-    pendingApprovalCount,
-    pendingApprovalGroups,
+    pendingApprovals,
     attendanceSummary,
     feeSummary,
     safetyAlerts,
@@ -131,28 +143,9 @@ export const getPrincipalDashboard = async (
       isActive: true,
     }),
 
-    ApprovalRequest.collection.countDocuments({
-      branchId: branchObjectId,
-      status: 'pending',
-    }),
-
-    ApprovalRequest.aggregate<{
-      _id: ApprovalType;
-      count: number;
-    }>([
-      {
-        $match: {
-          branchId: branchObjectId,
-          status: 'pending',
-        },
-      },
-      {
-        $group: {
-          _id: '$approvalType',
-          count: { $sum: 1 },
-        },
-      },
-    ]),
+    // Dashboard permission does not grant approval visibility. Skip approval
+    // reads entirely when view is absent; preserve the all-zero response shape.
+    canViewApprovals ? getReviewablePendingApprovalRequests(branchId, actorId) : [],
 
     attendanceSummaryPromise,
     feeSummaryPromise,
@@ -163,10 +156,8 @@ export const getPrincipalDashboard = async (
 
   const approvalsByType = createEmptyApprovalCounts();
 
-  for (const group of pendingApprovalGroups) {
-    if (group._id in approvalsByType) {
-      approvalsByType[group._id] = group.count;
-    }
+  for (const request of pendingApprovals) {
+    approvalsByType[request.approvalType] += 1;
   }
 
   return {
@@ -205,7 +196,7 @@ export const getPrincipalDashboard = async (
     notices: schoolNotices,
 
     pendingApprovals: {
-      total: pendingApprovalCount,
+      total: pendingApprovals.length,
       byType: approvalsByType,
     },
   };

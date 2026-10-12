@@ -27,8 +27,11 @@ const authorizedActor = async (actorId: string, branchId: string) => {
 };
 
 // Reuse PR-2 checks for processing, capabilities and candidate reads.
-const authorizeReview = async (request: IApprovalRequest, actorId: string, branchId: string) => {
-  const actor = await authorizedActor(actorId, branchId);
+const authorizeReview = async (
+  request: IApprovalRequest, actorId: string, branchId: string,
+  currentActor?: Awaited<ReturnType<typeof authorizedActor>>,
+) => {
+  const actor = currentActor ?? await authorizedActor(actorId, branchId);
   if (request.status !== 'pending') throw new ApprovalAccessError(409, 'Only pending approval requests can be processed');
   if (request.requesterId.equals(actor._id)) {
     throw new ApprovalAccessError(403, 'Requester cannot review their own request');
@@ -85,20 +88,29 @@ export const getEligibleApprovalDelegates = async (requestId: string, branchId: 
   return candidates;
 };
 
-export const getPendingApprovalRequests = async (branchId: string, actorId: string) => {
-  await authorizedActor(actorId, branchId);
-  const requests = await ApprovalRequest.find({branchId, status: 'pending'}).sort({createdAt: -1});
+// Shared by inbox and dashboard. Internal records must be projected by callers
+// into safe approval DTOs or aggregate counts, never exposed directly.
+export const getReviewablePendingApprovalRequests = async (branchId: string, actorId: string) => {
+  const actor = await authorizedActor(actorId, branchId);
+  const requests = await ApprovalRequest.find({branchId, status: 'pending'})
+    .select('-supportingFileUrl -beforeData -afterData').sort({createdAt: -1});
   const visible = [];
   for (const request of requests) {
     try {
-      assertApprovalAuthority(actorId, branchId, request);
-      await assertApprovalReferences(request);
-      visible.push(await serializeApproval(request));
+      await authorizeReview(request, actorId, branchId, actor);
+      visible.push(request);
     } catch (error) {
       if (!(error instanceof ApprovalAccessError)) throw error;
       // Invalid/out-of-scope/unconfigured entries disclose no request content.
     }
   }
+  return visible;
+};
+
+export const getPendingApprovalRequests = async (branchId: string, actorId: string) => {
+  const requests = await getReviewablePendingApprovalRequests(branchId, actorId);
+  const visible = [];
+  for (const request of requests) visible.push(await serializeApproval(request));
   return visible;
 };
 

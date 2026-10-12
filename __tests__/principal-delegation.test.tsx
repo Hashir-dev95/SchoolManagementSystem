@@ -121,6 +121,19 @@ afterEach(async () => {
   jest.restoreAllMocks();
 });
 
+test('approved detail clarifies review semantics without promising business execution', async () => {
+  service.getApprovalById.mockResolvedValue({
+    data: { ...request, status: 'approved' },
+    message: '',
+  });
+  const tree = await mount(detail());
+  expect(contents(tree)).toContain(
+    'Review approved. This records the approval decision; any related',
+  );
+  expect(contents(tree)).toContain('business action is handled separately.');
+  expect(button(tree, 'Approve')).toBeUndefined();
+});
+
 test('Delegate appears only after server confirms pending review and delegation capabilities', async () => {
   const tree = await mount(detail());
   expect(button(tree, 'Delegate')).toBeDefined();

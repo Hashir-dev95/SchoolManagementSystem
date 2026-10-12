@@ -288,6 +288,228 @@ test('dashboard isolates all aggregate families and ignores a spoofed GET JSON b
   assert.deepEqual(data.notices.map((value: {_id: string}) => value._id), [String(noticeA)]);
   assert.equal(spoofed.raw.includes('FOREIGN PRIVATE'), false);
 });
+const assertApprovalParity = async (person: Actor, expected: number, byType: Record<string, number>) => {
+  const dashboard = await http(get('/principal/dashboard'), person.token);
+  const inbox = await http(get('/approval-requests/pending'), person.token);
+  assert.equal(dashboard.status, 200);
+  assert.equal(inbox.status, 200);
+  const counts = dashboard.data.data.pendingApprovals;
+  assert.equal(counts.total, expected);
+  assert.equal(counts.total, inbox.data.data.total);
+  assert.equal(counts.total, inbox.data.data.requests.length);
+  for (const [type, count] of Object.entries(counts.byType)) {
+    assert.equal(count, byType[type] ?? 0, type);
+    assert.equal(count, inbox.data.data.requests.filter((item: {approvalType: string}) => item.approvalType === type).length);
+  }
+  assert.deepEqual(Object.keys(counts).sort(), ['byType', 'total']);
+  return dashboard;
+};
+
+test('dashboard counts same-branch pending approvals inside authority and matches inbox', async () => {
+  await assertApprovalParity(principal, 1, {leave: 1});
+});
+
+const assertNonDisclosingApprovals = (dashboard: Awaited<ReturnType<typeof http>>) => {
+  assert.equal(dashboard.status, 200);
+  assert.deepEqual(dashboard.data.data.pendingApprovals, {total: 0, byType: {
+    leave: 0, refund: 0, discount: 0, result: 0, paper: 0, purchase: 0, payroll: 0, certificate: 0,
+  }});
+  // Other existing dashboard cards remain available under dashboard permission.
+  assert.equal(dashboard.data.data.branch.id, String(branchA));
+  assert.equal(dashboard.data.data.attendance.totalMarked, 1);
+  assert.equal(dashboard.data.data.feeSummary.totalAmount, 25);
+  assert.equal(dashboard.data.data.safetyAlerts.total, 1);
+  assert.equal(dashboard.data.data.notices.length, 1);
+};
+
+test('dashboard-view plus approval-view exposes permitted counts without requiring approval-manage', async () => {
+  const original = ROLE_PERMISSIONS.principal;
+  try {
+    ROLE_PERMISSIONS.principal = [PERMISSIONS.PRINCIPAL_DASHBOARD_VIEW, PERMISSIONS.PRINCIPAL_APPROVALS_VIEW];
+    await assertApprovalParity(principal, 1, {leave: 1});
+  } finally {ROLE_PERMISSIONS.principal = original;}
+});
+
+for (const manage of [false, true]) {
+  test(`dashboard without approval-view returns zero and skips approval reads (manage=${manage})`, async () => {
+    const original = ROLE_PERMISSIONS.principal;
+    try {
+      ROLE_PERMISSIONS.principal = [PERMISSIONS.PRINCIPAL_DASHBOARD_VIEW,
+        ...(manage ? [PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE] : [])];
+      const reads = mock.method(ApprovalRequest, 'find', () => {throw new Error('Unexpected approval query');});
+      assertNonDisclosingApprovals(await http(get('/principal/dashboard'), principal.token));
+      assert.equal((await http(get('/approval-requests/pending'), principal.token)).status, 403);
+      assert.equal(reads.mock.callCount(), 0);
+    } finally {ROLE_PERMISSIONS.principal = original;}
+  });
+}
+
+test('approval-view without dashboard-view permits inbox but cannot access dashboard', async () => {
+  const original = ROLE_PERMISSIONS.principal;
+  try {
+    ROLE_PERMISSIONS.principal = [PERMISSIONS.PRINCIPAL_APPROVALS_VIEW];
+    assert.equal((await http(get('/principal/dashboard'), principal.token)).status, 403);
+    const inbox = await http(get('/approval-requests/pending'), principal.token);
+    assert.equal(inbox.status, 200);
+    assert.equal(inbox.data.data.requests.length, 1);
+  } finally {ROLE_PERMISSIONS.principal = original;}
+});
+
+test('approval count permission gating never grants Principal dashboard access to other roles', async () => {
+  for (const person of [admin, teacher, student]) {
+    assert.equal((await http(get('/principal/dashboard'), person.token)).status, 403);
+  }
+});
+
+test('query and GET body permission claims cannot disclose dashboard approval counts', async () => {
+  const original = ROLE_PERMISSIONS.principal;
+  try {
+    ROLE_PERMISSIONS.principal = [PERMISSIONS.PRINCIPAL_DASHBOARD_VIEW];
+    assertNonDisclosingApprovals(await http(get(`/principal/dashboard?permissions=${PERMISSIONS.PRINCIPAL_APPROVALS_VIEW}&canViewApprovals=true&role=super_admin`), principal.token));
+    const {request} = await import('node:http');
+    const body = JSON.stringify({permissions: [PERMISSIONS.PRINCIPAL_APPROVALS_VIEW], canViewApprovals: true,
+      role: 'super_admin', actorId: String(peer.id), branchId: String(branchB)});
+    const result = await new Promise<{status: number; data: unknown}>((resolve, reject) => {
+      const req = request(`${base}/principal/dashboard`, {method: 'GET', headers: {
+        Authorization: `Bearer ${principal.token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body),
+      }}, res => {
+        let raw = '';
+        res.on('error', reject);
+        res.on('data', chunk => {raw += chunk;});
+        res.on('end', () => resolve({status: res.statusCode!, data: JSON.parse(raw)}));
+      });
+      req.on('error', reject);
+      req.end(body);
+    });
+    assertNonDisclosingApprovals({...result, raw: ''});
+  } finally {ROLE_PERMISSIONS.principal = original;}
+});
+
+test('removing and restoring approval-view changes counts immediately with current authority', async () => {
+  const original = ROLE_PERMISSIONS.principal;
+  try {
+    await assertApprovalParity(principal, 1, {leave: 1});
+    ROLE_PERMISSIONS.principal = original.filter(permission => permission !== PERMISSIONS.PRINCIPAL_APPROVALS_VIEW);
+    assertNonDisclosingApprovals(await http(get('/principal/dashboard'), principal.token));
+    assert.equal((await http(get('/approval-requests/pending'), principal.token)).status, 403);
+    // Restoration must not revive stale authority or an old aggregate.
+    const policy = JSON.parse(process.env.PRINCIPAL_APPROVAL_AUTHORITY!);
+    policy[String(principal.id)].types = [];
+    process.env.PRINCIPAL_APPROVAL_AUTHORITY = JSON.stringify(policy);
+    ROLE_PERMISSIONS.principal = original;
+    await assertApprovalParity(principal, 0, {});
+    configure();
+    await assertApprovalParity(principal, 1, {leave: 1});
+  } finally {ROLE_PERMISSIONS.principal = original;}
+});
+
+test('dashboard excludes categories outside the Principal grant', async () => {
+  await approval({approvalType: 'payroll', amount: 10});
+  await assertApprovalParity(principal, 1, {leave: 1});
+});
+
+test('dashboard excludes financial requests above the stored authority ceiling', async () => {
+  await approval({approvalType: 'refund', entityType: 'fee', entityId: feeA, amount: 101});
+  await assertApprovalParity(principal, 1, {leave: 1});
+});
+
+test('dashboard counts financial requests within and exactly at the authority ceiling', async () => {
+  await approval({approvalType: 'refund', entityType: 'fee', entityId: feeA, amount: 25});
+  await approval({approvalType: 'refund', entityType: 'fee', entityId: feeA, amount: 100});
+  await assertApprovalParity(principal, 3, {leave: 1, refund: 2});
+});
+
+test('dashboard excludes missing/foreign sources, requesters and broken nested fee references', async () => {
+  await approval({entityId: new mongoose.Types.ObjectId()});
+  await approval({entityId: foreign.id});
+  await approval({requesterId: foreign.id});
+  await approval({entityType: 'unsupported'});
+  await approval({entityId: undefined});
+  const foreignFee = await Fee.findOne().where('branchId').equals(branchB).select('_id');
+  assert.ok(foreignFee, 'Foreign fee fixture must exist');
+  await approval({approvalType: 'refund', entityType: 'fee', entityId: foreignFee._id, amount: 25});
+  await assertApprovalParity(principal, 1, {leave: 1});
+  // A previously valid fee reference must stop being counted when its linked
+  // student no longer belongs to the reviewer's current branch.
+  await approval({approvalType: 'refund', entityType: 'fee', entityId: feeA, amount: 25});
+  await Student.updateOne({_id: studentA}, {$set: {branchId: branchB}});
+  await assertApprovalParity(principal, 1, {leave: 1});
+});
+
+test('dashboard and inbox use each authenticated Principal current policy without exposing approval payloads', async () => {
+  await approval({approvalType: 'refund', entityType: 'fee', entityId: feeA, amount: 50,
+    reason: 'PRIVATE approval reason', supportingFileUrl: 'https://private.invalid/attachment',
+    beforeData: {secret: 'PRIVATE before'}, afterData: {secret: 'PRIVATE after'}});
+  await approval({approvalType: 'refund', entityType: 'fee', entityId: feeA, amount: 75});
+  const policy = JSON.parse(process.env.PRINCIPAL_APPROVAL_AUTHORITY!);
+  policy[String(peer.id)] = {branchId: String(branchA), types: ['refund'], limits: {refund: 50}};
+  process.env.PRINCIPAL_APPROVAL_AUTHORITY = JSON.stringify(policy);
+  const dashboard = await assertApprovalParity(principal, 3, {leave: 1, refund: 2});
+  await assertApprovalParity(peer, 1, {refund: 1});
+  for (const marker of ['PRIVATE approval reason', 'private.invalid', 'PRIVATE before', 'PRIVATE after',
+    'supportingFileUrl', 'beforeData', 'afterData', String(approvalA), String(approvalB)]) {
+    assert.equal(dashboard.raw.includes(marker), false, marker);
+  }
+  // The policy is evaluated afresh, not cached per user or branch.
+  policy[String(principal.id)].types = [];
+  process.env.PRINCIPAL_APPROVAL_AUTHORITY = JSON.stringify(policy);
+  await assertApprovalParity(principal, 0, {});
+});
+
+test('dashboard and inbox exclude self-review and expired delegated review without relaxing decision guards', async () => {
+  await approval({requesterId: principal.id});
+  await approval({delegatedTo: principal.id, delegatedBy: peer.id, delegationExpiresAt: new Date('2000-01-01')});
+  await assertApprovalParity(principal, 1, {leave: 1});
+});
+
+test('dashboard and inbox preserve PR-5 active delegation, no expired fallback and other direct reviewers', async () => {
+  const independent = await actor('independent-reviewer', 'principal', branchA);
+  const policy = JSON.parse(process.env.PRINCIPAL_APPROVAL_AUTHORITY!);
+  policy[String(independent.id)] = {branchId: String(branchA), types: ['leave']};
+  process.env.PRINCIPAL_APPROVAL_AUTHORITY = JSON.stringify(policy);
+  const delegated = await approval({delegatedTo: principal.id, delegatedBy: peer.id,
+    delegationExpiresAt: new Date(Date.now() + 60000)});
+  await assertApprovalParity(principal, 2, {leave: 2});
+  const detail = await http(get(`/approval-requests/${delegated._id}`), principal.token);
+  assert.equal(detail.data.data.capabilities.canReview, true);
+  assert.equal(detail.data.data.capabilities.canDelegate, false);
+  assert.equal((await http({method: 'PATCH', path: `/approval-requests/${delegated._id}`, body: {
+    action: 'delegated', delegatedTo: String(independent.id), delegationExpiresAt: new Date(Date.now() + 60000).toISOString(),
+  }}, principal.token)).status, 403);
+  await ApprovalRequest.updateOne({_id: delegated._id}, {$set: {delegationExpiresAt: new Date('2000-01-01')}});
+  // Assigned delegate still has its independent grant, but PR-5 forbids fallback.
+  await assertApprovalParity(principal, 1, {leave: 1});
+  assert.equal((await http({method: 'PATCH', path: `/approval-requests/${delegated._id}`, body: {action: 'approved'}}, principal.token)).status, 403);
+  await assertApprovalParity(peer, 2, {leave: 2});
+  await assertApprovalParity(independent, 2, {leave: 2});
+  assert.equal((await http(get(`/approval-requests/${delegated._id}`), peer.token)).data.data.capabilities.canReview, true);
+  assert.equal((await http(get(`/approval-requests/${delegated._id}`), independent.token)).data.data.capabilities.canReview, true);
+});
+
+test('dashboard approval count ignores query/body actor, branch, category and amount overrides', async () => {
+  const expected = (await assertApprovalParity(principal, 1, {leave: 1})).data.data.pendingApprovals;
+  const queried = await http(get(`/principal/dashboard?branchId=${branchB}&actorId=${foreign.id}&approvalType=refund&amount=0`), principal.token);
+  assert.deepEqual(queried.data.data.pendingApprovals, expected);
+  // node:http is required because fetch forbids GET bodies.
+  const {request} = await import('node:http');
+  const body = JSON.stringify({branchId: String(branchB), actorId: String(foreign.id),
+    requesterId: String(foreign.id), approvalType: 'refund', amount: 0});
+  const result = await new Promise<{status: number; raw: string}>((resolve, reject) => {
+    const req = request(`${base}/principal/dashboard?branchId=${branchB}`, {method: 'GET', headers: {
+      Authorization: `Bearer ${principal.token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body),
+    }}, res => {
+      let raw = '';
+      res.on('error', reject);
+      res.on('data', chunk => {raw += chunk;});
+      res.on('end', () => resolve({status: res.statusCode!, raw}));
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+  assert.equal(result.status, 200);
+  assert.deepEqual(JSON.parse(result.raw).data.pendingApprovals, expected);
+});
+
 test('branch reassignment after login uses DB scope on every read and write family', async () => {
   await User.updateOne({_id: principal.id}, {$set: {branchId: branchB}});
   process.env.PRINCIPAL_APPROVAL_AUTHORITY = JSON.stringify({[String(principal.id)]: {branchId: String(branchB), types: ['leave']}});

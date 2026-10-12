@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useMemo, useRef, useState } from 'react';
+﻿import React, { useMemo, useState } from 'react';
 import {
   Modal,
   PanResponder,
@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -62,15 +62,6 @@ export default function PrincipalWorkspaceScreen() {
   const [activeTab, setActiveTab] = useState<TabKey>('home');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [refreshKey, setRefreshKey] = useState(0);
-  const hasBeenFocused = useRef(false);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (hasBeenFocused.current) setRefreshKey(value => value + 1);
-      hasBeenFocused.current = true;
-    }, []),
-  );
 
   const openTab = (tab: TabKey) => {
     setActiveTab(tab);
@@ -135,22 +126,15 @@ export default function PrincipalWorkspaceScreen() {
       <View style={styles.page}>
         {activeTab === 'home' ? (
           <PrincipalDashboardScreen
-            key={`home-${refreshKey}`}
             onOpenApprovals={() => openTab('approvals')}
             onOpenInbox={() => openTab('inbox')}
             onOpenTasks={() => navigation.navigate('Tasks')}
             onOpenSafety={() => navigation.navigate('SafetyOverview')}
           />
         ) : activeTab === 'approvals' ? (
-          <PrincipalApprovalsScreen
-            key={`approvals-${refreshKey}`}
-            onReview={openApproval}
-          />
+          <PrincipalApprovalsScreen onReview={openApproval} />
         ) : (
-          <PrincipalInboxScreen
-            key={`inbox-${refreshKey}`}
-            onOpenNotice={openNotice}
-          />
+          <PrincipalInboxScreen onOpenNotice={openNotice} />
         )}
       </View>
 

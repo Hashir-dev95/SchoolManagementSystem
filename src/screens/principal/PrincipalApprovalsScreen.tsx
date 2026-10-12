@@ -1,4 +1,5 @@
-﻿import React, { useCallback, useEffect, useState } from 'react';
+﻿import React, { useCallback, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import {
@@ -57,8 +58,13 @@ export default function PrincipalApprovalsScreen({
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(
+    null,
+  );
+  const generation = useRef(0);
 
   const load = useCallback(async () => {
+    const current = ++generation.current;
     if (!accessToken) {
       setError('Your session is unavailable. Please sign in again.');
       setLoading(false);
@@ -68,32 +74,48 @@ export default function PrincipalApprovalsScreen({
     setError(null);
     try {
       const response = await principalService.getPendingApprovals(accessToken);
-      setRequests(response.data.requests);
+      if (current === generation.current) setRequests(response.data.requests);
     } catch (requestError: unknown) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : 'Unable to load approvals.',
-      );
+      if (current === generation.current)
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : 'Unable to load approvals.',
+        );
     } finally {
-      setLoading(false);
+      if (current === generation.current) setLoading(false);
     }
   }, [accessToken]);
 
   const visibleRequests = requests.filter(request => {
     const requester = request.requesterId;
-    const requesterText = typeof requester === 'string'
-      ? requester
-      : `${requester.fullName} ${requester.email}`;
-    const searchable = `${requesterText} ${request.entityType} ${request.approvalType} ${request.reason}`.toLocaleLowerCase();
-    return (typeFilter === 'all' || request.approvalType === typeFilter) &&
-      searchable.includes(query.trim().toLocaleLowerCase());
+    const requesterText =
+      typeof requester === 'string'
+        ? requester
+        : `${requester.fullName} ${requester.email}`;
+    const searchable =
+      `${requesterText} ${request.entityType} ${request.approvalType} ${request.reason}`.toLocaleLowerCase();
+    return (
+      (typeFilter === 'all' || request.approvalType === typeFilter) &&
+      searchable.includes(query.trim().toLocaleLowerCase())
+    );
   });
-  const approvalTypes = ['all', ...new Set(requests.map(request => request.approvalType))];
+  const approvalTypes = [
+    'all',
+    ...new Set([
+      ...(typeFilter === 'all' ? [] : [typeFilter]),
+      ...requests.map(request => request.approvalType),
+    ]),
+  ];
 
-  useEffect(() => {
-    load().catch(() => undefined);
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load().catch(() => undefined);
+      return () => {
+        ++generation.current;
+      };
+    }, [load]),
+  );
 
   return (
     <DashboardShell
@@ -106,6 +128,16 @@ export default function PrincipalApprovalsScreen({
         subtitle="Review the requests that keep your school moving."
       />
       <SectionCard title="Approval inbox">
+        {selectedRequestId ? (
+          <Text style={styles.muted}>
+            Selected request: {selectedRequestId}
+            {!loading &&
+            !error &&
+            !requests.some(request => request._id === selectedRequestId)
+              ? ' · No longer in the pending inbox.'
+              : ''}
+          </Text>
+        ) : null}
         <TextInput
           value={query}
           onChangeText={setQuery}
@@ -150,7 +182,9 @@ export default function PrincipalApprovalsScreen({
           </View>
         ) : visibleRequests.length === 0 ? (
           <View style={styles.state}>
-            <Text style={styles.muted}>No requests match this search or filter.</Text>
+            <Text style={styles.muted}>
+              No requests match this search or filter.
+            </Text>
           </View>
         ) : (
           visibleRequests.map((request, index) => (
@@ -158,6 +192,7 @@ export default function PrincipalApprovalsScreen({
               key={request._id}
               style={[
                 styles.row,
+                request._id === selectedRequestId && styles.selectedRow,
                 index < visibleRequests.length - 1 && styles.divider,
               ]}
             >
@@ -184,7 +219,10 @@ export default function PrincipalApprovalsScreen({
                 <Button
                   title="Review"
                   variant="secondary"
-                  onPress={() => onReview(request)}
+                  onPress={() => {
+                    setSelectedRequestId(request._id);
+                    onReview(request);
+                  }}
                   style={styles.reviewButton}
                 />
               </View>
@@ -256,6 +294,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   divider: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  selectedRow: { backgroundColor: colors.soft },
   iconTile: {
     width: 38,
     height: 38,

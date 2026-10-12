@@ -28,6 +28,9 @@ const actionLabels: Record<ApprovalAction, string> = {
   changes_requested: 'Request changes',
 };
 
+const reviewApprovalNote =
+  'Review approved. This records the approval decision; any related business action is handled separately.';
+
 const requesterName = (value: string | { fullName: string }): string =>
   typeof value === 'string' ? value : value.fullName;
 
@@ -121,9 +124,13 @@ export default function ApprovalDetailScreen({ route, navigation }: Props) {
       );
       setLoadedRequest(result.data);
       setStillPending(false);
-      Alert.alert(actionLabels[action], result.message, [
-        { text: 'Done', onPress: () => navigation.goBack() },
-      ]);
+      Alert.alert(
+        actionLabels[action],
+        action === 'approved'
+          ? `${result.message}\n\n${reviewApprovalNote}`
+          : result.message,
+        [{ text: 'Done', onPress: () => navigation.goBack() }],
+      );
     } catch (requestError: unknown) {
       const message =
         requestError instanceof Error
@@ -191,6 +198,9 @@ export default function ApprovalDetailScreen({ route, navigation }: Props) {
       </SectionCard>
       <SectionCard title="Review status">
         <InfoRow label="Status" value={prettyValue(request.status)} />
+        {request.status === 'approved' ? (
+          <Text style={styles.muted}>{reviewApprovalNote}</Text>
+        ) : null}
         {request.delegatedTo ? (
           <InfoRow
             label="Delegated to"

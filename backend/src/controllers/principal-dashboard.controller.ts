@@ -2,12 +2,17 @@ import {Response} from 'express';
 
 import {BranchScopedRequest} from '../middleware/branch.middleware';
 import {getPrincipalDashboard} from '../services/principal-dashboard.service';
+import {ApprovalAccessError} from '../services/approval-authority.policy';
 
 export const getPrincipalDashboardController = async (
   req: BranchScopedRequest,
   res: Response,
 ): Promise<void> => {
   try {
+    if (!req.user) {
+      res.status(401).json({success: false, message: 'Authentication required'});
+      return;
+    }
     if (!req.branchId) {
       res.status(403).json({
         success: false,
@@ -16,7 +21,7 @@ export const getPrincipalDashboardController = async (
       return;
     }
 
-    const data = await getPrincipalDashboard(req.branchId);
+    const data = await getPrincipalDashboard(req.branchId, req.user.userId);
 
     res.status(200).json({
       success: true,
@@ -24,6 +29,10 @@ export const getPrincipalDashboardController = async (
       data,
     });
   } catch (error) {
+    if (error instanceof ApprovalAccessError) {
+      res.status(error.status).json({success: false, message: error.message});
+      return;
+    }
     const message =
       error instanceof Error ? error.message : 'Failed to fetch principal dashboard';
 

@@ -62,8 +62,14 @@ re-exposure. Free-text reasons remain trusted source text, not structured data.
 Reference checks read multiple documents without a transaction. Concurrent user
 or entity branch reassignment is not atomic with request review; future business
 execution must coordinate that invariant. The request snapshot/transition itself
-is atomic. Dashboard approval counts remain branch totals, not reviewer-filtered
-actionable totals, because this PR does not change dashboard behavior.
+is atomic. Dashboard approval totals and per-category counts use the same
+reviewable-pending filter as the inbox: current actor/branch, authority and source
+checks, requester separation and delegation validity. The dashboard exposes only
+counts, without serializing approval identities, reasons, attachments or payloads.
+Dashboard access still requires only its own dashboard-view permission. Approval
+counts additionally require approval-view from the current DB actor's server-side
+role permissions; without it, all approval counts are zero and no approval records
+are queried. Approval-manage and authority configuration do not imply approval-view.
 
 Principal no longer receives students.delete, teachers.delete, results.manage or
 finance.manage. Read access and existing approvals/tasks/notices/safety permissions

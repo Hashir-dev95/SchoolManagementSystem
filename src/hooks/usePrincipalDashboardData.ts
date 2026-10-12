@@ -1,4 +1,5 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+﻿import { useCallback, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { useAuth } from '../context/AuthContext';
 import { principalService } from '../services/principal/principalService';
@@ -9,8 +10,10 @@ export const usePrincipalDashboardData = () => {
   const [data, setData] = useState<PrincipalDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const generation = useRef(0);
 
   const reload = useCallback(async () => {
+    const current = ++generation.current;
     if (!accessToken) {
       setError('Your session is unavailable. Please sign in again.');
       setLoading(false);
@@ -21,21 +24,27 @@ export const usePrincipalDashboardData = () => {
     setError(null);
     try {
       const response = await principalService.getDashboard(accessToken);
-      setData(response.data);
+      if (current === generation.current) setData(response.data);
     } catch (requestError: unknown) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : 'Unable to load dashboard data.',
-      );
+      if (current === generation.current)
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : 'Unable to load dashboard data.',
+        );
     } finally {
-      setLoading(false);
+      if (current === generation.current) setLoading(false);
     }
   }, [accessToken]);
 
-  useEffect(() => {
-    reload().catch(() => undefined);
-  }, [reload]);
+  useFocusEffect(
+    useCallback(() => {
+      reload().catch(() => undefined);
+      return () => {
+        ++generation.current;
+      };
+    }, [reload]),
+  );
 
   return { data, loading, error, reload };
 };
