@@ -73,6 +73,7 @@ interface PendingApprovalData {
 }
 
 export interface PrincipalDashboardData {
+  tasks: Array<{ status: TaskStatus }>;
   branch: {
     id: string;
     name: string;
@@ -120,6 +121,69 @@ export interface PrincipalApiResult<T> {
 }
 
 export const principalService = {
+  getTasks: async (token: string, filters: TaskFilters = {}) => {
+    const { status, priority, search } = filters;
+    const query = Object.entries({ status, priority, search })
+      .filter(([, value]) => value !== undefined && value !== '')
+      .map(([key, value]) => `${key}=${encodeURIComponent(value!)}`)
+      .join('&');
+    const response = await apiClient.request<
+      ApiEnvelope<PrincipalTask[]> & { canAssign: boolean }
+    >(`/principal/tasks${query ? `?${query}` : ''}`, { token });
+    return {
+      data: response.data,
+      message: response.message,
+      canAssign: response.canAssign === true,
+    };
+  },
+
+  getTask: async (token: string, taskId: string) => {
+    const response = await apiClient.request<ApiEnvelope<PrincipalTask>>(
+      `/principal/tasks/${taskId}`,
+      { token },
+    );
+    return { data: response.data, message: response.message };
+  },
+
+  getTaskAssignees: async (token: string) => {
+    const response = await apiClient.request<ApiEnvelope<TaskUser[]>>(
+      '/principal/task-assignees',
+      { token },
+    );
+    return { data: response.data, message: response.message };
+  },
+
+  createTask: async (token: string, input: CreateTaskInput) => {
+    // Explicit contract: never forward actor, branch, status or audit metadata.
+    const { title, assignedTo, description, priority, dueDate } = input;
+    const response = await apiClient.request<ApiEnvelope<PrincipalTask>>(
+      '/principal/tasks',
+      {
+        method: 'POST',
+        token,
+        body: {
+          title,
+          assignedTo,
+          ...(description !== undefined ? { description } : {}),
+          ...(priority !== undefined ? { priority } : {}),
+          ...(dueDate !== undefined ? { dueDate } : {}),
+        },
+      },
+    );
+    return { data: response.data, message: response.message };
+  },
+
+  processTask: async (token: string, taskId: string, action: TaskAction) => {
+    const response = await apiClient.request<ApiEnvelope<PrincipalTask>>(
+      `/principal/tasks/${taskId}`,
+      {
+        method: 'PATCH',
+        token,
+        body: { action },
+      },
+    );
+    return { data: response.data, message: response.message };
+  },
   getDashboard: async (token: string) => {
     const response = await apiClient.request<
       ApiEnvelope<PrincipalDashboardData>
@@ -184,3 +248,43 @@ export const principalService = {
     return { data: response.data, message: response.message };
   },
 };
+
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+export type TaskPriority = 'low' | 'normal' | 'high' | 'urgent';
+export type TaskAction = 'start' | 'complete' | 'cancel';
+export interface TaskUser {
+  _id: string;
+  fullName: string;
+  role: string;
+}
+export interface TaskFilters {
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  search?: string;
+}
+export interface CreateTaskInput {
+  title: string;
+  assignedTo: string;
+  description?: string;
+  priority?: TaskPriority;
+  dueDate?: string;
+}
+export interface PrincipalTask {
+  _id: string;
+  title: string;
+  description?: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  assignee: TaskUser | null;
+  creator: TaskUser | null;
+  dueDate?: string;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  history: Array<{
+    action: TaskAction;
+    performer: TaskUser | null;
+    createdAt: string;
+  }>;
+  capabilities: { allowedActions: TaskAction[] };
+}

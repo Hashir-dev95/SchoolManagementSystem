@@ -9,6 +9,7 @@ import {
   SectionCard,
   StatCard,
   StatGrid,
+  Button,
 } from '../../components/hiraDashboard';
 import {
   DashboardShell,
@@ -20,11 +21,13 @@ import { colors, typography } from '../../theme/hiraDashboard';
 interface PrincipalDashboardScreenProps {
   onOpenApprovals: () => void;
   onOpenInbox: () => void;
+  onOpenTasks: () => void;
 }
 
 export default function PrincipalDashboardScreen({
   onOpenApprovals,
   onOpenInbox,
+  onOpenTasks,
 }: PrincipalDashboardScreenProps) {
   const { data, loading, error, reload } = usePrincipalDashboardData();
   const today = new Date().toLocaleDateString('en-PK', {
@@ -38,6 +41,19 @@ export default function PrincipalDashboardScreen({
     <DashboardShell safeArea={false}>
       <ScreenHeading title="Principal overview" subtitle={data?.branch.name} />
       <DashboardStateCard loading={loading} error={error} onRetry={reload} />
+      <SectionCard title="Tasks">
+        <Text style={styles.note}>
+          {data?.tasks
+            ? `${data.tasks.length} branch tasks · ${
+                data.tasks.filter(
+                  task =>
+                    task.status === 'pending' || task.status === 'in_progress',
+                ).length
+              } active`
+            : 'Assign and track tasks in your branch.'}
+        </Text>
+        <Button title="Open Tasks" variant="secondary" onPress={onOpenTasks} />
+      </SectionCard>
       {data ? (
         <>
           <HeroBanner

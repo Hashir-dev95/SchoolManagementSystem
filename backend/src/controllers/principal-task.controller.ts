@@ -8,6 +8,10 @@ import {
   getBranchPrincipalTasks,
   getPrincipalTaskById,
   processPrincipalTaskAction,
+  getEligibleTaskAssignees,
+  serializePrincipalTask,
+  serializePrincipalTasks,
+  canManagePrincipalTasks,
 } from '../services/principal-task.service';
 
 export const getPrincipalTasksController = async (
@@ -23,11 +27,18 @@ export const getPrincipalTasksController = async (
       return;
     }
 
-    const data = await getBranchPrincipalTasks(req.branchId);
+    if (Object.keys(req.query).some(key => !['status', 'priority', 'search', 'branchId'].includes(key))) {
+      throw new RequestContractError(400, 'Unsupported task filter');
+    }
+    const tasks = await getBranchPrincipalTasks(req.branchId, {
+      status: req.query.status, priority: req.query.priority, search: req.query.search,
+    });
+    const data = await serializePrincipalTasks(tasks, req.user!.userId);
 
     res.status(200).json({
       success: true,
       message: 'Principal tasks fetched successfully',
+      canAssign: canManagePrincipalTasks(),
       data,
     });
   } catch (error) {
@@ -76,7 +87,8 @@ export const getPrincipalTaskByIdController = async (
       return;
     }
 
-    const data = await getPrincipalTaskById(taskId, req.branchId);
+    const task = await getPrincipalTaskById(taskId, req.branchId);
+    const data = await serializePrincipalTask(task, req.user!.userId);
 
     res.status(200).json({
       success: true,
@@ -115,7 +127,8 @@ export const createPrincipalTaskController = async (req: BranchScopedRequest, re
   try {
     const actor = writeScope(req);
     const input = taskCreateBody(req.body);
-    const data = await createPrincipalTask({...actor, ...input});
+    const task = await createPrincipalTask({...actor, ...input});
+    const data = await serializePrincipalTask(task, actor.actorId);
     res.status(201).json({success: true, message: 'Principal task created successfully', data});
   } catch (error) {writeFailure(res, error);}
 };
@@ -125,7 +138,16 @@ export const processPrincipalTaskActionController = async (req: BranchScopedRequ
     const actor = writeScope(req);
     const input = taskActionBody(req.body);
     const taskId = objectIdField(req.params.taskId, 'task ID');
-    const data = await processPrincipalTaskAction({...actor, ...input, taskId});
+    const task = await processPrincipalTaskAction({...actor, ...input, taskId});
+    const data = await serializePrincipalTask(task, actor.actorId);
     res.status(200).json({success: true, message: 'Principal task action completed successfully', data});
+  } catch (error) {writeFailure(res, error);}
+};
+
+export const getTaskAssigneesController = async (req: BranchScopedRequest, res: Response): Promise<void> => {
+  try {
+    const {branchId, actorId} = writeScope(req);
+    const data = await getEligibleTaskAssignees(branchId, actorId);
+    res.status(200).json({success: true, message: 'Task assignees fetched successfully', data});
   } catch (error) {writeFailure(res, error);}
 };

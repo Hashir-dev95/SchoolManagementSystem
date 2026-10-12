@@ -5,11 +5,17 @@ import type { ApprovalRequest } from '../services/principal/principalService';
 import ApprovalDetailScreen from '../screens/principal/ApprovalDetailScreen';
 import NoticeDetailScreen from '../screens/principal/NoticeDetailScreen';
 import PrincipalWorkspaceScreen from '../screens/principal/PrincipalWorkspaceScreen';
+import PrincipalTasksScreen from '../screens/principal/PrincipalTasksScreen';
+import PrincipalTaskDetailScreen from '../screens/principal/PrincipalTaskDetailScreen';
+import AssignPrincipalTaskScreen from '../screens/principal/AssignPrincipalTaskScreen';
 
 export type PrincipalStackParamList = {
   PrincipalWorkspace: undefined;
   ApprovalDetail: { request: ApprovalRequest };
   NoticeDetail: { noticeId: string };
+  Tasks: undefined;
+  TaskDetail: { taskId: string; createdMessage?: string };
+  AssignTask: undefined;
 };
 
 const Stack = createNativeStackNavigator<PrincipalStackParamList>();
@@ -23,6 +29,9 @@ export default function PrincipalNavigator() {
       />
       <Stack.Screen name="ApprovalDetail" component={ApprovalDetailScreen} />
       <Stack.Screen name="NoticeDetail" component={NoticeDetailScreen} />
+      <Stack.Screen name="Tasks" component={PrincipalTasksScreen} />
+      <Stack.Screen name="TaskDetail" component={PrincipalTaskDetailScreen} />
+      <Stack.Screen name="AssignTask" component={AssignPrincipalTaskScreen} />
     </Stack.Navigator>
   );
 }

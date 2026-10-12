@@ -17,8 +17,18 @@ import {
   getPrincipalTaskByIdController,
   createPrincipalTaskController,
   processPrincipalTaskActionController,
+  getTaskAssigneesController,
 } from '../controllers/principal-task.controller';
 const router = Router();
+
+router.get(
+  '/task-assignees',
+  authenticateToken,
+  requireRole('principal'),
+  requirePermission(PERMISSIONS.PRINCIPAL_TASKS_MANAGE),
+  requireBranchScope,
+  getTaskAssigneesController,
+);
 
 router.get(
   '/dashboard',

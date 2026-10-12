@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {after, before, beforeEach, mock, test} from 'node:test';
 import type {Server} from 'node:http';
+import {request as nodeRequest} from 'node:http';
 import mongoose from 'mongoose';
 import {MongoMemoryServer} from 'mongodb-memory-server';
 import app from '../src/app';
@@ -89,6 +90,168 @@ const task = (extra: Record<string, unknown> = {}) => new PrincipalTask({branchI
 const alert = (extra: Record<string, unknown> = {}) => new SafetyAlert({branchId: branch, type: 'incident', title: 'Test alert', ...extra}).save();
 const taskAction = (id: unknown, body: unknown = {action: 'complete'}, person = principal) => http(`/principal/tasks/${String(id)}`, 'PATCH', body, person);
 const safetyAction = (id: unknown, body: unknown = {action: 'resolve'}, person = principal) => http(`/principal/safety-alerts/${String(id)}`, 'PATCH', body, person);
+
+test('task assignees expose only active same-branch Principal and Teacher display fields', async () => {
+  const inactive = await actor('inactive-assignee', 'teacher', branch);
+  await User.updateOne({_id: inactive.id}, {$set: {isActive: false}});
+  const result = await http('/principal/task-assignees', 'GET', undefined);
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.data.map((user: {_id: string}) => user._id).sort(), [principal, peer, teacher].map(user => String(user.id)).sort());
+  for (const user of result.data.data) assert.deepEqual(Object.keys(user).sort(), ['_id', 'fullName', 'role']);
+  for (const user of [inactive, student, admin, foreign]) {
+    assert.equal(result.raw.includes(String(user.id)), false);
+  }
+});
+
+test('task assignees enforce authentication, Principal role, task permission and server branch', async () => {
+  // This helper's default actor is Principal; use raw fetch for missing auth.
+  const anonymous = await fetch(`${base}/principal/task-assignees`);
+  assert.equal(anonymous.status, 401);
+  for (const person of [student, teacher, admin]) {
+    assert.equal((await http('/principal/task-assignees', 'GET', undefined, person)).status, 403);
+  }
+  const original = ROLE_PERMISSIONS.principal;
+  try {
+    ROLE_PERMISSIONS.principal = original.filter(permission => permission !== PERMISSIONS.PRINCIPAL_TASKS_MANAGE);
+    assert.equal((await http('/principal/task-assignees', 'GET', undefined)).status, 403);
+    assert.equal((await http('/principal/tasks', 'GET', undefined)).data.canAssign, false);
+  } finally {ROLE_PERMISSIONS.principal = original;}
+  const normal = await http('/principal/task-assignees', 'GET', undefined);
+  const query = await http(`/principal/task-assignees?branchId=${otherBranch}&actorId=${foreign.id}`, 'GET', undefined);
+  assert.deepEqual(query.data, normal.data);
+  const spoof = await fetch(`${base}/principal/task-assignees?branchId=${otherBranch}`, {
+    headers: {Authorization: `Bearer ${principal.token}`, 'Content-Type': 'application/json'},
+  });
+  const spoofPayload = await spoof.json() as {data: unknown};
+  assert.deepEqual(spoofPayload.data, normal.data.data);
+  const bodySpoof = await new Promise<string>((resolve, reject) => {
+    const body = JSON.stringify({branchId: String(otherBranch), actorId: String(foreign.id)});
+    const transport = nodeRequest(`${base}/principal/task-assignees`, {
+      method: 'GET', headers: {Authorization: `Bearer ${principal.token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body)},
+    }, response => {
+      let raw = ''; response.setEncoding('utf8');
+      response.on('data', chunk => {raw += chunk;}); response.on('end', () => resolve(raw));
+    });
+    transport.on('error', reject); transport.end(body);
+  });
+  assert.deepEqual(JSON.parse(bodySpoof), normal.data);
+});
+
+test('task POST independently rejects forged or newly invalid assignees after candidate GET', async () => {
+  const result = await http('/principal/task-assignees', 'GET', undefined);
+  assert.ok(result.data.data.some((user: {_id: string}) => user._id === String(teacher.id)));
+  await User.updateOne({_id: teacher.id}, {$set: {isActive: false}});
+  for (const [person, expected] of [[foreign, 404], [student, 403], [admin, 404], [teacher, 403]] as const) {
+    assert.equal((await create({title: 'Valid task', assignedTo: String(person.id)})).status, expected);
+  }
+  assert.equal((await create({title: 'Valid task', assignedTo: String(new mongoose.Types.ObjectId())})).status, 404);
+  assert.equal(await PrincipalTask.countDocuments(), 0);
+  const eligible = await create({title: 'Valid task', assignedTo: String(peer.id)});
+  assert.equal(eligible.status, 201);
+  assert.equal(eligible.data.data.assignee.fullName, 'peer');
+});
+
+test('task list filters are validated, literal and branch-scoped while retaining newest-first ordering', async () => {
+  const matching = await task({title: 'Review [results]', priority: 'high', status: 'in_progress'});
+  await task({title: 'Review results', priority: 'normal'});
+  await task({title: 'Review [results]', priority: 'high', status: 'in_progress', branchId: otherBranch, createdBy: foreign.id, assignedTo: foreign.id});
+  const list = await http(`/principal/tasks?status=in_progress&priority=high&search=${encodeURIComponent('[results]')}&branchId=${otherBranch}`, 'GET', undefined);
+  assert.equal(list.status, 200);
+  assert.deepEqual(list.data.data.map((entry: {_id: string}) => entry._id), [String(matching._id)]);
+  for (const query of ['status=unknown', 'priority=unknown', 'search[bad]=x', 'status=pending&status=completed', `search=${'a'.repeat(151)}`]) {
+    assert.equal((await http(`/principal/tasks?${query}`, 'GET', undefined)).status, 400);
+  }
+  const legacyId = new mongoose.Types.ObjectId();
+  await PrincipalTask.collection.insertOne({_id: legacyId, branchId: branch, title: 'Legacy task', createdBy: principal.id, assignedTo: teacher.id});
+  const legacy = await http('/principal/tasks?status=pending&priority=normal', 'GET', undefined);
+  assert.ok(legacy.data.data.some((item: {_id: string}) => item._id === String(legacyId)));
+});
+
+test('task detail display identities are scoped and permitted actions match current ownership, state and permission', async () => {
+  const item = await task({assignedTo: teacher.id});
+  const detail = await http(`/principal/tasks/${item._id}`, 'GET', undefined);
+  assert.equal(detail.data.data.assignee.fullName, 'teacher');
+  assert.equal(detail.data.data.creator.fullName, 'principal');
+  assert.deepEqual(detail.data.data.capabilities.allowedActions, ['start', 'complete', 'cancel']);
+  assert.deepEqual((await http(`/principal/tasks/${item._id}`, 'GET', undefined, peer)).data.data.capabilities.allowedActions, []);
+  const original = ROLE_PERMISSIONS.principal;
+  try {
+    ROLE_PERMISSIONS.principal = original.filter(permission => permission !== PERMISSIONS.PRINCIPAL_TASKS_MANAGE);
+    assert.deepEqual((await http(`/principal/tasks/${item._id}`, 'GET', undefined)).data.data.capabilities.allowedActions, []);
+  } finally {ROLE_PERMISSIONS.principal = original;}
+  const started = await taskAction(item._id, {action: 'start'});
+  assert.deepEqual(started.data.data.capabilities.allowedActions, ['complete', 'cancel']);
+  assert.equal(started.data.data.history[0].performer.fullName, 'principal');
+  const completed = await taskAction(item._id, {action: 'complete'});
+  assert.deepEqual(completed.data.data.capabilities.allowedActions, []);
+  assert.ok(completed.data.data.completedAt);
+  const legacyForeign = await task({assignedTo: foreign.id, createdBy: foreign.id, history: [{action: 'start', performedBy: foreign.id, createdAt: new Date()}]});
+  const scoped = await http(`/principal/tasks/${legacyForeign._id}`, 'GET', undefined);
+  assert.equal(scoped.data.data.assignee, null);
+  assert.equal(scoped.data.data.creator, null);
+  assert.equal(scoped.data.data.history[0].performer, null);
+  assert.equal(scoped.raw.includes('foreign@test.invalid'), false);
+});
+
+test('non-empty task history preserves public fields and IDs across detail, list and action responses', async () => {
+  const timestamp = new Date('2026-01-02T03:04:05.000Z');
+  const item = await task({status: 'in_progress', history: [{action: 'start', performedBy: principal.id, createdAt: timestamp}]});
+  const original = item.toObject().history[0];
+  const expectedOriginal = JSON.parse(JSON.stringify(original));
+  const detail = await http(`/principal/tasks/${item._id}`, 'GET', undefined);
+  const list = await http('/principal/tasks', 'GET', undefined);
+  const action = await taskAction(item._id, {action: 'complete'});
+  for (const result of [detail, list, action]) assert.equal(result.status, 200);
+  const listed = list.data.data.find((entry: {_id: string}) => entry._id === String(item._id));
+  for (const entry of [detail.data.data.history[0], listed.history[0], action.data.data.history[0]]) {
+    const {performer, ...existingFields} = entry;
+    assert.deepEqual(existingFields, expectedOriginal);
+    assert.deepEqual(performer, {_id: String(principal.id), fullName: 'principal', role: 'principal'});
+    assert.deepEqual(Object.keys(entry).sort(), ['_id', 'action', 'createdAt', 'performedBy', 'performer']);
+  }
+  const stored = await PrincipalTask.findById(item._id);
+  assert.ok(stored);
+  const expectedHistory = JSON.parse(JSON.stringify(stored.toObject().history));
+  assert.equal(action.data.data.history.length, 2);
+  for (let index = 0; index < expectedHistory.length; index++) {
+    const {performer, ...entry} = action.data.data.history[index];
+    assert.deepEqual(entry, expectedHistory[index]);
+    assert.match(entry._id, /^[a-f0-9]{24}$/);
+    assert.deepEqual(Object.keys(performer).sort(), ['_id', 'fullName', 'role']);
+  }
+  assert.notEqual(action.data.data.history[0]._id, action.data.data.history[1]._id);
+});
+
+test('task history retains raw identities while missing, deleted and foreign performers are null and private fields stay absent', async () => {
+  const deleted = await actor('deleted-performer', 'principal', branch);
+  await User.deleteOne({_id: deleted.id});
+  const missingId = new mongoose.Types.ObjectId();
+  await User.updateOne({_id: peer.id}, {$set: {phone: 'private-phone-marker'}});
+  const item = await task({history: [
+    {action: 'start', performedBy: peer.id, createdAt: new Date()},
+    {action: 'start', performedBy: missingId, createdAt: new Date()},
+    {action: 'start', performedBy: deleted.id, createdAt: new Date()},
+    {action: 'start', performedBy: foreign.id, createdAt: new Date()},
+  ]});
+  const history = JSON.parse(JSON.stringify(item.toObject().history));
+  const detail = await http(`/principal/tasks/${item._id}`, 'GET', undefined);
+  const list = await http('/principal/tasks', 'GET', undefined);
+  const action = await taskAction(item._id, {action: 'complete'});
+  for (const result of [detail, list, action]) {
+    assert.equal(result.status, 200);
+    const responseTask = result === list ? result.data.data.find((entry: {_id: string}) => entry._id === String(item._id)) : result.data.data;
+    for (let index = 0; index < history.length; index++) {
+      const {performer, ...entry} = responseTask.history[index];
+      assert.deepEqual(entry, history[index]);
+      assert.deepEqual(Object.keys(responseTask.history[index]).sort(), ['_id', 'action', 'createdAt', 'performedBy', 'performer']);
+      if (index === 0) assert.deepEqual(performer, {_id: String(peer.id), fullName: 'peer', role: 'principal'});
+      else assert.equal(performer, null);
+    }
+    for (const marker of ['"email"', '"phone"', '"password"', '"permissions"', '"sessions"', '"bootstrapKey"', 'private-phone-marker', 'foreign@test.invalid', 'deleted-performer']) {
+      assert.equal(result.raw.includes(marker), false);
+    }
+  }
+});
 
 test('task titles are required, typed, trimmed, and enforce schema lengths', async () => {
   for (const title of [undefined, '', '   ', 'x', 123, {}, 'x'.repeat(151)]) {

@@ -1,6 +1,8 @@
 import User from '../models/user';
 import {objectIdField, RequestContractError} from '../utils/request-validation';
 
+export const PRINCIPAL_WRITE_ASSIGNEE_ROLES = ['principal', 'teacher'] as const;
+
 export const principalWriteActor = async (actorId: string, branchId: string) => {
   objectIdField(actorId, 'actor ID');
   objectIdField(branchId, 'branch ID');
@@ -15,7 +17,7 @@ export const principalWriteAssignee = async (assignedTo: unknown, branchId: stri
   const user = await User.findById(id).where('branchId').equals(branchId).select('_id role isActive');
   // Conceal missing and cross-branch assignees with the same response.
   if (!user) throw new RequestContractError(404, 'Assigned user not found');
-  if (!user.isActive || !['principal', 'teacher'].includes(user.role)) {
+  if (!user.isActive || !(PRINCIPAL_WRITE_ASSIGNEE_ROLES as readonly string[]).includes(user.role)) {
     throw new RequestContractError(403, 'Assigned user is not eligible');
   }
   return user;

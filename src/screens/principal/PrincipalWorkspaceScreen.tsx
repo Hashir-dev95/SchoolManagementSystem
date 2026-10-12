@@ -138,6 +138,7 @@ export default function PrincipalWorkspaceScreen() {
             key={`home-${refreshKey}`}
             onOpenApprovals={() => openTab('approvals')}
             onOpenInbox={() => openTab('inbox')}
+            onOpenTasks={() => navigation.navigate('Tasks')}
           />
         ) : activeTab === 'approvals' ? (
           <PrincipalApprovalsScreen
