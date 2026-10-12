@@ -60,6 +60,7 @@ export const serializeApproval = async (request: HydratedDocument<IApprovalReque
     delegatedTo: safeUser(request.delegatedTo), delegatedBy: safeUser(request.delegatedBy),
     delegationExpiresAt: request.delegationExpiresAt,
     history: request.history.map(entry => ({
+      ...(entry._id ? {_id: entry._id.toString()} : {}),
       action: entry.action, performedBy: safeUser(entry.performedBy), reason: entry.reason,
       createdAt: entry.createdAt, authority: entry.authority,
       delegatedBy: safeUser(entry.delegatedBy),

@@ -163,6 +163,9 @@ export const processApprovalRequest = async (data: ApprovalActionInput) => {
     update.$set = {delegatedTo: delegate._id, delegatedBy: actor._id, delegationExpiresAt: data.delegationExpiresAt};
   } else {
     update.$set = {status: data.action, reviewedBy: actor._id, reviewedAt: now};
+    if (data.action === 'changes_requested') {
+      update.$unset = {delegatedTo: 1, delegatedBy: 1, delegationExpiresAt: 1};
+    }
   }
   // Compare the authorized snapshot, not just status. An intervening delegation
   // or amount/entity change must not turn an earlier authority check into a write.

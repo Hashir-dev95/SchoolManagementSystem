@@ -5,6 +5,7 @@ import {requireRole} from '../middleware/rbac.middleware';
 import {requirePermission} from '../middleware/permission.middleware';
 import {requireBranchScope} from '../middleware/branch.middleware';
 import {PERMISSIONS} from '../constants/permissions';
+import {getRequesterResubmissionController, resubmitApprovalRequestController} from '../controllers/approval-resubmission.controller';
 
 import {
   getPendingApprovalRequestsController,
@@ -14,6 +15,21 @@ import {
 } from '../controllers/approval-request.controller';
 
 const router = Router();
+
+router.get(
+  '/:requestId/resubmission',
+  authenticateToken,
+  requireRole('principal', 'teacher', 'student'),
+  requireBranchScope,
+  getRequesterResubmissionController,
+);
+router.patch(
+  '/:requestId/resubmit',
+  authenticateToken,
+  requireRole('principal', 'teacher', 'student'),
+  requireBranchScope,
+  resubmitApprovalRequestController,
+);
 
 router.get(
   '/pending',

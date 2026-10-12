@@ -73,3 +73,37 @@ Super Admin remains excluded from Principal-only approval routes.
 Run `npm run test:approvals` in backend for isolated MongoDB/HTTP tests. Test-only
 amount ceilings are fixtures, not business defaults. Existing manual DB scripts
 are excluded; neither this suite nor the bootstrap suite reads `.env` or `MONGODB_URI`.
+
+## Request Changes and requester resubmission
+
+The status remains `changes_requested` while awaiting correction. Principal
+Request Changes requires a non-empty decision reason and clears current delegation.
+It preserves historical delegation and reviewer information in append-only history.
+
+Only an active, same-branch original requester with role Principal, Teacher or
+Student can use these owner endpoints. Super Admin is excluded. These endpoints
+do not grant Principal review permissions and do not create approval requests.
+
+1. GET `/api/approval-requests/:requestId/resubmission` returns only `_id`, `status`,
+   `reason`, `revision`, `canResubmit` and, when present, `changeReason`.
+   Its ETag is the quoted revision, for example `"3"`; responses use `no-store`.
+2. PATCH `/api/approval-requests/:requestId/resubmit` requires that ETag in
+   `If-Match`, and exactly a JSON body such as `{"reason":"Corrected explanation"}`.
+   Reason is trimmed, non-empty and at most 500 characters. No query keys are accepted.
+
+No amount, category, entity, attachment, mixed payload, identity, status, version,
+reviewer or delegation fields are editable. Revision is an optimistic precondition,
+not a body field to modify. Missing/malformed If-Match is 400; a stale revision,
+non-change-requested status or conflicting concurrent update is 409.
+
+A successful atomic update retains the request ID, returns it to `pending`, clears
+current reviewer/delegation fields, increments the version and appends a
+`resubmitted` history entry with requester, corrected reason and server timestamp.
+Existing history IDs are preserved and exposed additively to Principal readers.
+Legacy records without a version expose revision zero and receive a guarded first
+version increment. Old revision tokens cannot be reused across review cycles.
+
+Next review recalculates current authority and source scope; no old delegation is
+restored. Resubmission performs no business execution. Requester product screens
+and initial request-producing workflows remain unavailable. Multi-document source
+and account checks retain the previously documented reference concurrency limitation.

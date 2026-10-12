@@ -32,7 +32,9 @@ const requesterName = (value: string | { fullName: string }): string =>
   typeof value === 'string' ? value : value.fullName;
 
 const prettyValue = (value: string): string =>
-  value.replaceAll('_', ' ').replace(/^./, first => first.toUpperCase());
+  value === 'changes_requested'
+    ? 'Changes requested'
+    : value.replaceAll('_', ' ').replace(/^./, first => first.toUpperCase());
 
 export default function ApprovalDetailScreen({ route, navigation }: Props) {
   const { accessToken } = useAuth();
@@ -104,6 +106,7 @@ export default function ApprovalDetailScreen({ route, navigation }: Props) {
       );
       if (!current || current.status !== 'pending') {
         setStillPending(false);
+        await loadRequest();
         setActionError(
           'This request is no longer pending. The inbox has been updated.',
         );
@@ -127,6 +130,7 @@ export default function ApprovalDetailScreen({ route, navigation }: Props) {
           ? requestError.message
           : 'Unable to submit the decision.';
       setActionError(message);
+      await loadRequest();
     } finally {
       decisionLock.current = false;
       setSubmitting(false);
@@ -224,7 +228,7 @@ export default function ApprovalDetailScreen({ route, navigation }: Props) {
         ) : (
           request.history.map((entry, index) => (
             <ListRow
-              key={`${entry.createdAt}-${entry.action}`}
+              key={entry._id || `${entry.createdAt}-${entry.action}-${index}`}
               icon="◷"
               title={prettyValue(entry.action)}
               subtitle={[
@@ -334,7 +338,9 @@ export default function ApprovalDetailScreen({ route, navigation }: Props) {
             onPress={loadRequest}
           />
           <Text style={styles.muted}>
-            This request is not currently available for review.
+            {request.status === 'changes_requested'
+              ? 'Awaiting correction and resubmission by the original requester.'
+              : 'This request is not currently available for review.'}
           </Text>
         </Card>
       )}

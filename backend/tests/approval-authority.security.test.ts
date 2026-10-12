@@ -490,3 +490,238 @@ test('existing Super Admin privileged review works and Principals cannot use it'
   assert.equal((await http(`/privileged-requests/${item._id}/review`, admin, {status: 'approved'})).status, 200);
   assert.equal((await PrivilegedRequest.findById(item._id))?.status, 'approved');
 });
+
+const correction = (id: unknown, person = teacher) => http(`/approval-requests/${String(id)}/resubmission`, person);
+const resubmit = async (id: unknown, person: Actor | undefined = teacher, reason: unknown = 'Corrected reason', revision = 1, extra: Record<string, unknown> = {}) => {
+  const response = await fetch(`${base}/approval-requests/${String(id)}/resubmit`, {
+    method: 'PATCH', headers: {'Content-Type': 'application/json', 'If-Match': `"${revision}"`, ...(person ? {Authorization: `Bearer ${person.token}`} : {})},
+    body: JSON.stringify({reason, ...extra}),
+  });
+  return {status: response.status, data: JSON.parse(await response.text()), etag: response.headers.get('etag')};
+};
+const requestChanges = (id: unknown, person = principal) => decide(id, person, {action: 'changes_requested', reason: 'Explain the dates'});
+
+test('request changes requires reason, records decision identity and invalidates delegation without losing history IDs', async () => {
+  const item = await request();
+  for (const reason of [undefined, '', '   ']) assert.equal((await decide(item._id, principal, {action: 'changes_requested', reason})).status, 400);
+  assert.equal((await delegate(item._id)).status, 200);
+  const delegated = await ApprovalRequest.findById(item._id);
+  const result = await requestChanges(item._id, peer);
+  assert.equal(result.status, 200);
+  const value = result.data.data.request;
+  assert.equal(value.status, 'changes_requested');
+  assert.equal(value.history[0]._id, String(delegated!.history[0]._id));
+  assert.equal(value.history[1].performedBy._id, String(peer.id));
+  assert.equal(value.history[1].reason, 'Explain the dates');
+  assert.equal(value.history[1].authority, 'delegated');
+  assert.equal(value.history[1].delegatedBy._id, String(principal.id));
+  assert.ok(value.history[1]._id && value.history[1].createdAt);
+  for (const field of ['delegatedTo', 'delegatedBy', 'delegationExpiresAt']) assert.equal(value[field], undefined);
+  const detailResult = await detail(item._id);
+  assert.deepEqual(detailResult.data.data.capabilities, {canReview: false, canDelegate: false});
+  assert.equal((await requestChanges(item._id)).status, 409);
+  assert.equal((await ApprovalRequest.findById(item._id))?.__v, 2);
+});
+
+test('original requester resubmits the same request with immutable business fields and preserved history', async () => {
+  const item = await request({approvalType: 'refund', entityType: 'fee', entityId: fee, amount: 50});
+  const beforeFee = await Fee.findById(fee).lean();
+  assert.equal((await requestChanges(item._id)).status, 200);
+  const snapshotBefore = await ApprovalRequest.findById(item._id);
+  const info = await correction(item._id);
+  assert.equal(info.status, 200);
+  assert.deepEqual(Object.keys(info.data.data).sort(), ['_id', 'canResubmit', 'changeReason', 'reason', 'revision', 'status']);
+  assert.equal(info.data.data.revision, 1);
+  assert.equal(info.data.data.changeReason, 'Explain the dates');
+  assert.equal(info.raw.includes('email'), false);
+  const result = await resubmit(item._id, teacher, '  Clarified request  ', info.data.data.revision);
+  assert.equal(result.status, 200);
+  assert.equal(result.etag, '"2"');
+  assert.equal(result.data.data._id, String(item._id));
+  assert.equal(result.data.data.status, 'pending');
+  assert.equal(result.data.data.reason, 'Clarified request');
+  const snapshotAfter = await ApprovalRequest.findById(item._id);
+  assert.equal(snapshotAfter!.amount, 50);
+  assert.equal(snapshotAfter!.approvalType, 'refund');
+  assert.equal(String(snapshotAfter!.entityId), String(fee));
+  assert.equal(snapshotAfter!.history[0]._id?.toString(), snapshotBefore!.history[0]._id?.toString());
+  assert.equal(snapshotAfter!.history[1].action, 'resubmitted');
+  assert.equal(String(snapshotAfter!.history[1].performedBy), String(teacher.id));
+  assert.equal(snapshotAfter!.history[1].reason, 'Clarified request');
+  assert.ok(snapshotAfter!.history[1]._id && snapshotAfter!.history[1].createdAt);
+  for (const field of ['reviewedBy', 'reviewedAt', 'delegatedTo', 'delegatedBy', 'delegationExpiresAt'] as const) assert.equal(snapshotAfter![field], undefined);
+  assert.deepEqual(await Fee.findById(fee).lean(), beforeFee);
+  assert.equal((await resubmit(item._id, teacher, 'Again', 2)).status, 409);
+  assert.equal((await detail(item._id)).data.data.capabilities.canReview, true);
+});
+
+test('resubmission authenticates current identity, confines branch and requires original ownership', async () => {
+  const item = await request({status: 'changes_requested'});
+  for (const suffix of ['resubmission', 'resubmit']) {
+    const anonymous = await fetch(`${base}/approval-requests/${item._id}/${suffix}`, {method: suffix === 'resubmit' ? 'PATCH' : 'GET'});
+    assert.equal(anonymous.status, 401);
+  }
+  for (const person of [principal, peer]) {
+    assert.equal((await correction(item._id, person)).status, 403);
+    assert.equal((await resubmit(item._id, person, 'Correction', 0)).status, 403);
+  }
+  assert.equal((await correction(item._id, foreign)).status, 404);
+  assert.equal((await resubmit(item._id, foreign, 'Correction', 0)).status, 404);
+  assert.equal((await correction(item._id, admin)).status, 403);
+  assert.equal((await resubmit(item._id, admin, 'Correction', 0)).status, 403);
+  await User.updateOne({_id: teacher.id}, {$set: {isActive: false}});
+  assert.equal((await correction(item._id)).status, 401);
+  assert.equal((await resubmit(item._id, teacher, 'Correction', 0)).status, 401);
+});
+
+test('Student and Principal original requesters can resubmit but Principal still cannot self-review', async () => {
+  const student = await actor('requester-student', 'student', branchA);
+  for (const person of [student, principal]) {
+    const item = await request({requesterId: person.id});
+    assert.equal((await requestChanges(item._id, peer)).status, 200);
+    assert.equal((await correction(item._id, person)).status, 200);
+    assert.equal((await resubmit(item._id, person)).status, 200);
+    if (person === principal) assert.equal((await decide(item._id, principal)).status, 403);
+  }
+});
+
+test('resubmission whitelist rejects all server, financial, source, category and untyped fields', async () => {
+  const item = await request({status: 'changes_requested'});
+  const snapshotBefore = await ApprovalRequest.findById(item._id).lean();
+  for (const field of ['branchId', 'requesterId', 'requester', 'reviewedBy', 'reviewedAt', 'delegatedTo', 'delegatedBy', 'delegationExpiresAt', 'history', 'status', '__v', 'version', 'revision', 'createdAt', 'updatedAt', 'authority', 'amount', 'approvalType', 'entityType', 'entityId', 'beforeData', 'afterData', 'supportingFileUrl', 'execution', 'executionStatus']) {
+    assert.equal((await resubmit(item._id, teacher, 'Reason', 0, {[field]: 'spoof'})).status, 400, field);
+  }
+  for (const reason of [undefined, '', ' ', 123, null, {}, 'x'.repeat(501)]) assert.equal((await resubmit(item._id, teacher, 'Ignored fallback', 0, {reason})).status, 400);
+  assert.deepEqual(await ApprovalRequest.findById(item._id).lean(), snapshotBefore);
+});
+
+test('resubmission requires a valid quoted revision and rejects query scope overrides', async () => {
+  const item = await request({status: 'changes_requested'});
+  for (const revision of [undefined, '0', '*', '"-1"', 'W/"0"', '"0", "1"', '"9007199254740992"']) {
+    const response = await fetch(`${base}/approval-requests/${item._id}/resubmit`, {
+      method: 'PATCH', headers: {Authorization: `Bearer ${teacher.token}`, 'Content-Type': 'application/json', ...(revision ? {'If-Match': revision} : {})}, body: JSON.stringify({reason: 'Correction'}),
+    });
+    assert.equal(response.status, 400);
+  }
+  for (const suffix of ['resubmission', 'resubmit']) {
+    const result = await http(`/approval-requests/${item._id}/${suffix}?branchId=${branchB}`, teacher, suffix === 'resubmit' ? {reason: 'Correction'} : undefined);
+    assert.equal(result.status, 400);
+  }
+  assert.equal((await correction('invalid')).status, 400);
+});
+
+test('pending, approved and rejected requests cannot be resubmitted; source branch changes remain concealed', async () => {
+  for (const status of ['pending', 'approved', 'rejected']) {
+    const item = await request({status});
+    assert.equal((await resubmit(item._id, teacher, 'Correction', 0)).status, 409);
+  }
+  const item = await request({status: 'changes_requested'});
+  await Student.updateOne({_id: studentA}, {$set: {branchId: branchB}});
+  assert.equal((await resubmit(item._id, teacher, 'Correction', 0)).status, 404);
+});
+
+test('new cycles reject old resubmission revisions and fresh review recalculates authority and delegation', async () => {
+  const item = await request({approvalType: 'refund', entityType: 'fee', entityId: fee, amount: 50});
+  assert.equal((await delegate(item._id)).status, 200);
+  assert.equal((await requestChanges(item._id, peer)).status, 200);
+  assert.equal((await resubmit(item._id, teacher, 'Correction', 2)).status, 200);
+  const fresh = await detail(item._id, peer);
+  assert.equal(fresh.data.data.capabilities.canDelegate, true);
+  const policy = JSON.parse(process.env.PRINCIPAL_APPROVAL_AUTHORITY!);
+  policy[principal.id.toString()].limits.refund = 49;
+  delete policy[peer.id.toString()];
+  process.env.PRINCIPAL_APPROVAL_AUTHORITY = JSON.stringify(policy);
+  assert.equal((await decide(item._id, principal)).status, 403);
+  assert.equal((await decide(item._id, peer)).status, 403);
+  configure();
+  assert.equal((await requestChanges(item._id)).status, 200);
+  assert.equal((await resubmit(item._id, teacher, 'Stale correction', 2)).status, 409);
+  assert.equal((await resubmit(item._id, teacher, 'Fresh correction', 4)).status, 200);
+  assert.equal((await decide(item._id)).status, 200);
+});
+
+test('concurrent resubmits reach the same atomic snapshot and append exactly one entry', {timeout: 10000}, async () => {
+  const item = await request({status: 'changes_requested'});
+  const original = ApprovalRequest.findOneAndUpdate.bind(ApprovalRequest);
+  let arrived = 0; let release!: () => void;
+  const barrier = new Promise<void>(resolve => {release = resolve;});
+  mock.method(ApprovalRequest, 'findOneAndUpdate', (...args: Parameters<typeof original>) => (async () => {
+    if (++arrived === 2) release();
+    await barrier; return original(...args);
+  })());
+  const results = await Promise.all([resubmit(item._id, teacher, 'First correction', 0), resubmit(item._id, teacher, 'Second correction', 0)]);
+  assert.deepEqual(results.map(value => value.status).sort(), [200, 409]);
+  const stored = await ApprovalRequest.findById(item._id);
+  assert.equal(stored!.history.length, 1);
+  assert.equal(stored!.__v, 1);
+});
+
+test('intervening snapshot changes reject resubmission without losing new state', async () => {
+  const item = await request({status: 'changes_requested'});
+  const original = ApprovalRequest.findOneAndUpdate.bind(ApprovalRequest);
+  mock.method(ApprovalRequest, 'findOneAndUpdate', (...args: Parameters<typeof original>) => (async () => {
+    await ApprovalRequest.collection.updateOne({_id: item._id}, {$set: {reason: 'New server state'}, $inc: {__v: 1}});
+    return original(...args);
+  })());
+  assert.equal((await resubmit(item._id, teacher, 'Correction', 0)).status, 409);
+  const stored = await ApprovalRequest.findById(item._id);
+  assert.equal(stored!.reason, 'New server state');
+  assert.equal(stored!.status, 'changes_requested');
+  assert.equal(stored!.history.length, 0);
+});
+
+test('a Principal write queued across request-changes and resubmission cannot overwrite the fresh cycle', async () => {
+  const item = await request();
+  const original = ApprovalRequest.findOneAndUpdate.bind(ApprovalRequest);
+  let arrived!: () => void, release!: () => void;
+  const blocked = new Promise<void>(resolve => {arrived = resolve;});
+  const barrier = new Promise<void>(resolve => {release = resolve;});
+  let held = false;
+  mock.method(ApprovalRequest, 'findOneAndUpdate', (...args: Parameters<typeof original>) => (async () => {
+    if (!held) {held = true; arrived(); await barrier;}
+    return original(...args);
+  })());
+  const pendingDecision = decide(item._id);
+  await blocked;
+  try {
+    assert.equal((await requestChanges(item._id, peer)).status, 200);
+    assert.equal((await resubmit(item._id)).status, 200);
+  } finally {release();}
+  assert.equal((await pendingDecision).status, 409);
+  assert.equal((await ApprovalRequest.findById(item._id))!.status, 'pending');
+});
+
+test('legacy change-requested records gain a guarded revision without removing old delegation history', async () => {
+  const item = await request({status: 'changes_requested', delegatedTo: peer.id, delegatedBy: principal.id, delegationExpiresAt: new Date(Date.now() + 60000),
+    history: [{action: 'delegated', performedBy: principal.id}]});
+  await ApprovalRequest.collection.updateOne({_id: item._id}, {$unset: {__v: 1}});
+  const snapshotBefore = await ApprovalRequest.findById(item._id);
+  assert.equal((await correction(item._id)).data.data.revision, 0);
+  assert.equal((await resubmit(item._id, teacher, 'Legacy correction', 0)).status, 200);
+  const stored = await ApprovalRequest.findById(item._id);
+  assert.equal(stored!.__v, 1);
+  assert.equal(stored!.history[0]._id?.toString(), snapshotBefore!.history[0]._id?.toString());
+  assert.equal(stored!.delegatedTo, undefined);
+});
+
+test('resubmission write failure is sanitized and leaves request unchanged', async () => {
+  const item = await request({status: 'changes_requested'});
+  const snapshotBefore = await ApprovalRequest.findById(item._id).lean();
+  mock.method(ApprovalRequest, 'findOneAndUpdate', () => {throw new Error('private-resubmission-database');});
+  const result = await resubmit(item._id, teacher, 'Correction', 0);
+  assert.equal(result.status, 500);
+  assert.equal(JSON.stringify(result.data).includes('private-resubmission-database'), false);
+  assert.deepEqual(await ApprovalRequest.findById(item._id).lean(), snapshotBefore);
+});
+
+test('requester branch reassignment and session revocation after correction GET are revalidated on resubmit', async () => {
+  const item = await request({status: 'changes_requested'});
+  assert.equal((await correction(item._id)).status, 200);
+  await User.updateOne({_id: teacher.id}, {$set: {branchId: branchB}});
+  assert.equal((await resubmit(item._id, teacher, 'Correction', 0)).status, 404);
+  await User.updateOne({_id: teacher.id}, {$set: {branchId: branchA}});
+  await Session.updateOne({token: teacher.token}, {$set: {isRevoked: true}});
+  assert.equal((await resubmit(item._id, teacher, 'Correction', 0)).status, 401);
+  assert.equal((await correction(item._id)).status, 401);
+  assert.equal((await ApprovalRequest.findById(item._id))?.status, 'changes_requested');
+});

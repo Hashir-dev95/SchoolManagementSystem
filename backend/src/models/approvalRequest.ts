@@ -21,11 +21,13 @@ export type ApprovalStatus =
   | 'changes_requested';
 
 export interface IApprovalHistory {
+  _id?: Types.ObjectId;
   action:
     | 'approved'
     | 'rejected'
     | 'changes_requested'
-    | 'delegated';
+    | 'delegated'
+    | 'resubmitted';
   performedBy: Types.ObjectId;
   authority?: 'direct' | 'delegated';
   delegatedBy?: Types.ObjectId;
@@ -75,6 +77,7 @@ const approvalHistorySchema = new Schema<IApprovalHistory>(
         'rejected',
         'changes_requested',
         'delegated',
+        'resubmitted',
       ],
       required: true,
     },

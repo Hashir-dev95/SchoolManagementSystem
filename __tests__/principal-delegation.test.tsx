@@ -226,7 +226,9 @@ test('candidate network failure offers retry', async () => {
 });
 
 test('mutation network failure does not claim success and requires candidate refresh before retry', async () => {
-  service.processApproval.mockRejectedValueOnce(new Error('Network unavailable'));
+  service.processApproval.mockRejectedValueOnce(
+    new Error('Network unavailable'),
+  );
   const tree = await mount(form());
   await press(tree, 'Peer Principal');
   await press(tree, 'Expire in 1 hour');
@@ -286,4 +288,82 @@ test('confirmed delegation immediately updates detail, expiry and history', asyn
   expect(contents(tree)).toContain('Delegation expires');
   expect(contents(tree)).toContain('Authority: direct');
   expect(button(tree, 'Delegate')).toBeUndefined();
+});
+
+test('changes-requested detail shows decision reason and history and hides review actions until refreshed resubmission', async () => {
+  const changes: ApprovalRequest = {
+    ...request,
+    status: 'changes_requested',
+    capabilities: { canReview: false, canDelegate: false },
+    history: [
+      {
+        _id: 'change-history',
+        action: 'changes_requested',
+        performedBy: 'Principal One',
+        reason: 'Clarify the dates',
+        createdAt: '2026-10-12T00:00:00Z',
+      },
+    ],
+  };
+  service.getApprovalById.mockResolvedValueOnce({ data: changes, message: '' });
+  const tree = await mount(detail());
+  expect(contents(tree)).toContain('Changes requested');
+  expect(contents(tree)).toContain('Clarify the dates');
+  expect(contents(tree)).toContain('Awaiting correction and resubmission');
+  for (const title of ['Approve', 'Reject', 'Request changes', 'Delegate'])
+    expect(button(tree, title)).toBeUndefined();
+  service.getApprovalById.mockResolvedValueOnce({
+    data: {
+      ...request,
+      reason: 'Corrected dates',
+      history: [
+        ...changes.history,
+        {
+          _id: 'resubmit-history',
+          action: 'resubmitted',
+          performedBy: 'Requester',
+          reason: 'Corrected dates',
+          createdAt: '2026-10-12T01:00:00Z',
+        },
+      ],
+    },
+    message: '',
+  });
+  await press(tree, 'Refresh approval details');
+  expect(contents(tree)).toContain('Resubmitted');
+  expect(contents(tree)).toContain('Corrected dates');
+  expect(button(tree, 'Approve').props.disabled).toBeFalsy();
+  expect(button(tree, 'Delegate')).toBeDefined();
+});
+
+test('stale Principal decision refreshes changes-requested state and removes review actions', async () => {
+  const tree = await mount(detail());
+  service.getPendingApprovals.mockResolvedValueOnce({
+    data: { requests: [request], total: 1 },
+    message: '',
+  });
+  service.processApproval.mockRejectedValueOnce(
+    new ApiError(409, 'Request changed'),
+  );
+  service.getApprovalById.mockResolvedValueOnce({
+    data: {
+      ...request,
+      status: 'changes_requested',
+      capabilities: { canReview: false, canDelegate: false },
+      history: [
+        {
+          action: 'changes_requested',
+          performedBy: 'Other Principal',
+          reason: 'Please clarify',
+          createdAt: '2026-10-12T00:00:00Z',
+        },
+      ],
+    },
+    message: '',
+  });
+  await press(tree, 'Approve');
+  expect(contents(tree)).toContain('Request changed');
+  expect(contents(tree)).toContain('Changes requested');
+  expect(contents(tree)).toContain('Please clarify');
+  expect(button(tree, 'Approve')).toBeUndefined();
 });

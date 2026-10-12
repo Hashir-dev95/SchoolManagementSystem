@@ -21,7 +21,8 @@ export interface DelegationInput {
 }
 
 export interface ApprovalHistoryEntry {
-  action: ApprovalAction | 'delegated';
+  _id?: string;
+  action: ApprovalAction | 'delegated' | 'resubmitted';
   performedBy: string | PrincipalRequester;
   reason?: string;
   createdAt: string;
