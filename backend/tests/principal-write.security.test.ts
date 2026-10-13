@@ -814,5 +814,6 @@ test('Principal safety defaults do not broaden other role permission sets', () =
     for (const role of ['teacher', 'student', 'super_admin'] as const) assert.equal(ROLE_PERMISSIONS[role].includes(permission), false);
   }
   assert.deepEqual(ROLE_PERMISSIONS.super_admin, Object.values(PERMISSIONS).filter(permission =>
-    permission !== PERMISSIONS.PRINCIPAL_SAFETY_VIEW && permission !== PERMISSIONS.PRINCIPAL_SAFETY_MANAGE));
+    permission !== PERMISSIONS.PRINCIPAL_SAFETY_VIEW && permission !== PERMISSIONS.PRINCIPAL_SAFETY_MANAGE &&
+    permission !== PERMISSIONS.TEACHER_CLASSES_VIEW));
 });

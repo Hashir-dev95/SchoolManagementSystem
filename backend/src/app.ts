@@ -13,6 +13,8 @@ import usageRoutes from './routes/usage.routes';
 import privilegedRequestRoutes from './routes/privileged-request.routes';
 import automationRoutes from './routes/automation.routes';
 import sessionRoutes from './routes/session.routes';
+import teacherRoutes from './routes/teacher.routes';
+import teacherAssignmentRoutes from './routes/teacher-assignment.routes';
 
 const backupRoutes = (backupRoutesModule as any).default ?? backupRoutesModule;
 
@@ -50,6 +52,18 @@ app.use('/api/automation', automationRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/api/approval-requests', approvalRequestRoutes);
+app.use('/api/teacher', teacherRoutes);
+app.use('/api/teacher-assignments', teacherAssignmentRoutes);
+
+const teacherParseError: ErrorRequestHandler = (error, _req, res, next) => {
+  if (error?.type === 'entity.parse.failed' || error?.type === 'entity.too.large') {
+    res.status(400).json({success: false, message: 'Invalid Teacher request body'});
+    return;
+  }
+  next(error);
+};
+app.use('/api/teacher', teacherParseError);
+app.use('/api/teacher-assignments', teacherParseError);
 
 // Scope parser failures to Principal APIs; leave bootstrap and other API error
 // behavior unchanged. Never echo submitted JSON or the parser's stack/message.

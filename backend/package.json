@@ -8,6 +8,7 @@
     "test:bootstrap": "tsx --test tests/bootstrap.security.test.ts",
     "test:approvals": "tsx --test tests/approval-authority.security.test.ts",
     "test:principal-writes": "tsx --test tests/principal-write.security.test.ts",
+    "test:teacher": "tsx --test tests/teacher-scope.security.test.ts",
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js"
