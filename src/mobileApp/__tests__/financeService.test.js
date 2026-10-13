@@ -1,8 +1,8 @@
-jest.mock('../apiConfig', () => ({ API_ROOT: 'http://school.test/api' }));
-jest.mock('../authRequest', () => ({ authRequest: jest.fn() }));
+jest.mock('../shared/services/apiConfig', () => ({ API_ROOT: 'http://school.test/api' }));
+jest.mock('../shared/services/authRequest', () => ({ authRequest: jest.fn() }));
 
-import { authRequest } from '../authRequest';
-import { financeApi } from '../financeService';
+import { authRequest } from '../shared/services/authRequest';
+import { financeApi } from '../roles/finance/financeService';
 
 beforeEach(() => {
   authRequest.mockReset();

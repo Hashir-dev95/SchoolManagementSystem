@@ -1,6 +1,6 @@
-import { rolePages, previewRolePages } from '../hiraTheme';
-import { features } from '../featureScreens';
-import { getFeatureProvider } from '../featureProviders';
+import { rolePages, previewRolePages } from '../theme/hiraTheme';
+import { features } from '../features/featureScreens';
+import { getFeatureProvider } from '../features/featureProviders';
 
 const directPages = {
   Student: new Set([
@@ -9,7 +9,10 @@ const directPages = {
   ]),
   Parent: new Set([
     'Home', 'My children', 'Attendance', 'Attendance Calendar', 'Timetable', 'Homework', 'Results',
-    'Progress', 'Fees', 'Applications', 'Notifications', 'Inbox',
+    'Progress', 'Fees', 'Applications', 'Notifications', 'Inbox', 'Track My Child', 'Travel History',
+    'Transport & Alerts', 'Pickup & Early Exit', 'Academic Report', 'Monthly Feedback',
+    'Student Progress Tracking', 'Personal & Behaviour Report', 'Student Fees', 'Receipt Details',
+    'Leave Request',
   ]),
   Finance: new Set([
     'Home', 'Student search', 'Outstanding dues', 'Invoices',
@@ -40,7 +43,7 @@ test.each(['Student', 'Parent', 'Finance'])(
 test('external-service concepts stay in explicit developer preview only', () => {
   const unavailable = {
     Student: ['AI Tutor', 'Live Classroom', 'Messages', 'Helpdesk'],
-    Parent: ['Track My Child', 'Online Payment', 'Messages', 'Helpdesk'],
+    Parent: ['Online Payment', 'Messages', 'Helpdesk'],
     Finance: ['Advance Balances', 'Finance Requests', 'Exceptions & Closing', 'Messages'],
   };
   for (const [role, pages] of Object.entries(unavailable)) {

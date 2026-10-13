@@ -1,9 +1,9 @@
 import React from 'react';
 import ReactTestRenderer, { act } from 'react-test-renderer';
-import ParentDashboard from '../ParentDashboard';
-import { parentApi } from '../parentService';
+import ParentDashboard from '../roles/parent/ParentDashboard';
+import { parentApi } from '../roles/parent/parentService';
 
-jest.mock('../parentService', () => ({
+jest.mock('../roles/parent/parentService', () => ({
   parentApi: {
     getChildren: jest.fn(),
     getChild: jest.fn(),

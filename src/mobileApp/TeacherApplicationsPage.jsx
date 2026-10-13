@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { theme as t } from './hiraTheme';
-import { applicationReviewApi } from './applicationReviewService';
+import { theme as t } from './theme/hiraTheme';
+import { applicationReviewApi } from './shared/services/applicationReviewService';
 
 export default function TeacherApplicationsPage() {
   const [items, setItems] = useState([]);

@@ -1,4 +1,4 @@
-jest.mock('../apiConfig', () => ({ API_ROOT: 'http://school.test/api' }));
+jest.mock('../shared/services/apiConfig', () => ({ API_ROOT: 'http://school.test/api' }));
 let mockCredentials = null;
 jest.mock('react-native-keychain', () => ({
   ACCESSIBLE: { WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'device-only' },
@@ -12,11 +12,11 @@ jest.mock('react-native-keychain', () => ({
     return true;
   }),
 }));
-import { login, logout, restoreSession, validateSession } from '../authService';
-import { studentApi } from '../studentService';
-import { parentApi } from '../parentService';
-import { financeApi } from '../financeService';
-import { clearAccessToken, setAccessToken, getAuthHeaders, subscribeSessionExpiry, checkSessionExpiry } from '../authSession';
+import { login, logout, restoreSession, validateSession } from '../shared/services/authService';
+import { studentApi } from '../roles/student/studentService';
+import { parentApi } from '../roles/parent/parentService';
+import { financeApi } from '../roles/finance/financeService';
+import { clearAccessToken, setAccessToken, getAuthHeaders, subscribeSessionExpiry, checkSessionExpiry } from '../shared/services/authSession';
 
 const reply = (status, data) => ({ ok: status < 400, status, json: async () => data });
 const futureExpiry = () => new Date(Date.now() + 60000).toISOString();

@@ -1,16 +1,16 @@
 import React from 'react';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 import { BackHandler } from 'react-native';
-import HiraHome from '../HiraHome';
-import MessagesInbox from '../MessagesInbox';
-import MobileApp from '../MobileApp';
-import ParentSchoolStory from '../ParentSchoolStory';
-import ParentMultiChildPayment from '../ParentMultiChildPayment';
-import ReferenceNotifications from '../ReferenceNotifications';
-import { parentApi } from '../parentService';
-import { chatApi } from '../chatService';
+import HiraHome from '../shared/home/HiraHome';
+import MessagesInbox from '../shared/chat/MessagesInbox';
+import MobileApp from '../app/MobileApp';
+import ParentSchoolStory from '../roles/parent/ParentSchoolStory';
+import ParentMultiChildPayment from '../roles/parent/ParentMultiChildPayment';
+import ReferenceNotifications from '../shared/notifications/ReferenceNotifications';
+import { parentApi } from '../roles/parent/parentService';
+import { chatApi } from '../shared/services/chatService';
 
-jest.mock('../parentService', () => ({
+jest.mock('../roles/parent/parentService', () => ({
   parentApi: {
     getChildren: jest.fn(),
     getChild: jest.fn(),
@@ -25,10 +25,10 @@ jest.mock('../parentService', () => ({
     getNotification: jest.fn(),
   },
 }));
-jest.mock('../studentService', () => ({
+jest.mock('../roles/student/studentService', () => ({
   studentApi: { getProfile: jest.fn() },
 }));
-jest.mock('../chatService', () => ({
+jest.mock('../shared/services/chatService', () => ({
   chatApi: {
     getConversations: jest.fn().mockResolvedValue({ conversations: [] }),
     getMessages: jest.fn().mockResolvedValue({ messages: [], hasMore: false }),
@@ -50,10 +50,10 @@ jest.mock('@react-native-documents/picker', () => ({
 
 // Keep the navigation-shell test focused on its own routes. Importing the real
 // dashboards pulls in native-only modules (for example the document picker).
-jest.mock('../RoleDashboard', () => () => null);
-jest.mock('../FeaturePage', () => () => null);
+jest.mock('../app/RoleDashboard', () => () => null);
+jest.mock('../features/FeaturePage', () => () => null);
 jest.mock('../TeacherApplicationsPage', () => () => null);
-jest.mock('../NotificationDrawer', () => () => null);
+jest.mock('../shared/notifications/NotificationDrawer', () => () => null);
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const visibleText = tree =>
@@ -96,7 +96,9 @@ describe('Parent UI replacement', () => {
     });
     expect(visibleText(tree)).toContain('Stay connected');
     expect(visibleText(tree)).toContain('A date for your diary');
-    act(() => tree.root.findByProps({ accessibilityLabel: 'Inbox' }).props.onPress());
+    act(() =>
+      tree.root.findByProps({ accessibilityLabel: 'Inbox' }).props.onPress(),
+    );
     expect(navigate).toHaveBeenCalledWith('Inbox');
     act(() => tree.unmount());
   });
@@ -136,7 +138,9 @@ describe('Parent UI replacement', () => {
         .props.onPress(),
     );
     act(() =>
-      tree.root.findByProps({ accessibilityLabel: 'Pay selected fees' }).props.onPress(),
+      tree.root
+        .findByProps({ accessibilityLabel: 'Pay selected fees' })
+        .props.onPress(),
     );
 
     expect(visibleText(tree)).toContain(
@@ -157,7 +161,9 @@ describe('Parent UI replacement', () => {
       );
       await flush();
     });
-    expect(visibleText(tree)).toContain('DESIGN PREVIEW · SAMPLE DATA · NO REAL PAYMENT');
+    expect(visibleText(tree)).toContain(
+      'DESIGN PREVIEW · SAMPLE DATA · NO REAL PAYMENT',
+    );
     await act(async () => {
       tree.root
         .findByProps({ accessibilityLabel: 'Preview receipt layout' })
@@ -165,9 +171,13 @@ describe('Parent UI replacement', () => {
       await flush();
     });
     expect(visibleText(tree)).toContain('Receipt design preview');
-    expect(visibleText(tree)).toContain('Sample receipt layout only. No payment was processed.');
+    expect(visibleText(tree)).toContain(
+      'Sample receipt layout only. No payment was processed.',
+    );
     expect(visibleText(tree)).toContain('Design sample');
-    expect(visibleText(tree)).not.toContain('Your payment has been verified by the server.');
+    expect(visibleText(tree)).not.toContain(
+      'Your payment has been verified by the server.',
+    );
     act(() => tree.unmount());
   });
 
@@ -183,7 +193,9 @@ describe('Parent UI replacement', () => {
     expect(visibleText(tree)).toContain('5,250');
 
     act(() =>
-      tree.root.findByProps({ accessibilityLabel: 'Switch child' }).props.onPress(),
+      tree.root
+        .findByProps({ accessibilityLabel: 'Switch child' })
+        .props.onPress(),
     );
     const childOption = tree.root.findAll(node =>
       String(node.props.accessibilityLabel || '').startsWith('Sara Khan.'),
@@ -206,7 +218,9 @@ describe('Parent UI replacement', () => {
     });
     expect(visibleText(tree)).toContain('School inbox');
     expect(visibleText(tree)).toContain('No sample conversations');
-    expect(visibleText(tree)).toContain('Preview does not create or send messages.');
+    expect(visibleText(tree)).toContain(
+      'Preview does not create or send messages.',
+    );
     expect(visibleText(tree)).not.toContain('Transport office');
     expect(visibleText(tree)).not.toContain('School office');
     expect(visibleText(tree)).not.toContain('Miss Ayesha');
@@ -228,28 +242,52 @@ describe('Parent UI replacement', () => {
     let failUpload;
     let attempt = 0;
     chatApi.getConversations.mockResolvedValue({
-      conversations: [{ id: 'conversation-1', teacherName: 'Teacher A', studentName: 'Student 002', unreadCount: 0 }],
+      conversations: [
+        {
+          id: 'conversation-1',
+          teacherName: 'Teacher A',
+          studentName: 'Student 002',
+          unreadCount: 0,
+        },
+      ],
     });
     chatApi.getMessages.mockResolvedValue({ messages: [], hasMore: false });
     chatApi.uploadAttachment.mockImplementation(({ onProgress }) => {
       attempt += 1;
       onProgress(attempt === 1 ? 25 : 75, 100);
       return attempt === 1
-        ? new Promise((_resolve, reject) => { failUpload = reject; })
-        : Promise.resolve({ message: { id: 'server-message-1', body: 'Here is the photo', attachments: [], createdAt: new Date().toISOString() } });
+        ? new Promise((_resolve, reject) => {
+            failUpload = reject;
+          })
+        : Promise.resolve({
+            message: {
+              id: 'server-message-1',
+              body: 'Here is the photo',
+              attachments: [],
+              createdAt: new Date().toISOString(),
+            },
+          });
     });
     const picker = require('@react-native-documents/picker');
-    picker.pick.mockResolvedValue([{
-      uri: 'content://school/photo.png',
-      name: 'photo.png',
-      type: 'image/png',
-      size: 1024,
-      hasRequestedType: true,
-    }]);
+    picker.pick.mockResolvedValue([
+      {
+        uri: 'content://school/photo.png',
+        name: 'photo.png',
+        type: 'image/png',
+        size: 1024,
+        hasRequestedType: true,
+      },
+    ]);
 
     let tree;
     await act(async () => {
-      tree = ReactTestRenderer.create(<MessagesInbox role="Parent" userId="parent-user" onNavigate={() => {}} />);
+      tree = ReactTestRenderer.create(
+        <MessagesInbox
+          role="Parent"
+          userId="parent-user"
+          onNavigate={() => {}}
+        />,
+      );
       await flush();
     });
     const conversation = tree.root.findAll(node =>
@@ -260,22 +298,30 @@ describe('Parent UI replacement', () => {
       await flush();
     });
 
-    const input = tree.root.findAllByType('TextInput').find(node => node.props.accessibilityLabel === 'Write a message');
+    const input = tree.root
+      .findAllByType('TextInput')
+      .find(node => node.props.accessibilityLabel === 'Write a message');
     act(() => input.props.onChangeText('Here is the photo'));
     await act(async () => {
-      tree.root.findByProps({ accessibilityLabel: 'Attach image' }).props.onPress();
+      tree.root
+        .findByProps({ accessibilityLabel: 'Attach image' })
+        .props.onPress();
       await flush();
     });
     await act(async () => {
-      tree.root.findByProps({ accessibilityLabel: 'Send message' }).props.onPress();
+      tree.root
+        .findByProps({ accessibilityLabel: 'Send message' })
+        .props.onPress();
       await flush();
     });
-    expect(chatApi.uploadAttachment).toHaveBeenCalledWith(expect.objectContaining({
-      conversationId: 'conversation-1',
-      body: 'Here is the photo',
-      file: expect.objectContaining({ name: 'photo.png' }),
-      onProgress: expect.any(Function),
-    }));
+    expect(chatApi.uploadAttachment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'conversation-1',
+        body: 'Here is the photo',
+        file: expect.objectContaining({ name: 'photo.png' }),
+        onProgress: expect.any(Function),
+      }),
+    );
     expect(visibleText(tree)).toMatch(/Uploading image\s*·\s*25\s*%/);
     expect(visibleText(tree)).not.toContain('Here is the photo');
 
@@ -285,24 +331,42 @@ describe('Parent UI replacement', () => {
     });
     expect(visibleText(tree)).toContain('Retry image upload');
     expect(visibleText(tree)).not.toContain('Here is the photo');
-    const firstMessageId = chatApi.uploadAttachment.mock.calls[0][0].clientMessageId;
+    const firstMessageId =
+      chatApi.uploadAttachment.mock.calls[0][0].clientMessageId;
     await act(async () => {
-      tree.root.findByProps({ accessibilityLabel: 'Retry image upload' }).props.onPress();
+      tree.root
+        .findByProps({ accessibilityLabel: 'Retry image upload' })
+        .props.onPress();
       await flush();
     });
     expect(chatApi.uploadAttachment).toHaveBeenCalledTimes(2);
-    expect(chatApi.uploadAttachment.mock.calls[1][0].clientMessageId).toBe(firstMessageId);
+    expect(chatApi.uploadAttachment.mock.calls[1][0].clientMessageId).toBe(
+      firstMessageId,
+    );
     expect(visibleText(tree)).toContain('Here is the photo');
     act(() => tree.unmount());
   });
 
   test('Notifications are a separate page and open the exact shared record', async () => {
-    const notice = { id: 'notice-1', title: 'Teacher DLP received', body: 'Class 6-A · Fractions' };
-    parentApi.getNotifications.mockResolvedValue({ notifications: [notice], unreadCount: 1 });
+    const notice = {
+      id: 'notice-1',
+      title: 'Teacher DLP received',
+      body: 'Class 6-A · Fractions',
+    };
+    parentApi.getNotifications.mockResolvedValue({
+      notifications: [notice],
+      unreadCount: 1,
+    });
     parentApi.markNotificationRead.mockResolvedValue({ read: true });
     parentApi.getNotification.mockResolvedValue({
       notification: notice,
-      dlpVersion: { id: 'dlp-version-1', title: 'Fractions in daily life', className: '6-A', version: 3, content: 'Practice questions 1–4.' },
+      dlpVersion: {
+        id: 'dlp-version-1',
+        title: 'Fractions in daily life',
+        className: '6-A',
+        version: 3,
+        content: 'Practice questions 1–4.',
+      },
     });
     let tree;
     await act(async () => {
@@ -312,7 +376,11 @@ describe('Parent UI replacement', () => {
     expect(visibleText(tree)).toContain('Notifications');
     expect(visibleText(tree)).toContain('Teacher DLP received');
     await act(async () => {
-      tree.root.findByProps({ accessibilityLabel: 'Open notification: Teacher DLP received' }).props.onPress();
+      tree.root
+        .findByProps({
+          accessibilityLabel: 'Open notification: Teacher DLP received',
+        })
+        .props.onPress();
       await flush();
     });
     expect(parentApi.markNotificationRead).toHaveBeenCalledWith('notice-1');
@@ -323,27 +391,75 @@ describe('Parent UI replacement', () => {
   });
 
   test('Live Inbox opens persisted history and confirms a sent message through the API', async () => {
-    const conversation = { id: 'conversation-1', studentId: 'student-1', studentName: 'Ahmed Khan', teacherId: 'teacher-1', teacherName: 'Miss Ayesha', unreadCount: 1 };
-    chatApi.getConversations.mockResolvedValue({ conversations: [conversation] });
-    chatApi.getMessages.mockResolvedValue({ messages: [{ id: 'message-1', conversationId: conversation.id, senderUserId: 'teacher-1', senderRole: 'teacher', body: 'Welcome', createdAt: '2026-10-01T10:00:00Z', readByOther: false }], hasMore: false });
-    chatApi.sendMessage.mockImplementation(async (conversationId, body) => ({ message: { id: 'message-2', conversationId, senderUserId: 'parent-1', senderRole: 'parent', body, createdAt: '2026-10-01T10:01:00Z', readByOther: false } }));
+    const conversation = {
+      id: 'conversation-1',
+      studentId: 'student-1',
+      studentName: 'Ahmed Khan',
+      teacherId: 'teacher-1',
+      teacherName: 'Miss Ayesha',
+      unreadCount: 1,
+    };
+    chatApi.getConversations.mockResolvedValue({
+      conversations: [conversation],
+    });
+    chatApi.getMessages.mockResolvedValue({
+      messages: [
+        {
+          id: 'message-1',
+          conversationId: conversation.id,
+          senderUserId: 'teacher-1',
+          senderRole: 'teacher',
+          body: 'Welcome',
+          createdAt: '2026-10-01T10:00:00Z',
+          readByOther: false,
+        },
+      ],
+      hasMore: false,
+    });
+    chatApi.sendMessage.mockImplementation(async (conversationId, body) => ({
+      message: {
+        id: 'message-2',
+        conversationId,
+        senderUserId: 'parent-1',
+        senderRole: 'parent',
+        body,
+        createdAt: '2026-10-01T10:01:00Z',
+        readByOther: false,
+      },
+    }));
     let tree;
     await act(async () => {
-      tree = ReactTestRenderer.create(<MessagesInbox role="Parent" userId="parent-1" onNavigate={() => {}} />);
+      tree = ReactTestRenderer.create(
+        <MessagesInbox role="Parent" userId="parent-1" onNavigate={() => {}} />,
+      );
       await flush();
     });
     await act(async () => {
-      await tree.root.findAll(node => String(node.props.accessibilityLabel || '').startsWith('Miss Ayesha'))[0].props.onPress();
+      await tree.root
+        .findAll(node =>
+          String(node.props.accessibilityLabel || '').startsWith('Miss Ayesha'),
+        )[0]
+        .props.onPress();
       await flush();
     });
     expect(visibleText(tree)).toContain('Welcome');
     expect(chatApi.markRead).toHaveBeenCalledWith(conversation.id);
-    act(() => tree.root.findByProps({ accessibilityLabel: 'Write a message' }).props.onChangeText('Thanks'));
+    act(() =>
+      tree.root
+        .findByProps({ accessibilityLabel: 'Write a message' })
+        .props.onChangeText('Thanks'),
+    );
     await act(async () => {
-      tree.root.findByProps({ accessibilityLabel: 'Send message' }).props.onPress();
+      tree.root
+        .findByProps({ accessibilityLabel: 'Send message' })
+        .props.onPress();
       await flush();
     });
-    expect(chatApi.sendMessage).toHaveBeenCalledWith(conversation.id, 'Thanks', expect.any(String));
+    expect(chatApi.sendMessage).toHaveBeenCalledWith(
+      conversation.id,
+      'Thanks',
+      expect.any(String),
+    );
     expect(visibleText(tree)).toContain('Thanks');
     act(() => tree.unmount());
   });
@@ -374,12 +490,14 @@ describe('Parent UI replacement', () => {
       ).toBeGreaterThan(0);
     }
     expect(
-      tree.root.findAllByProps({ accessibilityLabel: 'Student Progress Tracking' }),
+      tree.root.findAllByProps({
+        accessibilityLabel: 'Student Progress Tracking',
+      }),
     ).toHaveLength(0);
     act(() => tree.unmount());
   });
 
-  test('group routes preserve legacy tabs and hardware back returns to the group default then Home', async () => {
+  test('section cards open subpages and hardware back returns to the section then Home', async () => {
     let back;
     const backSubscription = jest
       .spyOn(BackHandler, 'addEventListener')
@@ -406,7 +524,7 @@ describe('Parent UI replacement', () => {
       await new Promise(resolve => setTimeout(resolve, 240));
     });
     expect(
-      tree.root.findByProps({ accessibilityLabel: 'Open Fees & Payments tab' }),
+      tree.root.findByProps({ accessibilityLabel: 'Open Student Fees' }),
     ).toBeDefined();
     act(() =>
       tree.root
@@ -419,9 +537,8 @@ describe('Parent UI replacement', () => {
     });
     expect(handled).toBe(true);
     expect(
-      tree.root.findByProps({ accessibilityLabel: 'Open Student Fees' }).props
-        .accessibilityState.selected,
-    ).toBe(true);
+      tree.root.findByProps({ accessibilityLabel: 'Open Student Fees' }),
+    ).toBeDefined();
     act(() => {
       handled = back();
     });

@@ -2,7 +2,7 @@ import {
   APPLICATION_MESSAGE_LIMIT,
   APPLICATION_TITLE_LIMIT,
   validateApplicationDraft,
-} from '../applicationValidation';
+} from '../shared/utils/applicationValidation';
 
 test('valid application drafts are trimmed before submission', () => {
   expect(validateApplicationDraft(' Leave ', ' Medical appointment ')).toEqual({

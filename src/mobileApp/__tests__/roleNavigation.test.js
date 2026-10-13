@@ -1,10 +1,10 @@
-import { previewRolePages, rolePages } from '../hiraTheme';
+import { previewRolePages, rolePages } from '../theme/hiraTheme';
 import {
   buildRoleDrawerPages,
   defaultRoleNavigationRoute,
   getRoleNavigationGroups,
   resolveRoleNavigation,
-} from '../roleNavigation';
+} from '../navigation/roleNavigation';
 
 test.each(['Parent', 'Student'])(
   '%s drawer consolidates related routes without removing their destinations',
@@ -19,7 +19,8 @@ test.each(['Parent', 'Student'])(
     expect(drawer).not.toContain('Messages');
     for (const group of groups) expect(drawer).toContain(group.title);
     for (const group of groups) {
-      for (const oldRoute of group.routes) expect(drawer).not.toContain(oldRoute);
+      for (const oldRoute of group.routes)
+        expect(drawer).not.toContain(oldRoute);
     }
   },
 );
@@ -72,10 +73,12 @@ test('only role-authorized categories and tabs are shown', () => {
     'Calendar & Meetings',
     'Fees & Payments',
   ]);
-  expect(studentGroups.find(group => group.title === 'Learning').routes).toEqual([
-    'Homework',
-  ]);
-  expect(resolveRoleNavigation('Student', 'Track My Child', rolePages.Student)).toEqual({
+  expect(
+    studentGroups.find(group => group.title === 'Learning').routes,
+  ).toEqual(['Homework']);
+  expect(
+    resolveRoleNavigation('Student', 'Track My Child', rolePages.Student),
+  ).toEqual({
     page: 'Track My Child',
     route: '',
   });
@@ -84,11 +87,11 @@ test('only role-authorized categories and tabs are shown', () => {
   );
 });
 
-test('group deep links select the first authorized route', () => {
+test('group navigation opens an overview without auto-opening a subpage', () => {
   const pages = previewRolePages.Student;
   expect(resolveRoleNavigation('Student', 'Reports', pages)).toEqual({
     page: 'Reports',
-    route: 'Results',
+    route: '',
   });
   expect(defaultRoleNavigationRoute('Student', 'Learning', pages)).toBe(
     'Homework',

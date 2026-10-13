@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { theme as t } from './hiraTheme';
+import { theme as t } from './theme/hiraTheme';
 
 export default function TeachersDlpPage({ previewOnly = false }) {
   return (
