@@ -56,6 +56,15 @@ export default function TeacherWorkspaceScreen({
             <>
               <Text style={styles.body}>Welcome, {user?.fullName}</Text>
               <Text style={styles.muted}>Teacher workspace</Text>
+              {hasPermission(
+                user?.role,
+                PERMISSIONS.TEACHER_ATTENDANCE_VIEW,
+              ) ? (
+                <TeacherButton
+                  title="Open attendance pending"
+                  onPress={() => navigation.navigate('TeacherAttendanceQueue')}
+                />
+              ) : null}
               {hasPermission(user?.role, PERMISSIONS.TEACHER_TIMETABLE_VIEW) ? (
                 <TeacherButton
                   title="Open timetable"

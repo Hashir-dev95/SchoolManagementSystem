@@ -14,6 +14,7 @@ import privilegedRequestRoutes from './routes/privileged-request.routes';
 import automationRoutes from './routes/automation.routes';
 import sessionRoutes from './routes/session.routes';
 import teacherRoutes from './routes/teacher.routes';
+import teacherAttendanceRoutes from './routes/teacher-attendance.routes';
 import {teacherTimetableRouter, timetableAdminRouter} from './routes/timetable.routes';
 import teacherAssignmentRoutes from './routes/teacher-assignment.routes';
 
@@ -54,6 +55,7 @@ app.use('/api/sessions', sessionRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/api/approval-requests', approvalRequestRoutes);
 app.use('/api/teacher/timetable', teacherTimetableRouter);
+app.use('/api/teacher/attendance', teacherAttendanceRoutes);
 app.use('/api/timetables', timetableAdminRouter);
 app.use('/api/teacher', teacherRoutes);
 app.use('/api/teacher-assignments', teacherAssignmentRoutes);

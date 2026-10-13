@@ -5,12 +5,16 @@ import TeacherWorkspaceScreen from '../screens/teacher/TeacherWorkspaceScreen';
 import TeacherRosterScreen from '../screens/teacher/TeacherRosterScreen';
 import TeacherTimetableScreen from '../screens/teacher/TeacherTimetableScreen';
 import TeacherPeriodScreen from '../screens/teacher/TeacherPeriodScreen';
+import TeacherAttendanceQueueScreen from '../screens/teacher/TeacherAttendanceQueueScreen';
+import TeacherAttendanceScreen from '../screens/teacher/TeacherAttendanceScreen';
 
 export type TeacherStackParamList = {
   TeacherWorkspace: undefined;
   TeacherRoster: TeacherTupleIds;
   TeacherTimetable: undefined;
   TeacherPeriod: { periodId: string; date: string };
+  TeacherAttendanceQueue: undefined;
+  TeacherAttendance: { periodId: string; date: string };
 };
 const Stack = createNativeStackNavigator<TeacherStackParamList>();
 
@@ -36,6 +40,16 @@ export default function TeacherNavigator() {
         name="TeacherPeriod"
         component={TeacherPeriodScreen}
         options={{ title: 'Period detail' }}
+      />
+      <Stack.Screen
+        name="TeacherAttendanceQueue"
+        component={TeacherAttendanceQueueScreen}
+        options={{ title: 'Attendance pending' }}
+      />
+      <Stack.Screen
+        name="TeacherAttendance"
+        component={TeacherAttendanceScreen}
+        options={{ title: 'Period attendance' }}
       />
     </Stack.Navigator>
   );

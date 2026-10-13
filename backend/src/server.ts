@@ -6,6 +6,7 @@ import connectDatabase from './config/database';
 import Subject from './models/subject';
 import TeacherAssignment from './models/teacherAssignment';
 import {ensureTimetableIndexes} from './models/timetable';
+import {ensureAttendanceIndexes} from './models/periodAttendance';
 
 const PORT = process.env.PORT || 5000;
 
@@ -13,7 +14,7 @@ const startServer = async (): Promise<void> => {
   await connectDatabase();
   // These new domain invariants must exist before accepting traffic, including
   // deployments with autoIndex disabled. Only the documented legacy issue index is replaced.
-  await Promise.all([Subject.createIndexes(), TeacherAssignment.createIndexes(), ensureTimetableIndexes()]);
+  await Promise.all([Subject.createIndexes(), TeacherAssignment.createIndexes(), ensureTimetableIndexes(), ensureAttendanceIndexes()]);
 
   const topology = await mongoose.connection.db!.admin().command({hello: 1});
   if (!topology.setName && topology.msg !== 'isdbgrid') throw new Error('Timetable mutations require a MongoDB replica set or sharded cluster');

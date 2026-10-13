@@ -1,4 +1,6 @@
 export const PERMISSIONS = {
+  TEACHER_ATTENDANCE_VIEW: 'teacher.attendance.view',
+  TEACHER_ATTENDANCE_MANAGE: 'teacher.attendance.manage',
   TEACHER_TIMETABLE_VIEW: 'teacher.timetable.view',
   TEACHER_TIMETABLE_ACKNOWLEDGE: 'teacher.timetable.acknowledge',
   TEACHER_TIMETABLE_ISSUE: 'teacher.timetable.issue',

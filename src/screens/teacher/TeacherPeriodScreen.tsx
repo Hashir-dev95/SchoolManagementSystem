@@ -3,6 +3,7 @@ import { Text, TextInput } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { TeacherStackParamList } from '../../navigation/TeacherNavigator';
 import { useAuth } from '../../context/AuthContext';
+import { hasPermission, PERMISSIONS } from '../../constants/permissions';
 import {
   Button,
   Card,
@@ -17,8 +18,9 @@ import { PeriodSummary, TimetableState, timetableStyles } from './timetableUi';
 
 export default function TeacherPeriodScreen({
   route,
+  navigation,
 }: NativeStackScreenProps<TeacherStackParamList, 'TeacherPeriod'>) {
-  const { accessToken } = useAuth(),
+  const { accessToken, user } = useAuth(),
     { periodId, date } = route.params;
   const [reason, setReason] = useState(''),
     [validation, setValidation] = useState<string | null>(null);
@@ -67,6 +69,14 @@ export default function TeacherPeriodScreen({
       {period ? (
         <Card>
           <PeriodSummary period={period} />
+          {hasPermission(user?.role, PERMISSIONS.TEACHER_ATTENDANCE_VIEW) ? (
+            <Button
+              title="Open attendance"
+              onPress={() =>
+                navigation.navigate('TeacherAttendance', { periodId, date })
+              }
+            />
+          ) : null}
           {period.canAcknowledgeSubstitute ? (
             <Button
               title="Acknowledge substitute"

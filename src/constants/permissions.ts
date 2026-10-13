@@ -1,6 +1,8 @@
 import { USER_ROLES, UserRole } from './roles';
 
 export const PERMISSIONS = {
+  TEACHER_ATTENDANCE_VIEW: 'teacher.attendance.view',
+  TEACHER_ATTENDANCE_MANAGE: 'teacher.attendance.manage',
   TEACHER_TIMETABLE_VIEW: 'teacher.timetable.view',
   TEACHER_TIMETABLE_ACKNOWLEDGE: 'teacher.timetable.acknowledge',
   TEACHER_TIMETABLE_ISSUE: 'teacher.timetable.issue',
@@ -24,6 +26,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   [USER_ROLES.PRINCIPAL]: [],
   [USER_ROLES.TEACHER]: [
+    PERMISSIONS.TEACHER_ATTENDANCE_VIEW,
+    PERMISSIONS.TEACHER_ATTENDANCE_MANAGE,
     PERMISSIONS.TEACHER_CLASSES_VIEW,
     PERMISSIONS.TEACHER_TIMETABLE_VIEW,
     PERMISSIONS.TEACHER_TIMETABLE_ACKNOWLEDGE,

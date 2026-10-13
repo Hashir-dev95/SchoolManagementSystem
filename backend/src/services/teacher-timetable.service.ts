@@ -333,7 +333,7 @@ export const withTimetablePublication = async <T>(
   }
 };
 
-const mutateOccurrence = async (
+export const mutateOccurrence = async <T = TeacherPeriodDTO>(
   identity: JwtPayload | undefined,
   id: unknown,
   date: unknown,
@@ -342,7 +342,7 @@ const mutateOccurrence = async (
     session: ClientSession,
     period: TeacherPeriodDTO,
     branchId: string,
-  ) => Promise<TeacherPeriodDTO>,
+  ) => Promise<T>,
 ) => {
   requireAction(permission);
   const initial = await getTeacherPeriod(identity, id, date);

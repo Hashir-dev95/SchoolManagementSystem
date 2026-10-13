@@ -4,6 +4,7 @@ import Branch from '../models/branch';
 import SchoolClass from '../models/schoolClass';
 import Section from '../models/section';
 import Student, {IStudent} from '../models/student';
+import {withTimetablePublication} from './teacher-timetable.service';
 
 export interface CreateStudentInput {
   userId: string;
@@ -112,7 +113,9 @@ if (existingStudent) {
     isActive: true,
   });
 
-  await student.save();
-
-  return student;
+  // Attendance mutations hold this same branch fence. New enrollment must not
+  // appear as an unfenced phantom between roster validation and commit.
+  // A fresh document per driver transaction attempt preserves insert semantics
+  // after a retry; the initially allocated ID remains stable.
+  return withTimetablePublication(branchId, undefined, session => new Student(student.toObject()).save({session}));
 };
