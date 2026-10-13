@@ -4,7 +4,7 @@ import {objectIdField, RequestContractError} from '../utils/request-validation';
 import {PERMISSIONS} from '../constants/permissions';
 import {ROLE_PERMISSIONS} from '../constants/rolePermissions';
 
-const classScope = async (identity: JwtPayload | undefined) => {
+export const classScope = async (identity: JwtPayload | undefined) => {
   // This domain owns its action permission. Assignment scope alone must never
   // imply permission to read a roster, mark attendance or host a future lesson.
   if (!ROLE_PERMISSIONS.teacher.includes(PERMISSIONS.TEACHER_CLASSES_VIEW)) {

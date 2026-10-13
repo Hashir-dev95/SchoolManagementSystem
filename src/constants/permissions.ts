@@ -1,6 +1,7 @@
 import { USER_ROLES, UserRole } from './roles';
 
 export const PERMISSIONS = {
+  TEACHER_CLASSES_VIEW: 'teacher.classes.view',
   BRANCHES_VIEW: 'branches.view',
   PRINCIPALS_MANAGE: 'principals.manage',
   PRIVILEGED_REQUESTS_MANAGE: 'privileged_requests.manage',
@@ -19,7 +20,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     PERMISSIONS.SESSIONS_MANAGE,
   ],
   [USER_ROLES.PRINCIPAL]: [],
-  [USER_ROLES.TEACHER]: [],
+  [USER_ROLES.TEACHER]: [PERMISSIONS.TEACHER_CLASSES_VIEW],
   [USER_ROLES.STUDENT]: [],
 };
 

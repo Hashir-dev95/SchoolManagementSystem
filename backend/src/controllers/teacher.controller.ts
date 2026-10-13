@@ -3,6 +3,7 @@ import type {AuthenticatedRequest} from '../middleware/auth.middleware';
 import {RequestContractError} from '../utils/request-validation';
 import {getTeacherClasses, getTeacherClass} from '../services/teacher-class.service';
 import {createTeacherAssignment, revokeTeacherAssignment} from '../services/teacher-assignment.service';
+import {getTeacherRoster} from '../services/teacher-roster.service';
 
 const failure = (res: Response, error: unknown) => {
   res.status(error instanceof RequestContractError ? error.status : 500).json({
@@ -20,6 +21,16 @@ export const teacherClasses = async (req: AuthenticatedRequest, res: Response) =
   try {
     contract(req, true);
     const data = req.params.classId === undefined ? await getTeacherClasses(req.user) : await getTeacherClass(req.user, {
+      classId: req.params.classId, sectionId: req.params.sectionId, subjectId: req.params.subjectId,
+    });
+    res.json({success: true, data});
+  } catch (error) {failure(res, error);}
+};
+
+export const teacherRoster = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    contract(req, true);
+    const data = await getTeacherRoster(req.user, {
       classId: req.params.classId, sectionId: req.params.sectionId, subjectId: req.params.subjectId,
     });
     res.json({success: true, data});

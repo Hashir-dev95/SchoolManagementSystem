@@ -12,6 +12,8 @@ import Section from '../src/models/section';
 import Subject from '../src/models/subject';
 import TeacherAssignment from '../src/models/teacherAssignment';
 import Session from '../src/models/session';
+import Student from '../src/models/student';
+import {getTeacherRoster, type TeacherRosterStudent} from '../src/services/teacher-roster.service';
 import {generateAccessToken} from '../src/services/jwt.service';
 import {registerSession} from '../src/services/session.service';
 import {ROLE_PERMISSIONS} from '../src/constants/rolePermissions';
@@ -92,7 +94,7 @@ const tuple = (classId: Id, sectionId: Id, subjectId: Id, person: Actor | undefi
 beforeEach(async () => {
   mock.restoreAll();
   for (const role of Object.keys(ROLE_PERMISSIONS) as UserRole[]) ROLE_PERMISSIONS[role] = [...permissionSnapshot[role]];
-  for (const model of [TeacherAssignment, Subject, Section, SchoolClass, Session, User, Branch]) await model.collection.deleteMany({});
+  for (const model of [Student, TeacherAssignment, Subject, Section, SchoolClass, Session, User, Branch]) await model.collection.deleteMany({});
   branchA = (await Branch.create({name: 'Branch A', code: 'AA', address: 'private address', city: 'A'}))._id;
   branchB = (await Branch.create({name: 'Branch B', code: 'BB', address: 'foreign private address', city: 'B'}))._id;
   teacherA = await actor('teacher-a', 'teacher', branchA);
@@ -415,4 +417,135 @@ test('service entry point independently rejects Teacher provisioning and removed
   await assert.rejects(createTeacherAssignment({userId: String(teacherA.id), role: 'teacher'}, input()), {status: 403});
   ROLE_PERMISSIONS.principal = ROLE_PERMISSIONS.principal.filter(p => p !== PERMISSIONS.TEACHER_ASSIGNMENTS_MANAGE);
   await assert.rejects(createTeacherAssignment({userId: String(principal.id), role: 'principal'}, input()), {status: 403});
+});
+
+type Roster = {assignment: TeacherAssignmentTuple; students: TeacherRosterStudent[]};
+const rosterPath = (c: Id | string = class8, s: Id | string = section8A, sub: Id | string = math) =>
+  `/teacher/classes/${c}/sections/${s}/subjects/${sub}/students`;
+const roster = (c: Id | string = class8, s: Id | string = section8A, sub: Id | string = math, person = teacherA) =>
+  http<Roster>(rosterPath(c, s, sub), person);
+const learner = async (name: string, c = class8, s = section8A, b = branchA, active = true) => {
+  const person = await actor(name, 'student', b);
+  const record = await new Student({
+    userId: person.id, branchId: b, classId: c, sectionId: s,
+    admissionNumber: name, isActive: active, guardianName: 'private guardian',
+    guardianPhone: 'private phone', address: 'private address', dateOfBirth: new Date('2014-01-01'),
+  }).save();
+  await Student.collection.updateOne({_id: record._id}, {$set: {finance: 'private finance', counseling: 'private counseling'}});
+  return {id: record._id, userId: person.id};
+};
+
+test('roster returns only current assigned enrollment with exact minimal keys and no private records', async () => {
+  const own = await learner('own');
+  await learner('other-section', class8, section8B);
+  await learner('teacher-b-only', class10, section10A);
+  await learner('foreign', foreignClass, foreignSection, branchB);
+  await learner('inactive', class8, section8A, branchA, false);
+  const response = await roster();
+  assert.equal(response.status, 200);
+  assert.equal(response.cache, 'no-store');
+  assert.deepEqual(Object.keys(response.data).sort(), ['assignment', 'students']);
+  assert.deepEqual(response.data.students, [{studentId: String(own.id), fullName: 'own', admissionNumber: 'OWN'}]);
+  assert.deepEqual(Object.keys(response.data.students[0]).sort(), ['admissionNumber', 'fullName', 'studentId']);
+  assert.deepEqual(Object.keys(response.data.assignment).sort(),
+    ['assignmentId', 'classId', 'className', 'sectionId', 'sectionName', 'subjectId', 'subjectName'].sort());
+  for (const value of ['private', 'guardian', 'dateOfBirth', 'finance', 'counseling', 'password', 'email', 'permissions', 'userId', 'branchId']) {
+    assert.equal(response.raw.includes(value), false, value);
+  }
+  // A shared tuple legitimately gives both Teachers the same membership.
+  assert.deepEqual((await roster(class8, section8A, math, teacherB)).data.students, response.data.students);
+});
+
+test('same branch, Teacher B-only, foreign and every tuple cross-product roster fail concealed', async () => {
+  for (const [c, s, sub] of [
+    [class10, section10A, math], [foreignClass, foreignSection, foreignSubject],
+    [class8, section8B, math], [class8, section8A, physics],
+    [class8, section9B, math], [class9, section9B, math],
+    [class9, section8A, physics], [class8, section8A, foreignSubject],
+  ]) assert.equal((await roster(c, s, sub)).status, 404);
+  assert.equal((await roster(class10, section10A, math, teacherB)).status, 200);
+});
+
+test('student moves, deactivation and current DB identity changes immediately remove roster membership', async () => {
+  const own = await learner('own');
+  assert.equal((await roster()).data.students.length, 1);
+  await Student.updateOne({_id: own.id}, {$set: {sectionId: section8B}});
+  assert.deepEqual((await roster()).data.students, []);
+  await Student.updateOne({_id: own.id}, {$set: {sectionId: section8A, classId: class10}});
+  assert.deepEqual((await roster()).data.students, []);
+  await Student.updateOne({_id: own.id}, {$set: {classId: class8, branchId: branchB}});
+  assert.deepEqual((await roster()).data.students, []);
+  await Student.updateOne({_id: own.id}, {$set: {branchId: branchA}});
+  for (const change of [{isActive: false}, {isActive: true, role: 'teacher'}, {role: 'student', branchId: branchB}]) {
+    await User.updateOne({_id: own.userId}, {$set: change});
+    assert.deepEqual((await roster()).data.students, []);
+  }
+  await User.deleteOne({_id: own.userId});
+  assert.deepEqual((await roster()).data.students, []);
+});
+
+for (const state of ['revoked', 'expired', 'future'] as const) {
+  test(`${state} assignment immediately removes roster access`, async () => {
+    await learner('own');
+    assert.equal((await roster()).status, 200);
+    await TeacherAssignment.collection.updateOne({_id: new mongoose.Types.ObjectId(assignment8)}, {$set:
+      state === 'revoked' ? {isActive: false} : state === 'expired' ? {validUntil: new Date(past())} : {validFrom: new Date(future())}});
+    assert.equal((await roster()).status, 404);
+  });
+}
+
+for (const state of ['inactive', 'role', 'branch', 'branch inactive', 'permission'] as const) {
+  test(`current ${state} change fails closed on roster and independent service call`, async () => {
+    const expected = state === 'inactive' || state === 'role' ? 401 : state === 'branch' ? 404 : 403;
+    if (state === 'inactive') await User.updateOne({_id: teacherA.id}, {$set: {isActive: false}});
+    if (state === 'role') await User.updateOne({_id: teacherA.id}, {$set: {role: 'principal'}});
+    if (state === 'branch') await User.updateOne({_id: teacherA.id}, {$set: {branchId: branchB}});
+    if (state === 'branch inactive') await Branch.updateOne({_id: branchA}, {$set: {isActive: false}});
+    if (state === 'permission') ROLE_PERMISSIONS.teacher = ROLE_PERMISSIONS.teacher.filter(p => p !== PERMISSIONS.TEACHER_CLASSES_VIEW);
+    assert.equal((await roster()).status, expected);
+    await assert.rejects(getTeacherRoster({userId: String(teacherA.id), role: 'teacher'}, {
+      classId: String(class8), sectionId: String(section8A), subjectId: String(math),
+    }), {status: expected});
+  });
+}
+
+test('roster query/body injection never widens scope and malformed tuple IDs are sanitized', async () => {
+  for (const field of ['teacherId', 'branchId', 'classId', 'sectionId', 'subjectId', 'studentId', 'permissions']) {
+    assert.equal((await http(`${rosterPath()}?${field}=${teacherB.id}`, teacherA)).status, 400);
+    assert.equal((await http(rosterPath(), teacherA, 'GET', {[field]: String(teacherB.id)})).status, 400);
+  }
+  for (const bad of ['invalid', '123', 'gggggggggggggggggggggggg']) {
+    for (const path of [rosterPath(bad), rosterPath(class8, bad), rosterPath(class8, section8A, bad)]) {
+      const result = await http(path, teacherA);
+      assert.equal(result.status, 400); assert.equal(result.raw.includes('CastError'), false);
+    }
+  }
+  assert.equal((await roster(new mongoose.Types.ObjectId())).status, 404);
+});
+
+test('roster has independent authentication/role gates and no guessed learner detail surface', async () => {
+  assert.equal((await http(rosterPath(), undefined)).status, 401);
+  for (const person of [principal, admin, student]) assert.equal((await http(rosterPath(), person)).status, 403);
+  await Session.updateOne({token: teacherA.token}, {$set: {isRevoked: true}});
+  assert.equal((await roster()).status, 401);
+  const outside = await learner('outside', class10, section10A);
+  assert.equal((await fetch(`${base}/teacher/students/${outside.id}`, {headers: {Authorization: `Bearer ${teacherB.token}`}})).status, 404);
+});
+
+test('roster reference changes invalidate authority and DB failure is sanitized', async () => {
+  await Section.collection.updateOne({_id: section8A}, {$set: {classId: class10}});
+  assert.equal((await roster()).status, 404);
+  await Section.collection.updateOne({_id: section8A}, {$set: {classId: class8}});
+  mock.method(Student, 'aggregate', () => { throw new Error('private-database-internals'); });
+  const result = await roster();
+  assert.equal(result.status, 500); assert.equal(result.raw.includes('private-database-internals'), false);
+});
+
+test('roster resolves scope once and executes one aggregate regardless of learner count', async () => {
+  await Promise.all(Array.from({length: 12}, (_, i) => learner(`learner-${i}`)));
+  const aggregate = mock.method(Student, 'aggregate');
+  const assignments = mock.method(TeacherAssignment, 'find');
+  const result = await roster();
+  assert.equal(result.status, 200); assert.equal(result.data.students.length, 12);
+  assert.equal(aggregate.mock.callCount(), 1); assert.equal(assignments.mock.callCount(), 1);
 });
