@@ -46,7 +46,12 @@ test('Teacher capability has only its class grant and cannot inherit Principal a
   expect(
     hasPermission(USER_ROLES.TEACHER, PERMISSIONS.TEACHER_CLASSES_VIEW),
   ).toBe(true);
-  expect(ROLE_PERMISSIONS.teacher).toEqual([PERMISSIONS.TEACHER_CLASSES_VIEW]);
+  expect(ROLE_PERMISSIONS.teacher).toEqual([
+    PERMISSIONS.TEACHER_CLASSES_VIEW,
+    PERMISSIONS.TEACHER_TIMETABLE_VIEW,
+    PERMISSIONS.TEACHER_TIMETABLE_ACKNOWLEDGE,
+    PERMISSIONS.TEACHER_TIMETABLE_ISSUE,
+  ]);
   expect(
     hasPermission(USER_ROLES.PRINCIPAL, PERMISSIONS.TEACHER_CLASSES_VIEW),
   ).toBe(false);

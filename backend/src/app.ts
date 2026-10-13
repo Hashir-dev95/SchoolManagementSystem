@@ -14,6 +14,7 @@ import privilegedRequestRoutes from './routes/privileged-request.routes';
 import automationRoutes from './routes/automation.routes';
 import sessionRoutes from './routes/session.routes';
 import teacherRoutes from './routes/teacher.routes';
+import {teacherTimetableRouter, timetableAdminRouter} from './routes/timetable.routes';
 import teacherAssignmentRoutes from './routes/teacher-assignment.routes';
 
 const backupRoutes = (backupRoutesModule as any).default ?? backupRoutesModule;
@@ -52,6 +53,8 @@ app.use('/api/automation', automationRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/api/approval-requests', approvalRequestRoutes);
+app.use('/api/teacher/timetable', teacherTimetableRouter);
+app.use('/api/timetables', timetableAdminRouter);
 app.use('/api/teacher', teacherRoutes);
 app.use('/api/teacher-assignments', teacherAssignmentRoutes);
 
@@ -63,6 +66,7 @@ const teacherParseError: ErrorRequestHandler = (error, _req, res, next) => {
   next(error);
 };
 app.use('/api/teacher', teacherParseError);
+app.use('/api/timetables', teacherParseError);
 app.use('/api/teacher-assignments', teacherParseError);
 
 // Scope parser failures to Principal APIs; leave bootstrap and other API error

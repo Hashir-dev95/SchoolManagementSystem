@@ -67,5 +67,10 @@ test('authenticated Teacher enters the Teacher stack with no duplicate route own
     tree.root
       .findAll(node => String(node.type) === 'StackScreen')
       .map(node => node.props.name),
-  ).toEqual(['TeacherWorkspace', 'TeacherRoster']);
+  ).toEqual([
+    'TeacherWorkspace',
+    'TeacherRoster',
+    'TeacherTimetable',
+    'TeacherPeriod',
+  ]);
 });

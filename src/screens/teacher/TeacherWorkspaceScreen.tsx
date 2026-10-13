@@ -56,6 +56,12 @@ export default function TeacherWorkspaceScreen({
             <>
               <Text style={styles.body}>Welcome, {user?.fullName}</Text>
               <Text style={styles.muted}>Teacher workspace</Text>
+              {hasPermission(user?.role, PERMISSIONS.TEACHER_TIMETABLE_VIEW) ? (
+                <TeacherButton
+                  title="Open timetable"
+                  onPress={() => navigation.navigate('TeacherTimetable')}
+                />
+              ) : null}
               <LoadState
                 loading={resource.loading}
                 error={resource.error}

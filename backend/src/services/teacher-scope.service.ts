@@ -11,7 +11,7 @@ import {objectIdField, RequestContractError} from '../utils/request-validation';
 export const currentAcademicActor = async (identity: JwtPayload | undefined) => {
   if (!identity) throw new RequestContractError(401, 'Authentication required');
   const id = objectIdField(identity.userId, 'authenticated user ID');
-  const actor = await User.findById(id).select('_id role branchId isActive').lean();
+  const actor = await User.findById(id).read('primary').select('_id role branchId isActive').lean();
   if (!actor || !actor.isActive || actor.role !== identity.role) {
     throw new RequestContractError(401, 'User account is unavailable or authorization has changed');
   }
@@ -19,7 +19,7 @@ export const currentAcademicActor = async (identity: JwtPayload | undefined) => 
 };
 
 export const requireActiveAcademicBranch = async (branchId: string | undefined) => {
-  if (!branchId || !await Branch.exists({_id: branchId, isActive: true})) {
+  if (!branchId || !await Branch.exists({_id: branchId, isActive: true}).read('primary')) {
     throw new RequestContractError(403, 'Active branch scope is required');
   }
   return branchId;
@@ -35,6 +35,7 @@ export interface TeacherAssignmentTuple {
   subjectName: string;
 }
 
+// Authorization always reads the primary so mutation fences cannot be bypassed by secondary lag.
 // Request-local scope only. No process/session cache: revocation, reference
 // changes, permissions and branch reassignment are observed on the next request.
 export const getTeacherScope = async (identity: JwtPayload | undefined) => {
@@ -47,15 +48,15 @@ export const getTeacherScope = async (identity: JwtPayload | undefined) => {
   const assignments = await TeacherAssignment.find({
     teacherId: actor._id, branchId, isActive: true, validFrom: {$lte: now},
     $or: [{validUntil: {$exists: false}}, {validUntil: {$gt: now}}],
-  }).select('_id classId sectionId subjectId').sort({_id: 1}).lean();
+  }).read('primary').select('_id classId sectionId subjectId').sort({_id: 1}).lean();
   if (!assignments.length) return {actorId: actor._id.toString(), branchId, tuples: [] as TeacherAssignmentTuple[]};
 
   const [classes, sections, subjects] = await Promise.all([
-    SchoolClass.find({isActive: true}).where('_id').in(assignments.map(item => item.classId))
+    SchoolClass.find({isActive: true}).read('primary').where('_id').in(assignments.map(item => item.classId))
       .where('branchId').equals(branchId).select('_id name').lean(),
-    Section.find({isActive: true}).where('_id').in(assignments.map(item => item.sectionId))
+    Section.find({isActive: true}).read('primary').where('_id').in(assignments.map(item => item.sectionId))
       .where('branchId').equals(branchId).select('_id classId name').lean(),
-    Subject.find({_id: {$in: assignments.map(item => item.subjectId)}, branchId, isActive: true}).select('_id name').lean(),
+    Subject.find({_id: {$in: assignments.map(item => item.subjectId)}, branchId, isActive: true}).read('primary').select('_id name').lean(),
   ]);
   const classMap = new Map(classes.map(item => [String(item._id), item]));
   const sectionMap = new Map(sections.map(item => [String(item._id), item]));

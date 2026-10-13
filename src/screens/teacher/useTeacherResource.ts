@@ -4,7 +4,10 @@ import { ApiError } from '../../services/api/apiClient';
 
 // Focus/retry/refresh each has a generation. Blur and unmount invalidate
 // responses without remounting the screen or losing its selected context.
-export function useTeacherResource<T>(load: () => Promise<T>) {
+export function useTeacherResource<T>(
+  load: () => Promise<T>,
+  unavailableMessage = 'This assigned class is unavailable or you no longer have access.',
+) {
   const generation = useRef(0);
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -22,7 +25,7 @@ export function useTeacherResource<T>(load: () => Promise<T>) {
       if (request === generation.current) {
         setError(
           failure instanceof ApiError && failure.status === 404
-            ? 'This assigned class is unavailable or you no longer have access.'
+            ? unavailableMessage
             : failure instanceof Error
             ? failure.message
             : 'Unable to load. Please retry.',
@@ -31,7 +34,7 @@ export function useTeacherResource<T>(load: () => Promise<T>) {
     } finally {
       if (request === generation.current) setLoading(false);
     }
-  }, [load]);
+  }, [load, unavailableMessage]);
   useFocusEffect(
     useCallback(() => {
       refresh();
