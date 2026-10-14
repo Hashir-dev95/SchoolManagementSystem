@@ -4,7 +4,7 @@ import type {
   TeacherAssignment,
   TeacherTupleIds,
 } from '../../services/teacher/teacherService';
-import { assignmentLabel, LoadState, styles } from './teacherUi';
+import { assignmentLabel, LoadState, TeacherButton, styles } from './teacherUi';
 
 interface Props {
   assignments: TeacherAssignment[] | null;
@@ -12,6 +12,7 @@ interface Props {
   error: string | null;
   refresh: () => Promise<void>;
   onOpenRoster: (ids: TeacherTupleIds) => void;
+  onOpenTimetable?: () => void;
 }
 
 export default function TeacherClassesScreen({
@@ -20,6 +21,7 @@ export default function TeacherClassesScreen({
   error,
   refresh,
   onOpenRoster,
+  onOpenTimetable,
 }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
   return (
@@ -36,6 +38,9 @@ export default function TeacherClassesScreen({
         ListHeaderComponent={
           <View>
             <Text style={styles.title}>Assigned classes</Text>
+            {onOpenTimetable ? (
+              <TeacherButton title="Open timetable" onPress={onOpenTimetable} />
+            ) : null}
             <LoadState loading={loading} error={error} retry={refresh} />
           </View>
         }

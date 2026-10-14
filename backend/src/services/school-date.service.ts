@@ -10,16 +10,24 @@ export const schoolTimezone = () => {
   }
   return zone;
 };
-export const schoolToday = () => {
+// One school-local civil date/time snapshot for occurrence start boundaries.
+export const schoolDateTime = (instant = new Date()) => {
   const parts = new Intl.DateTimeFormat('en', {
     timeZone: schoolTimezone(),
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).formatToParts(new Date());
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(instant);
   const part = (type: string) => parts.find(item => item.type === type)!.value;
-  return `${part('year')}-${part('month')}-${part('day')}`;
+  return {
+    date: `${part('year')}-${part('month')}-${part('day')}`,
+    time: `${part('hour')}:${part('minute')}`,
+  };
 };
+export const schoolToday = () => schoolDateTime().date;
 export const scheduleDate = (value: unknown) => {
   dateField(value, 'schedule date', true);
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value))

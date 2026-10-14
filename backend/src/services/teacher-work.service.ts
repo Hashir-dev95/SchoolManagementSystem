@@ -187,6 +187,53 @@ export const getTeacherWorkQueue = async (identity: Identity, offset = 0) => {
     nextOffset: offset + items.length < total ? offset + items.length : null,
   };
 };
+// Same reconciliation and scope as Tasks. The displayed count is the whole
+// open queue, not a capped page or a claim that every task is urgent.
+export const getTeacherWorkAttention = async (identity: Identity) => {
+  const scope = await communicationScope(
+    identity,
+    PERMISSIONS.TEACHER_WORK_VIEW,
+  );
+  await reconcile(scope);
+  const query = { ...scopeQuery(scope), status: 'open' as const };
+  // Count and urgency fold the same matched rows in one evaluation. An insert
+  // or completion cannot be observed by only one of two independent reads.
+  const [result] = await AssignedWork.aggregate<{
+    total: number;
+    urgent: number;
+  }>([
+    { $match: AssignedWork.find(query).cast(AssignedWork) },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        urgent: {
+          $max: {
+            $cond: [
+              {
+                $or: [
+                  { $eq: ['$priority', 'high'] },
+                  {
+                    $and: [
+                      { $eq: [{ $type: '$dueAt' }, 'date'] },
+                      { $lte: ['$dueAt', new Date()] },
+                    ],
+                  },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+    },
+  ]).read('primary');
+  return {
+    total: result?.total ?? 0,
+    needsAttention: (result?.urgent ?? 0) > 0,
+  };
+};
 export const getTeacherWork = async (identity: Identity, id: unknown) => {
   const scope = await communicationScope(
     identity,

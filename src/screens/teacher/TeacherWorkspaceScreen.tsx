@@ -10,7 +10,8 @@ import TeacherClassesScreen from './TeacherClassesScreen';
 import TeacherInboxScreen from './TeacherInboxScreen';
 import TeacherTasksScreen from './TeacherTasksScreen';
 import { useTeacherResource } from './useTeacherResource';
-import { LoadState, TeacherButton, styles } from './teacherUi';
+import { TeacherButton, styles } from './teacherUi';
+import TeacherHomeScreen from './TeacherHomeScreen';
 
 export const teacherDestinations = [
   'Home',
@@ -37,11 +38,21 @@ export default function TeacherWorkspaceScreen({
     return teacherService.getAssignedClasses(accessToken);
   }, [accessToken, canViewClasses]);
   const resource = useTeacherResource(load);
+  const openTab = (tab: Destination) => {
+    if (tab === 'Inbox' || tab === 'Tasks')
+      setVisited(previous => ({ ...previous, [tab]: true }));
+    setDestination(tab);
+  };
   return (
     <SafeAreaView style={styles.shell}>
       <View style={[styles.page, destination !== 'Classes' && styles.hidden]}>
         {canViewClasses ? (
           <TeacherClassesScreen
+            onOpenTimetable={
+              hasPermission(user?.role, PERMISSIONS.TEACHER_TIMETABLE_VIEW)
+                ? () => navigation.navigate('TeacherTimetable')
+                : undefined
+            }
             assignments={resource.data}
             loading={resource.loading}
             error={resource.error}
@@ -70,56 +81,22 @@ export default function TeacherWorkspaceScreen({
           />
         </View>
       ) : null}
-      {destination !== 'Classes' &&
-      destination !== 'Inbox' &&
-      destination !== 'Tasks' ? (
+      {destination === 'Home' ? (
+        <TeacherHomeScreen
+          onAction={action => {
+            if (action.type === 'attendance')
+              navigation.navigate('TeacherAttendanceQueue');
+            else openTab(action.routeTarget);
+          }}
+        />
+      ) : null}
+      {destination === 'Me' ? (
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.title}>{destination}</Text>
-          {destination === 'Home' ? (
-            <>
-              <Text style={styles.body}>Welcome, {user?.fullName}</Text>
-              <Text style={styles.muted}>Teacher workspace</Text>
-              {hasPermission(
-                user?.role,
-                PERMISSIONS.TEACHER_ATTENDANCE_VIEW,
-              ) ? (
-                <TeacherButton
-                  title="Open attendance pending"
-                  onPress={() => navigation.navigate('TeacherAttendanceQueue')}
-                />
-              ) : null}
-              {hasPermission(user?.role, PERMISSIONS.TEACHER_TIMETABLE_VIEW) ? (
-                <TeacherButton
-                  title="Open timetable"
-                  onPress={() => navigation.navigate('TeacherTimetable')}
-                />
-              ) : null}
-              <LoadState
-                loading={resource.loading}
-                error={resource.error}
-                retry={resource.refresh}
-              />
-              {resource.data ? (
-                <Text style={styles.body}>
-                  {resource.data.length} current assignment
-                  {resource.data.length === 1 ? '' : 's'}
-                </Text>
-              ) : null}
-              {canViewClasses ? (
-                <TeacherButton
-                  title="View assigned classes"
-                  onPress={() => setDestination('Classes')}
-                />
-              ) : null}
-            </>
-          ) : (
-            <>
-              <Text style={styles.body}>{user?.fullName}</Text>
-              <Text style={styles.muted}>Teacher</Text>
-              <Text style={styles.body}>{user?.email}</Text>
-              <TeacherButton title="Log out" onPress={logout} />
-            </>
-          )}
+          <Text style={styles.title}>Me</Text>
+          <Text style={styles.body}>{user?.fullName}</Text>
+          <Text style={styles.muted}>Teacher</Text>
+          <Text style={styles.body}>{user?.email}</Text>
+          <TeacherButton title="Log out" onPress={logout} />
         </ScrollView>
       ) : null}
       <View style={styles.tabs}>
@@ -132,9 +109,7 @@ export default function TeacherWorkspaceScreen({
             disabled={tab === 'Classes' && !canViewClasses}
             style={[styles.tab, destination === tab && styles.selected]}
             onPress={() => {
-              if (tab === 'Inbox' || tab === 'Tasks')
-                setVisited(previous => ({ ...previous, [tab]: true }));
-              setDestination(tab);
+              openTab(tab);
             }}
           >
             <Text style={styles.muted}>{tab}</Text>

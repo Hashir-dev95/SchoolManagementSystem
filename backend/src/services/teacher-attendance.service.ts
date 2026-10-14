@@ -24,7 +24,7 @@ import {
   mutateOccurrence,
   type TeacherPeriodDTO,
 } from './teacher-timetable.service';
-import { schoolToday } from './school-date.service';
+import { schoolToday, schoolDateTime } from './school-date.service';
 import { verifyAccessToken, type JwtPayload } from './jwt.service';
 
 type Identity = JwtPayload | undefined;
@@ -197,9 +197,12 @@ export const getTeacherAttendancePending = async (
   requirePermission(PERMISSIONS.TEACHER_ATTENDANCE_VIEW);
   const queue = await getTeacherTimetable(identity, date);
   const scope = await getTeacherScope(identity);
-  // Only today's/past approved occurrences are attendance obligations. No
-  // student absence inference, and no writes of any kind in this queue read.
-  const periods = queue.periods.filter(p => p.date <= queue.today);
+  // Pending begins at the effective occurrence's school-local start (inclusive).
+  // Direct same-day pre-marking remains allowed; pending is never absence.
+  const now = schoolDateTime();
+  const periods = queue.periods.filter(
+    p => p.date < now.date || (p.date === now.date && p.startTime <= now.time),
+  );
   const sessions = await AttendanceSession.find({
     branchId: scope.branchId,
     date: queue.start,

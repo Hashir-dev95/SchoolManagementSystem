@@ -516,6 +516,25 @@ export const getTeacherInbox = async (identity: Identity, offset = 0) => {
       offset + ids.length < ownCount + schoolCount ? offset + ids.length : null,
   };
 };
+// T-PR5 has priority on school notices, but no unread/acknowledgement domain.
+// Reuse the Inbox audience/publication/expiry policy; never invent unread state.
+export const getTeacherImportantNotice = async (identity: Identity) => {
+  const scope = await communicationScope(
+    identity,
+    PERMISSIONS.TEACHER_NOTICES_VIEW,
+  );
+  const notice = await SchoolNotice.collection.findOne(
+    {
+      ...schoolQuery(scope.branchId),
+      priority: { $in: ['high', 'urgent'] },
+    },
+    {
+      projection: { _id: 1, title: 1 },
+      sort: { priority: -1, publishedAt: -1, _id: -1 },
+    },
+  );
+  return notice ? { noticeId: String(notice._id), title: notice.title } : null;
+};
 export const getTeacherNotice = async (identity: Identity, id: unknown) => {
   const scope = await communicationScope(
     identity,

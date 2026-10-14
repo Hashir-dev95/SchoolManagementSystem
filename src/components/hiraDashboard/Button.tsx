@@ -21,6 +21,9 @@ export function Button({
 }: Props) {
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityState={{ disabled: !!disabled }}
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [

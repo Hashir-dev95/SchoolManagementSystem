@@ -10,6 +10,22 @@ import {
 import { TeacherButton } from '../src/screens/teacher/teacherUi';
 import { ApiError } from '../src/services/api/apiClient';
 
+jest.mock('../src/services/teacher/homeService', () => ({
+  homeService: {
+    getHome: jest.fn().mockResolvedValue({
+      teacher: { id: 'teacher', fullName: 'Teacher One' },
+      schoolDate: '2026-10-14',
+      timezone: 'Asia/Karachi',
+      hero: {
+        state: 'no_periods',
+        greeting: 'Good morning',
+        periodCount: 0,
+        currentOrNextPeriod: null,
+      },
+      primaryAction: null,
+    }),
+  },
+}));
 jest.mock('../src/services/teacher/teacherService', () => ({
   teacherService: { getAssignedClasses: jest.fn(), getRoster: jest.fn() },
 }));
@@ -175,11 +191,11 @@ afterEach(async () => {
   });
 });
 
-test('Teacher login loads assignments on Home and exposes five honest primary destinations', async () => {
+test('Teacher login projects Home and preserves five primary destinations', async () => {
   const tree = await mount(workspace());
   expect(service.getAssignedClasses).toHaveBeenCalledWith('token');
   expect(contents(tree)).toContain('Teacher One');
-  expect(contents(tree)).toContain('current assignment');
+  expect(contents(tree)).toContain('all caught up');
   expect(
     tree.root
       .findAll(node => typeof node.props.onPress === 'function')
@@ -205,11 +221,12 @@ test('Teacher login loads assignments on Home and exposes five honest primary de
     expect(contents(tree)).not.toContain(fake);
 });
 
-test('initial loading never claims a zero assignment summary', async () => {
+test('Classes initial loading never claims a zero assignment summary', async () => {
   service.getAssignedClasses.mockReturnValue(
     deferred<TeacherAssignment[]>().promise,
   );
   const tree = await mount(workspace());
+  await tab(tree, 'Classes');
   expect(contents(tree)).toContain('Loading assigned classes');
   expect(contents(tree)).not.toContain('current assignment');
 });
@@ -245,10 +262,10 @@ test('selected tuple survives tab changes and a roster return focus refresh', as
       .find(node => node.props.accessibilityLabel === 'Class 8 / A / Physics')!;
   await act(async () => {
     row().props.onPress();
-    mockFocus[0].blur();
+    mockFocus[mockFocus.length - 1].blur();
   });
   await act(async () => {
-    mockFocus[0].focus();
+    mockFocus[mockFocus.length - 1].focus();
   });
   expect(row().props.accessibilityState.selected).toBe(true);
   await tab(tree, 'Home');
@@ -297,16 +314,16 @@ test('blur invalidates outstanding Classes responses and failures', async () => 
   service.getAssignedClasses.mockReturnValueOnce(pending.promise);
   const tree = await mount(workspace());
   await act(async () => {
-    mockFocus[0].blur();
+    mockFocus[mockFocus.length - 1].blur();
   });
   await act(async () => {
     pending.reject(new Error('obsolete failure'));
   });
   expect(contents(tree)).not.toContain('obsolete failure');
   await act(async () => {
-    mockFocus[0].focus();
+    mockFocus[mockFocus.length - 1].focus();
   });
-  expect(contents(tree)).toContain('current assignment');
+  expect(contents(tree)).toContain('all caught up');
 });
 
 test('Roster independently loads exact tuple, renders context and minimal learner identity', async () => {
@@ -380,8 +397,8 @@ test('Roster search survives focus refresh and latest response wins', async () =
     tree.root.findByType(TextInput).props.onChangeText('001');
   });
   await act(async () => {
-    mockFocus[0].blur();
-    mockFocus[0].focus();
+    mockFocus[mockFocus.length - 1].blur();
+    mockFocus[mockFocus.length - 1].focus();
   });
   expect(tree.root.findByType(TextInput).props.value).toBe('001');
   const first =
