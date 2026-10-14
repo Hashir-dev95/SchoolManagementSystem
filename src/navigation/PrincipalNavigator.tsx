@@ -1,4 +1,5 @@
 ﻿import React from 'react';
+import TeacherAssignmentAdminScreen from '../screens/admin/TeacherAssignmentAdminScreen';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import type { ApprovalRequest } from '../services/principal/principalService';
@@ -12,6 +13,7 @@ import PrincipalSafetyOverviewScreen from '../screens/principal/PrincipalSafetyO
 import PrincipalSafetyDetailScreen from '../screens/principal/PrincipalSafetyDetailScreen';
 
 export type PrincipalStackParamList = {
+  AssignTeacher: {teacherId?: string} | undefined;
   PrincipalWorkspace: undefined;
   ApprovalDetail: { request: ApprovalRequest };
   NoticeDetail: { noticeId: string };
@@ -44,6 +46,7 @@ export default function PrincipalNavigator() {
         name="SafetyDetail"
         component={PrincipalSafetyDetailScreen}
       />
+      <Stack.Screen name="AssignTeacher" component={TeacherAssignmentAdminScreen} options={{headerShown:false}} />
     </Stack.Navigator>
   );
 }

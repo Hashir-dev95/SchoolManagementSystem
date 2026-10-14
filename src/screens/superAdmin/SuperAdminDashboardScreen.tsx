@@ -571,6 +571,7 @@ const SuperAdminDashboardScreen = () => {
         <>
             <TeacherProvisioningCard
               onCreate={() => navigation.navigate('CreateTeacher')}
+              onAssign={() => navigation.navigate('AssignTeacher')}
             />
           {hasPermission(user?.role, PERMISSIONS.PRINCIPALS_MANAGE) && (
             <View style={styles.section}>

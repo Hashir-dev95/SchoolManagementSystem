@@ -287,3 +287,11 @@ test('no active branches prevents submission', async () => {
   expect(text(tree)).toContain('No active branches');
   expect(button(tree, 'Create Teacher account').props.disabled).toBe(true);
 });
+
+test('confirmed Teacher account creation hands off to assignment with the created Teacher ID', async () => {
+  const tree = await render(); await fill(tree);
+  await act(async () => button(tree, 'Create Teacher account').props.onPress());
+  expect(text(tree)).toContain('still requires class/section/subject assignment');
+  await act(async () => button(tree, 'Assign Teacher').props.onPress());
+  expect(mockNavigate).toHaveBeenCalledWith('AssignTeacher', {teacherId: 'teacher'});
+});

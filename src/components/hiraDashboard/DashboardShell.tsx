@@ -15,6 +15,7 @@ interface DashboardShellProps {
   safeArea?: boolean;
   refreshing?: boolean;
   onRefresh?: () => void;
+  keyboardShouldPersistTaps?: 'always' | 'never' | 'handled';
 }
 
 export function DashboardShell({
@@ -22,12 +23,14 @@ export function DashboardShell({
   safeArea = true,
   refreshing = false,
   onRefresh,
+  keyboardShouldPersistTaps = 'never',
 }: DashboardShellProps) {
   const scroll = (
     <ScrollView
       style={dashboardShellStyles.scroll}
       contentContainerStyle={dashboardShellStyles.content}
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps={keyboardShouldPersistTaps}
       refreshControl={
         onRefresh ? (
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />

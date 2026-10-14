@@ -343,6 +343,7 @@ test('Principal navigator retains one stack with unique existing screens and no 
     'AssignTask',
     'SafetyOverview',
     'SafetyDetail',
+    'AssignTeacher',
   ]);
   expect(new Set(names).size).toBe(names.length);
   expect(contents(tree)).not.toContain('NavigationContainer');

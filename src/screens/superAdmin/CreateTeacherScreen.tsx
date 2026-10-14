@@ -1,6 +1,8 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import type {SuperAdminStackParamList} from '../../navigation/SuperAdminNavigator';
 import {
   Button,
   Card,
@@ -22,6 +24,8 @@ const passwordBytes = (value: string) =>
   }, 0);
 export default function CreateTeacherScreen() {
   const { user, accessToken } = useAuth();
+  const navigation = useNavigation<NativeStackNavigationProp<SuperAdminStackParamList>>();
+  const [createdTeacherId, setCreatedTeacherId] = useState('');
   const allowed =
     user?.role === 'super_admin' &&
     hasPermission(user.role, PERMISSIONS.TEACHERS_CREATE);
@@ -103,6 +107,7 @@ export default function CreateTeacherScreen() {
         response.data.branchId !== branchId
       )
         throw new Error('Account creation was not confirmed.');
+      setCreatedTeacherId(response.data.id);
       setSuccess(true);
       setForm(initial);
     } catch (e) {
@@ -138,6 +143,11 @@ export default function CreateTeacherScreen() {
             academic modules become available. Assignment administration is
             managed separately by an authorized school administrator.
           </Text>
+          <Button
+            title="Assign Teacher"
+            disabled={!hasPermission(user?.role, PERMISSIONS.TEACHER_ASSIGNMENTS_MANAGE)}
+            onPress={() => navigation.navigate('AssignTeacher', {teacherId: createdTeacherId})}
+          />
           <Button
             title="Create another Teacher"
             onPress={() => {

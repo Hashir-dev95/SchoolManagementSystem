@@ -1,4 +1,5 @@
 import React from 'react';
+import TeacherAssignmentAdminScreen from '../screens/admin/TeacherAssignmentAdminScreen';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import SuperAdminDashboardScreen from '../screens/superAdmin/SuperAdminDashboardScreen';
 import SuperAdminBranchDetailsScreen from '../screens/superAdmin/SuperAdminBranchDetailsScreen';
@@ -6,6 +7,7 @@ import CreatePrincipalScreen from '../screens/superAdmin/CreatePrincipalScreen';
 import CreateTeacherScreen from '../screens/superAdmin/CreateTeacherScreen';
 import SuperAdminSettingsScreen from '../screens/superAdmin/SuperAdminSettingsScreen';
 export type SuperAdminStackParamList = {
+  AssignTeacher: {teacherId?: string} | undefined;
   SuperAdminDashboard: undefined;
   SuperAdminSettings: undefined;
   CreatePrincipal: undefined;
@@ -61,6 +63,7 @@ const SuperAdminNavigator = () => {
           headerTitleStyle: {fontFamily: 'Nunito-Bold', fontSize: 18},
         }}
       />
+      <Stack.Screen name="AssignTeacher" component={TeacherAssignmentAdminScreen} options={{headerShown:false}} />
     </Stack.Navigator>
 
   );

@@ -6,8 +6,10 @@ import { hasPermission, PERMISSIONS } from '../../constants/permissions';
 import { colors, typography } from '../../theme/hiraDashboard';
 export function TeacherProvisioningCard({
   onCreate,
+  onAssign,
 }: {
   onCreate: () => void;
+  onAssign?: () => void;
 }) {
   const { user } = useAuth();
   if (
@@ -22,9 +24,11 @@ export function TeacherProvisioningCard({
         separately.
       </Text>
       <Button title="Create Teacher" onPress={onCreate} />
+      {onAssign && hasPermission(user.role, PERMISSIONS.TEACHER_ASSIGNMENTS_MANAGE) ? <Button title="Assign Teacher" variant="secondary" onPress={onAssign} style={styles.action} /> : null}
     </SectionCard>
   );
 }
 const styles = StyleSheet.create({
+  action: {marginTop: 12},
   copy: { ...typography.body, color: colors.muted, marginBottom: 12 },
 });

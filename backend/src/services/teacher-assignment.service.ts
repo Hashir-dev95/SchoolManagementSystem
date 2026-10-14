@@ -9,7 +9,7 @@ import {dateField, objectBody, objectIdField, RequestContractError} from '../uti
 import {currentAcademicActor, requireActiveAcademicBranch} from './teacher-scope.service';
 import type {JwtPayload} from './jwt.service';
 
-const provisioningActor = async (identity: JwtPayload | undefined) => {
+export const provisioningActor = async (identity: JwtPayload | undefined) => {
   const actor = await currentAcademicActor(identity);
   if (!['principal', 'super_admin'].includes(actor.role) ||
     !ROLE_PERMISSIONS[actor.role].includes(PERMISSIONS.TEACHER_ASSIGNMENTS_MANAGE)) {

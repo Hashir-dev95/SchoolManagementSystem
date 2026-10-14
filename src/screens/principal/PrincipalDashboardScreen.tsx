@@ -17,12 +17,14 @@ import {
 } from '../../components/hiraDashboard/DashboardShell';
 import { usePrincipalDashboardData } from '../../hooks/usePrincipalDashboardData';
 import { colors, typography } from '../../theme/hiraDashboard';
+import {TeacherAssignmentEntry} from '../admin/TeacherAssignmentEntry';
 
 interface PrincipalDashboardScreenProps {
   onOpenApprovals: () => void;
   onOpenInbox: () => void;
   onOpenTasks: () => void;
   onOpenSafety: () => void;
+  onAssignTeacher?: () => void;
 }
 
 export default function PrincipalDashboardScreen({
@@ -30,6 +32,7 @@ export default function PrincipalDashboardScreen({
   onOpenInbox,
   onOpenTasks,
   onOpenSafety,
+  onAssignTeacher,
 }: PrincipalDashboardScreenProps) {
   const { data, loading, error, reload } = usePrincipalDashboardData();
   const today = new Date().toLocaleDateString('en-PK', {
@@ -55,6 +58,7 @@ export default function PrincipalDashboardScreen({
           onPress={onOpenSafety}
         />
       </SectionCard>
+      {onAssignTeacher ? <TeacherAssignmentEntry onAssign={onAssignTeacher} /> : null}
       <SectionCard title="Tasks">
         <Text style={styles.note}>
           {data?.tasks
