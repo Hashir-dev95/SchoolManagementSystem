@@ -89,9 +89,11 @@ const studentSchema = new Schema<IStudent>(
   },
 );
 
+studentSchema.index({ branchId: 1, admissionNumber: 1 }, { unique: true });
+
 studentSchema.index(
-  {branchId: 1, admissionNumber: 1},
-  {unique: true},
+  { branchId: 1, classId: 1, sectionId: 1, isActive: 1 },
+  { name: 'active_enrollment_roster' },
 );
 
 const Student = model<IStudent>('Student', studentSchema);
