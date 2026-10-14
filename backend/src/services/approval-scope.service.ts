@@ -1,3 +1,4 @@
+import {AttendanceCorrection, StudentLeave} from '../models/attendanceAmendment';
 import {HydratedDocument, Types} from 'mongoose';
 import {IApprovalRequest} from '../models/approvalRequest';
 import User from '../models/user';
@@ -26,7 +27,11 @@ export const assertApprovalReferences = async (request: IApprovalRequest): Promi
   }
   // Explicit category-to-model allowlist; never resolve arbitrary model names.
   let scoped: unknown = false;
-  if (request.entityType === 'student' && ['leave', 'certificate'].includes(request.approvalType)) {
+  if (request.entityType === 'attendance_correction' && request.approvalType === 'attendance_correction') {
+    scoped = await AttendanceCorrection.exists({}).where('_id').equals(request.entityId).where('branchId').equals(branchId).where('approvalRequestId').equals((request as unknown as {_id:unknown})._id);
+  } else if (request.entityType === 'student_leave' && request.approvalType === 'leave') {
+    scoped = await StudentLeave.exists({}).where('_id').equals(request.entityId).where('branchId').equals(branchId).where('approvalRequestId').equals((request as unknown as {_id:unknown})._id);
+  } else if (request.entityType === 'student' && ['leave', 'certificate'].includes(request.approvalType)) {
     scoped = await scopedStudent(request.entityId, branchId);
   } else if (request.entityType === 'user' && ['leave', 'payroll'].includes(request.approvalType)) {
     scoped = await User.exists({_id: request.entityId}).where('branchId').equals(branchId);

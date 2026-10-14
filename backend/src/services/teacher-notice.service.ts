@@ -436,7 +436,7 @@ export const getTeacherInbox = async (identity: Identity, offset = 0) => {
   const query = inboxQuery(scope),
     school = schoolQuery(scope.branchId);
   const pipeline = [
-    { $match: TeacherNotice.find(query).cast(TeacherNotice) },
+    { $match: TeacherNotice.find(query).cast() },
     { $project: { _id: 1, kind: { $literal: 'class_notice' }, createdAt: 1 } },
     {
       $unionWith: {

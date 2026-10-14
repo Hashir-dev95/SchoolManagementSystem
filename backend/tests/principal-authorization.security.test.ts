@@ -312,7 +312,7 @@ test('dashboard counts same-branch pending approvals inside authority and matche
 const assertNonDisclosingApprovals = (dashboard: Awaited<ReturnType<typeof http>>) => {
   assert.equal(dashboard.status, 200);
   assert.deepEqual(dashboard.data.data.pendingApprovals, {total: 0, byType: {
-    leave: 0, refund: 0, discount: 0, result: 0, paper: 0, purchase: 0, payroll: 0, certificate: 0,
+    attendance_correction: 0, leave: 0, refund: 0, discount: 0, result: 0, paper: 0, purchase: 0, payroll: 0, certificate: 0,
   }});
   // Other existing dashboard cards remain available under dashboard permission.
   assert.equal(dashboard.data.data.branch.id, String(branchA));

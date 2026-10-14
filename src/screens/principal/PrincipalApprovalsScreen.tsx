@@ -20,9 +20,16 @@ interface PrincipalApprovalsScreenProps {
   onReview: (request: ApprovalRequest) => void;
 }
 
+const entityLabel = (type: string) =>
+  type === 'attendance_correction'
+    ? 'Attendance correction'
+    : type === 'student_leave'
+    ? 'Student leave'
+    : type;
 const approvalTitle = (request: ApprovalRequest): string => {
   const typeNames: Record<string, string> = {
     leave: 'Leave request',
+    attendance_correction: 'Attendance correction',
     refund: 'Refund request',
     discount: 'Fee concession',
     result: 'Results',
@@ -130,7 +137,18 @@ export default function PrincipalApprovalsScreen({
       <SectionCard title="Approval inbox">
         {selectedRequestId ? (
           <Text style={styles.muted}>
-            Selected request: {selectedRequestId}
+            Selected request:{' '}
+            {(() => {
+              const selected = requests.find(
+                item => item._id === selectedRequestId,
+              );
+              return selected &&
+                ['attendance_correction', 'student_leave'].includes(
+                  selected.entityType,
+                )
+                ? approvalTitle(selected)
+                : selectedRequestId;
+            })()}
             {!loading &&
             !error &&
             !requests.some(request => request._id === selectedRequestId)
@@ -204,7 +222,7 @@ export default function PrincipalApprovalsScreen({
                 <Text style={styles.muted} numberOfLines={2}>
                   {[
                     formatDate(request.createdAt),
-                    request.entityType,
+                    entityLabel(request.entityType),
                     request.amount !== undefined
                       ? `Amount ${request.amount.toLocaleString('en-PK')}`
                       : undefined,

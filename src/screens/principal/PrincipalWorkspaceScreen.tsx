@@ -71,7 +71,8 @@ export default function PrincipalWorkspaceScreen() {
 
   const openApproval = (request: ApprovalRequest) => {
     setDrawerOpen(false);
-    navigation.navigate('ApprovalDetail', { request });
+    if (['attendance_correction','student_leave'].includes(request.entityType)) navigation.navigate('AttendanceReview',{approvalId:request._id});
+    else navigation.navigate('ApprovalDetail', { request });
   };
 
   const openNotice = (noticeId: string) => {

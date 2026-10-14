@@ -1,3 +1,4 @@
+import {ensureAttendanceAmendmentIndexes} from './models/attendanceAmendment';
 import 'dotenv/config';
 import mongoose from 'mongoose';
 
@@ -19,6 +20,7 @@ const PORT = process.env.PORT || 5000;
 const startServer = async (): Promise<void> => {
   await connectDatabase();
   await ensureTeacherAccountIndex();
+  await ensureAttendanceAmendmentIndexes();
   await ensureAssignmentAdminIndexes();
   // These new domain invariants must exist before accepting traffic, including
   // deployments with autoIndex disabled. Only the documented legacy issue index is replaced.

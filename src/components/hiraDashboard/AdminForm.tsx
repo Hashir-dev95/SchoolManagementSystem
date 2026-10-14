@@ -23,6 +23,7 @@ export function AdminDialog({
   confirmTitle,
   busy = false,
   danger = false,
+  busyLabel = 'Saving assignment',
 }: {
   visible: boolean;
   title: string;
@@ -32,6 +33,7 @@ export function AdminDialog({
   confirmTitle?: string;
   busy?: boolean;
   danger?: boolean;
+  busyLabel?: string;
 }) {
   return (
     <Modal
@@ -60,7 +62,7 @@ export function AdminDialog({
             </ScrollView>
             {busy ? (
               <ActivityIndicator
-                accessibilityLabel="Saving assignment"
+                accessibilityLabel={busyLabel}
                 color={colors.primary}
               />
             ) : null}

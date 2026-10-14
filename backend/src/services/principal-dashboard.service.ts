@@ -60,6 +60,7 @@ export interface PrincipalDashboardData {
 }
 
 const createEmptyApprovalCounts = (): Record<ApprovalType, number> => ({
+  [APPROVAL_TYPES.ATTENDANCE_CORRECTION]: 0,
   [APPROVAL_TYPES.LEAVE]: 0,
   [APPROVAL_TYPES.REFUND]: 0,
   [APPROVAL_TYPES.DISCOUNT]: 0,

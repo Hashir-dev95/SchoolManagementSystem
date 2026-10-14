@@ -483,3 +483,30 @@ test('editor Retry clears a prior read error after successful reload', async () 
   expect(text(tree)).toContain('Learner One');
   expect(text(tree)).not.toContain('Initial read failed');
 });
+
+test('submitted student review opens correction history without making attendance editable', async () => {
+  service.open.mockResolvedValue({
+    ...detail,
+    state: 'submitted',
+    canSave: false,
+    students: detail.students.map(s => ({ ...s, status: 'absent' as const })),
+  });
+  const tree = await mount(editor());
+  await press(tree, 'Review attendance for Learner One');
+  expect(navigation.navigate).toHaveBeenCalledWith('TeacherAttendanceReview', {
+    sessionId: 'session',
+    studentId: 's1',
+  });
+  expect(
+    tree.root.findAllByType(Button).some(b => b.props.title === 'Save draft'),
+  ).toBe(false);
+});
+test('open attendance offers leave flow while preserving the pre-mark editor', async () => {
+  const tree = await mount(editor());
+  await press(tree, 'Student leave for Learner One');
+  expect(navigation.navigate).toHaveBeenCalledWith('TeacherAttendanceReview', {
+    sessionId: 'session',
+    studentId: 's1',
+  });
+  expect(button(tree, 'Save draft')).toBeTruthy();
+});

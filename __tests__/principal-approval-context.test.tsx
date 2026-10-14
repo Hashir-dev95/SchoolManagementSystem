@@ -336,6 +336,7 @@ test('Principal navigator retains one stack with unique existing screens and no 
   );
   expect(names).toEqual([
     'PrincipalWorkspace',
+    'AttendanceReview',
     'ApprovalDetail',
     'NoticeDetail',
     'Tasks',
@@ -347,4 +348,27 @@ test('Principal navigator retains one stack with unique existing screens and no 
   ]);
   expect(new Set(names).size).toBe(names.length);
   expect(contents(tree)).not.toContain('NavigationContainer');
+});
+
+test('typed corrections use Principal attendance review from the existing approvals workspace', async () => {
+  service.getPendingApprovals.mockResolvedValue({
+    data: {
+      requests: [
+        {
+          ...leave,
+          _id: 'correction-1',
+          entityType: 'attendance_correction',
+          approvalType: 'attendance_correction',
+        },
+      ],
+      total: 1,
+    },
+    message: '',
+  });
+  const tree = await mount();
+  await press(tree, 'Open approvals');
+  await press(tree, 'Review');
+  expect(mockNavigation.navigate).toHaveBeenCalledWith('AttendanceReview', {
+    approvalId: 'correction-1',
+  });
 });

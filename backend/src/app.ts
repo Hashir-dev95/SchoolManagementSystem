@@ -1,3 +1,4 @@
+import attendanceAmendmentRoutes from './routes/attendance-amendment.routes';
 import express, {ErrorRequestHandler} from 'express';
 import cors from 'cors';
 import branchRoutes from './routes/branch.routes';
@@ -56,6 +57,7 @@ app.use('/api/automation', automationRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/api/approval-requests', approvalRequestRoutes);
+app.use('/api', attendanceAmendmentRoutes);
 app.use('/api/teacher/home', teacherHomeRoutes);
 app.use('/api/teacher/timetable', teacherTimetableRouter);
 app.use('/api/teacher/attendance', teacherAttendanceRoutes);

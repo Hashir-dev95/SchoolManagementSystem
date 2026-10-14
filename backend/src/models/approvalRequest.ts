@@ -1,7 +1,8 @@
-import {Schema, model, Types} from 'mongoose';
+import { Schema, model, Types } from 'mongoose';
 
 export const APPROVAL_TYPES = {
   LEAVE: 'leave',
+  ATTENDANCE_CORRECTION: 'attendance_correction',
   REFUND: 'refund',
   DISCOUNT: 'discount',
   RESULT: 'result',

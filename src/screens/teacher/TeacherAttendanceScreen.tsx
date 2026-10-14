@@ -327,6 +327,22 @@ export default function TeacherAttendanceScreen({
                   {marks.find(m => m.studentId === student.studentId)?.status ??
                     'Unmarked'}
                 </Text>
+                {!blocked ? (
+                  <Button
+                    title={`${
+                      data.state === 'submitted'
+                        ? 'Review attendance'
+                        : 'Student leave'
+                    } for ${student.fullName}`}
+                    variant="secondary"
+                    onPress={() =>
+                      navigation.navigate('TeacherAttendanceReview', {
+                        sessionId: data.sessionId,
+                        studentId: student.studentId,
+                      })
+                    }
+                  />
+                ) : null}
                 {data.canSave && !blocked ? (
                   <View>
                     {[null, ...statuses].map(status => (

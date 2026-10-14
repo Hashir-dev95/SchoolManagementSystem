@@ -1,3 +1,7 @@
+import {
+  effectiveAttendance,
+  stageSubmittedAbsenceIntents,
+} from './attendance-effective.service';
 import { createHash } from 'node:crypto';
 import mongoose, { type ClientSession } from 'mongoose';
 import Student from '../models/student';
@@ -171,6 +175,46 @@ const detail = async (
     ? query.session(session)
     : query.read('primary'));
   const marks = new Map(records.map(r => [String(r.studentId), r.status]));
+  let rows = current.rows;
+  const effective =
+    attendance.state === 'submitted'
+      ? await effectiveAttendance(branchId, String(attendance._id), session)
+      : null;
+  if (attendance.state === 'submitted') {
+    const students = await Student.find()
+      .where('_id')
+      .in(attendance.rosterStudentIds)
+      .where('branchId')
+      .equals(branchId)
+      .select('_id userId admissionNumber')
+      .lean();
+    const users = await User.find({ role: 'student' })
+      .where('_id')
+      .in(students.map(s => s.userId))
+      .where('branchId')
+      .equals(branchId)
+      .select('_id fullName')
+      .lean();
+    rows = attendance.rosterStudentIds.flatMap(id => {
+      const s = students.find(
+        candidate => String(candidate._id) === String(id),
+      );
+      if (!s) return [];
+      const u = users.find(
+        candidate => String(candidate._id) === String(s.userId),
+      );
+      return u
+        ? [
+            {
+              studentId: String(s._id),
+              userId: String(s.userId),
+              fullName: u.fullName,
+              admissionNumber: s.admissionNumber,
+            },
+          ]
+        : [];
+    });
+  }
   return {
     sessionId: String(attendance._id),
     period,
@@ -182,11 +226,18 @@ const detail = async (
     canSave:
       attendance.state !== 'submitted' &&
       ROLE_PERMISSIONS.teacher.includes(PERMISSIONS.TEACHER_ATTENDANCE_MANAGE),
-    students: current.rows.map(s => ({
+    students: rows.map(s => ({
       studentId: s.studentId,
       fullName: s.fullName,
       admissionNumber: s.admissionNumber,
-      status: marks.get(s.studentId) ?? null,
+      status:
+        effective?.get(s.studentId)?.status ?? marks.get(s.studentId) ?? null,
+      ...(effective?.get(s.studentId)
+        ? {
+            originalStatus: effective.get(s.studentId)!.originalStatus,
+            effectiveRevision: effective.get(s.studentId)!.effectiveRevision,
+          }
+        : {}),
     })),
   };
 };
@@ -508,6 +559,8 @@ export const writeTeacherAttendance = async (
         ],
         { session },
       );
+      if (action === 'submit')
+        await stageSubmittedAbsenceIntents(branchId, id, session);
       if ((await roster(period, branchId)).version !== current.version)
         throw conflict('Roster changed. Reload and review.');
       requirePermission(PERMISSIONS.TEACHER_ATTENDANCE_VIEW);
