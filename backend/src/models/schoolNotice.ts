@@ -30,10 +30,13 @@ export interface ISchoolNotice extends Document {
   expiresAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  // Explicit opt-in; legacy notices have no implied Teacher audience.
+  audienceRoles?: ('teacher')[];
 }
 
 const schoolNoticeSchema = new Schema<ISchoolNotice>(
   {
+    audienceRoles: {type: [String], enum: ['teacher'], default: undefined},
     branchId: {
       type: Schema.Types.ObjectId,
       ref: 'Branch',
@@ -102,6 +105,13 @@ schoolNoticeSchema.index({
 schoolNoticeSchema.index({
   branchId: 1,
   expiresAt: 1,
+});
+
+schoolNoticeSchema.index({
+  branchId: 1,
+  audienceRoles: 1,
+  status: 1,
+  createdAt: -1,
 });
 
 const SchoolNotice = model<ISchoolNotice>(

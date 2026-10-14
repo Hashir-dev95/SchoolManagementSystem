@@ -5,12 +5,14 @@ import type { Permission } from './permissions';
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   // Principal safety grants do not broaden the existing administrative role.
   [USER_ROLES.SUPER_ADMIN]: Object.values(PERMISSIONS).filter(permission =>
+    !permission.startsWith('teacher.notices.') && !permission.startsWith('teacher.work.') &&
     permission !== PERMISSIONS.PRINCIPAL_SAFETY_VIEW && permission !== PERMISSIONS.PRINCIPAL_SAFETY_MANAGE &&
     permission !== PERMISSIONS.TEACHER_CLASSES_VIEW && permission !== PERMISSIONS.TEACHER_TIMETABLE_VIEW &&
     permission !== PERMISSIONS.TEACHER_ATTENDANCE_VIEW && permission !== PERMISSIONS.TEACHER_ATTENDANCE_MANAGE &&
     permission !== PERMISSIONS.TEACHER_TIMETABLE_ACKNOWLEDGE && permission !== PERMISSIONS.TEACHER_TIMETABLE_ISSUE),
 
   [USER_ROLES.PRINCIPAL]: [
+    PERMISSIONS.ASSIGNED_WORK_MANAGE,
     PERMISSIONS.TIMETABLE_MANAGE,
     PERMISSIONS.TEACHER_ASSIGNMENTS_MANAGE,
     PERMISSIONS.STUDENTS_VIEW,
@@ -42,6 +44,10 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
 
   [USER_ROLES.TEACHER]: [
+    PERMISSIONS.TEACHER_NOTICES_VIEW,
+    PERMISSIONS.TEACHER_NOTICES_MANAGE,
+    PERMISSIONS.TEACHER_WORK_VIEW,
+    PERMISSIONS.TEACHER_WORK_COMPLETE,
     PERMISSIONS.TEACHER_ATTENDANCE_VIEW,
     PERMISSIONS.TEACHER_ATTENDANCE_MANAGE,
     PERMISSIONS.TEACHER_TIMETABLE_VIEW,

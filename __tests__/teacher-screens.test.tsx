@@ -28,6 +28,16 @@ jest.mock('../src/context/AuthContext', () => ({
 jest.mock('react-native-safe-area-context', () => ({
   SafeAreaView: 'SafeAreaView',
 }));
+jest.mock('../src/services/teacher/communicationService', () => ({
+  communicationService: {
+    inbox: jest
+      .fn()
+      .mockResolvedValue({ total: 0, items: [], nextOffset: null }),
+    tasks: jest
+      .fn()
+      .mockResolvedValue({ total: 0, items: [], nextOffset: null }),
+  },
+}));
 const mockFocus: { focus: () => void; blur: () => void }[] = [];
 jest.mock('@react-navigation/native', () => {
   const { useEffect } = jest.requireActual('react');
@@ -177,9 +187,11 @@ test('Teacher login loads assignments on Home and exposes five honest primary de
       .map(node => node.props.accessibilityLabel),
   ).toEqual(['Home', 'Classes', 'Tasks', 'Inbox', 'Me']);
   await tab(tree, 'Tasks');
-  expect(contents(tree)).toContain('operational task source is not available');
+  expect(contents(tree)).toContain('No current assigned work.');
   await tab(tree, 'Inbox');
-  expect(contents(tree)).toContain('Messages are not available yet');
+  expect(contents(tree)).toContain(
+    'Private questions and replies are not available yet.',
+  );
   await tab(tree, 'Me');
   expect(contents(tree)).toContain('teacher@test.invalid');
   expect(contents(tree)).toContain('Log out');

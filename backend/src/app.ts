@@ -14,6 +14,7 @@ import privilegedRequestRoutes from './routes/privileged-request.routes';
 import automationRoutes from './routes/automation.routes';
 import sessionRoutes from './routes/session.routes';
 import teacherRoutes from './routes/teacher.routes';
+import {teacherCommunicationRouter, assignedWorkManagementRouter} from './routes/teacher-communication.routes';
 import teacherAttendanceRoutes from './routes/teacher-attendance.routes';
 import {teacherTimetableRouter, timetableAdminRouter} from './routes/timetable.routes';
 import teacherAssignmentRoutes from './routes/teacher-assignment.routes';
@@ -57,6 +58,8 @@ app.use('/api/approval-requests', approvalRequestRoutes);
 app.use('/api/teacher/timetable', teacherTimetableRouter);
 app.use('/api/teacher/attendance', teacherAttendanceRoutes);
 app.use('/api/timetables', timetableAdminRouter);
+app.use('/api/teacher', teacherCommunicationRouter);
+app.use('/api/assigned-work', assignedWorkManagementRouter);
 app.use('/api/teacher', teacherRoutes);
 app.use('/api/teacher-assignments', teacherAssignmentRoutes);
 
@@ -68,6 +71,7 @@ const teacherParseError: ErrorRequestHandler = (error, _req, res, next) => {
   next(error);
 };
 app.use('/api/teacher', teacherParseError);
+app.use('/api/assigned-work', teacherParseError);
 app.use('/api/timetables', teacherParseError);
 app.use('/api/teacher-assignments', teacherParseError);
 

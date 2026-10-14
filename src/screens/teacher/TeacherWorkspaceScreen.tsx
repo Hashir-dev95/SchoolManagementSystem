@@ -7,6 +7,8 @@ import { useAuth } from '../../context/AuthContext';
 import { hasPermission, PERMISSIONS } from '../../constants/permissions';
 import { teacherService } from '../../services/teacher/teacherService';
 import TeacherClassesScreen from './TeacherClassesScreen';
+import TeacherInboxScreen from './TeacherInboxScreen';
+import TeacherTasksScreen from './TeacherTasksScreen';
 import { useTeacherResource } from './useTeacherResource';
 import { LoadState, TeacherButton, styles } from './teacherUi';
 
@@ -24,6 +26,7 @@ export default function TeacherWorkspaceScreen({
 }: NativeStackScreenProps<TeacherStackParamList, 'TeacherWorkspace'>) {
   const { user, accessToken, logout } = useAuth();
   const [destination, setDestination] = useState<Destination>('Home');
+  const [visited, setVisited] = useState({ Inbox: false, Tasks: false });
   const canViewClasses = hasPermission(
     user?.role,
     PERMISSIONS.TEACHER_CLASSES_VIEW,
@@ -49,7 +52,27 @@ export default function TeacherWorkspaceScreen({
           <Text style={styles.body}>Class access is unavailable.</Text>
         )}
       </View>
-      {destination !== 'Classes' ? (
+      {visited.Inbox ? (
+        <View style={[styles.page, destination !== 'Inbox' && styles.hidden]}>
+          <TeacherInboxScreen
+            active={destination === 'Inbox'}
+            onOpen={noticeId =>
+              navigation.navigate('TeacherNotice', { noticeId })
+            }
+          />
+        </View>
+      ) : null}
+      {visited.Tasks ? (
+        <View style={[styles.page, destination !== 'Tasks' && styles.hidden]}>
+          <TeacherTasksScreen
+            active={destination === 'Tasks'}
+            onOpen={workId => navigation.navigate('TeacherWork', { workId })}
+          />
+        </View>
+      ) : null}
+      {destination !== 'Classes' &&
+      destination !== 'Inbox' &&
+      destination !== 'Tasks' ? (
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.title}>{destination}</Text>
           {destination === 'Home' ? (
@@ -89,15 +112,6 @@ export default function TeacherWorkspaceScreen({
                 />
               ) : null}
             </>
-          ) : destination === 'Tasks' ? (
-            <Text style={styles.body}>
-              Teacher tasks are coming later. An operational task source is not
-              available yet.
-            </Text>
-          ) : destination === 'Inbox' ? (
-            <Text style={styles.body}>
-              Teacher inbox is coming later. Messages are not available yet.
-            </Text>
           ) : (
             <>
               <Text style={styles.body}>{user?.fullName}</Text>
@@ -117,7 +131,11 @@ export default function TeacherWorkspaceScreen({
             accessibilityState={{ selected: destination === tab }}
             disabled={tab === 'Classes' && !canViewClasses}
             style={[styles.tab, destination === tab && styles.selected]}
-            onPress={() => setDestination(tab)}
+            onPress={() => {
+              if (tab === 'Inbox' || tab === 'Tasks')
+                setVisited(previous => ({ ...previous, [tab]: true }));
+              setDestination(tab);
+            }}
           >
             <Text style={styles.muted}>{tab}</Text>
           </Pressable>

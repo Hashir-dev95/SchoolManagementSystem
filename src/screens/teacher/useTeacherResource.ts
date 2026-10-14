@@ -7,6 +7,7 @@ import { ApiError } from '../../services/api/apiClient';
 export function useTeacherResource<T>(
   load: () => Promise<T>,
   unavailableMessage = 'This assigned class is unavailable or you no longer have access.',
+  enabled = true,
 ) {
   const generation = useRef(0);
   const [data, setData] = useState<T | null>(null);
@@ -37,11 +38,11 @@ export function useTeacherResource<T>(
   }, [load, unavailableMessage]);
   useFocusEffect(
     useCallback(() => {
-      refresh();
+      if (enabled) refresh();
       return () => {
         generation.current += 1;
       };
-    }, [refresh]),
+    }, [refresh, enabled]),
   );
   return { data, loading, error, refresh };
 }
