@@ -3,11 +3,13 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import SuperAdminDashboardScreen from '../screens/superAdmin/SuperAdminDashboardScreen';
 import SuperAdminBranchDetailsScreen from '../screens/superAdmin/SuperAdminBranchDetailsScreen';
 import CreatePrincipalScreen from '../screens/superAdmin/CreatePrincipalScreen';
+import CreateTeacherScreen from '../screens/superAdmin/CreateTeacherScreen';
 import SuperAdminSettingsScreen from '../screens/superAdmin/SuperAdminSettingsScreen';
 export type SuperAdminStackParamList = {
   SuperAdminDashboard: undefined;
   SuperAdminSettings: undefined;
   CreatePrincipal: undefined;
+  CreateTeacher: undefined;
   SuperAdminBranchDetails: { branchId: string };
 };
 
@@ -15,7 +17,10 @@ const Stack = createNativeStackNavigator<SuperAdminStackParamList>();
 
 const SuperAdminNavigator = () => {
   return (
-    <Stack.Navigator>
+    <Stack.Navigator initialRouteName="SuperAdminDashboard">
+      <Stack.Screen name="CreateTeacher" component={CreateTeacherScreen}
+        options={{title: 'Create Teacher', headerStyle: {backgroundColor: '#fbf9f4'},
+          headerTintColor: '#23595a', headerShadowVisible: false}} />
       <Stack.Screen
         name="SuperAdminDashboard"
         component={SuperAdminDashboardScreen}

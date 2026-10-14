@@ -28,6 +28,7 @@ import {
 } from '../../services/admin/adminService';
 import { SuperAdminStackParamList } from '../../navigation/SuperAdminNavigator';
 import {HiraHeader, StatusPill} from '../../components/ui/HiraUI';
+import { TeacherProvisioningCard } from './TeacherProvisioningCard';
 import { HeroBanner, ScreenHeading, StatCard as DashboardStatCard, StatGrid } from '../../components/hiraDashboard';
 import { cardShadow, colors as dashboardColors, typography as dashboardTypography } from '../../theme/hiraDashboard';
 const colors = {
@@ -568,6 +569,9 @@ const SuperAdminDashboardScreen = () => {
 
       {activeTab === 'administration' && (
         <>
+            <TeacherProvisioningCard
+              onCreate={() => navigation.navigate('CreateTeacher')}
+            />
           {hasPermission(user?.role, PERMISSIONS.PRINCIPALS_MANAGE) && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Principal administration</Text>

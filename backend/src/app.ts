@@ -75,6 +75,16 @@ app.use('/api/assigned-work', teacherParseError);
 app.use('/api/timetables', teacherParseError);
 app.use('/api/teacher-assignments', teacherParseError);
 
+// Credential parser errors must not echo submitted JSON or parser details.
+const teacherAccountParseError: ErrorRequestHandler = (error, _req, res, next) => {
+  if (error?.type === 'entity.parse.failed' || error?.type === 'entity.too.large') {
+    res.status(400).json({success: false, message: 'Invalid Teacher account request body'});
+    return;
+  }
+  next(error);
+};
+app.use('/api/admin/teachers', teacherAccountParseError);
+
 // Scope parser failures to Principal APIs; leave bootstrap and other API error
 // behavior unchanged. Never echo submitted JSON or the parser's stack/message.
 const principalParseError: ErrorRequestHandler = (error, _req, res, next) => {

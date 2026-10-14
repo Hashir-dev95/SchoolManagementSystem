@@ -212,6 +212,17 @@ interface BranchesResponse {
 }
 
 export const adminService = {
+  getTeacherBranches: (accessToken: string) =>
+    apiClient.request<{success: boolean; data: {id: string; name: string; code: string}[]}>(
+      '/admin/teachers/branches', {token: accessToken},
+    ),
+  createTeacher: (accessToken: string, payload: {fullName: string; email: string; password: string; branchId: string}) =>
+    apiClient.request<{success: boolean; message: string; data: {id: string; role: 'teacher'; branchId: string}}>(
+      '/admin/teachers', {method: 'POST', token: accessToken, body: {
+        fullName: payload.fullName, email: payload.email,
+        password: payload.password, branchId: payload.branchId,
+      }},
+    ),
   getDashboard: async (
     accessToken: string,
   ): Promise<SuperAdminDashboardResponse> => {

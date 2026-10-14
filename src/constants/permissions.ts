@@ -1,6 +1,7 @@
 import { USER_ROLES, UserRole } from './roles';
 
 export const PERMISSIONS = {
+  TEACHERS_CREATE: 'teachers.create',
   TEACHER_NOTICES_VIEW: 'teacher.notices.view',
   TEACHER_NOTICES_MANAGE: 'teacher.notices.manage',
   TEACHER_WORK_VIEW: 'teacher.work.view',
@@ -22,6 +23,7 @@ export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   [USER_ROLES.SUPER_ADMIN]: [
+    PERMISSIONS.TEACHERS_CREATE,
     PERMISSIONS.BRANCHES_VIEW,
     PERMISSIONS.PRINCIPALS_MANAGE,
     PERMISSIONS.PRIVILEGED_REQUESTS_MANAGE,

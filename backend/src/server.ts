@@ -11,11 +11,13 @@ import {ensureTeacherNoticeIndexes} from './models/teacherNotice';
 import {AssignedWork} from './models/assignedWork';
 import Student from './models/student';
 import SchoolNotice from './models/schoolNotice';
+import {ensureTeacherAccountIndex} from './services/teacher-provisioning.service';
 
 const PORT = process.env.PORT || 5000;
 
 const startServer = async (): Promise<void> => {
   await connectDatabase();
+  await ensureTeacherAccountIndex();
   // These new domain invariants must exist before accepting traffic, including
   // deployments with autoIndex disabled. Only the documented legacy issue index is replaced.
   await Promise.all([Subject.createIndexes(), TeacherAssignment.createIndexes(), ensureTimetableIndexes(), ensureAttendanceIndexes(), ensureTeacherNoticeIndexes(), AssignedWork.createIndexes(), Student.createIndexes(), SchoolNotice.createIndexes()]);
