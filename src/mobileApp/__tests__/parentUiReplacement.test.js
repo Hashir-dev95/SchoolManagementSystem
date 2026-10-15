@@ -497,6 +497,75 @@ describe('Parent UI replacement', () => {
     act(() => tree.unmount());
   });
 
+  test('drawer navigation opens Reports and then the selected report', async () => {
+    let tree;
+    await act(async () => {
+      tree = ReactTestRenderer.create(<MobileApp developmentPreview />);
+      await flush();
+    });
+    act(() => tree.root.findByProps({accessibilityLabel: 'Open left navigation'}).props.onPress());
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 250)); });
+    act(() => tree.root.findByProps({accessibilityLabel: 'Reports'}).props.onPress());
+    expect(visibleText(tree)).toContain('Reports');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 250)); });
+    act(() => tree.root.findByProps({accessibilityLabel: 'Open Academic Report'}).props.onPress());
+    expect(tree.root.findByProps({accessibilityLabel: 'Back to Reports'})).toBeDefined();
+    act(() => tree.unmount());
+  });
+
+  test('back after opening Parent Progress returns to the dashboard', async () => {
+    let back;
+    const subscription = jest.spyOn(BackHandler, 'addEventListener')
+      .mockImplementation((event, listener) => {
+        if (event === 'hardwareBackPress') back = listener;
+        return {remove: jest.fn()};
+      });
+    let tree;
+    await act(async () => {
+      tree = ReactTestRenderer.create(<MobileApp developmentPreview />);
+      await flush();
+    });
+    act(() => tree.root.findByProps({accessibilityLabel: 'Progress'}).props.onPress());
+    expect(tree.root.findByProps({accessibilityLabel: 'Back to Reports'})).toBeDefined();
+    act(() => expect(back()).toBe(true));
+    expect(tree.root.findByType(HiraHome)).toBeDefined();
+    act(() => tree.unmount());
+    subscription.mockRestore();
+  });
+
+  test('hardware back from a child report returns to their story then My children', async () => {
+    let back;
+    const subscription = jest.spyOn(BackHandler, 'addEventListener')
+      .mockImplementation((event, listener) => {
+        if (event === 'hardwareBackPress') back = listener;
+        return {remove: jest.fn()};
+      });
+    let tree;
+    await act(async () => {
+      tree = ReactTestRenderer.create(<MobileApp developmentPreview />);
+      await flush();
+    });
+    await act(async () => {
+      tree.root.findByType(HiraHome).props.onNavigate('My children');
+      await flush();
+    });
+    const ParentChildrenPage = require('../roles/parent/ParentChildrenPage').default;
+    await act(async () => {
+      tree.root.findByType(ParentChildrenPage).props.onNavigate('Student Progress Tracking', '002');
+      await flush();
+    });
+    expect(tree.root.findAllByType(ParentSchoolStory)).toHaveLength(1);
+    act(() => tree.root.findByType(ParentSchoolStory).props.onNavigate('Academic Report', '002'));
+    act(() => tree.root.findByProps({accessibilityLabel: 'Back to Reports'}).props.onPress());
+    await act(async () => { await flush(); });
+    expect(tree.root.findAllByType(ParentSchoolStory)).toHaveLength(1);
+    await act(async () => { expect(back()).toBe(true); await flush(); });
+    expect(tree.root.findAllByType(ParentChildrenPage)).toHaveLength(1);
+    expect(tree.root.findAllByProps({accessibilityLabel: 'Open Academic Report'})).toHaveLength(0);
+    act(() => tree.unmount());
+    subscription.mockRestore();
+  });
+
   test('section cards open subpages and hardware back returns to the section then Home', async () => {
     let back;
     const backSubscription = jest

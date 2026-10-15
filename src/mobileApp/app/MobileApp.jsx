@@ -102,6 +102,7 @@ export default function MobileApp({
   const [page, setPage] = useState('Home');
   const [hubRoute, setHubRoute] = useState('');
   const [childId, setChildId] = useState('');
+  const navigationHistory = useRef([]);
   const [notificationRefreshKey, setNotificationRefreshKey] = useState(0);
   const [drawer, setDrawer] = useState(false);
   const [rolePicker, setRolePicker] = useState(false);
@@ -234,19 +235,41 @@ export default function MobileApp({
     );
     setHubRoute('');
     setChildId('');
+    navigationHistory.current = [];
   }, [role, availablePages]);
   const navigate = (next, selectedChildId) => {
     if (selectedChildId) setChildId(selectedChildId);
     if (next === 'Notifications') setNotificationRefreshKey(value => value + 1);
     const destination = resolveRoleNavigation(role, next, availablePages);
+    if (destination.page === 'Home' && !destination.route) {
+      navigationHistory.current = [];
+    } else if (destination.page !== page || destination.route !== hubRoute) {
+      navigationHistory.current.push({page, route: hubRoute});
+    }
     setPage(destination.page);
     setHubRoute(destination.route);
     if (drawer) closeDrawer();
+  };
+  const backFromChildPage = () => {
+    const previous = navigationHistory.current.pop();
+    if (previous) {
+      setPage(previous.page);
+      setHubRoute(previous.route);
+      return;
+    }
+    if (hubRoute) setHubRoute('');
+    else if (page !== 'Home') setPage('Home');
   };
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (drawer) {
         closeDrawer();
+        return true;
+      }
+      if (navigationHistory.current.length) {
+        const previous = navigationHistory.current.pop();
+        setPage(previous.page);
+        setHubRoute(previous.route);
         return true;
       }
       const activeGroup = getRoleNavigationGroups(role, availablePages).find(
@@ -403,6 +426,7 @@ export default function MobileApp({
             route={contentPage}
             authorizedPages={availablePages}
             onNavigate={navigate}
+            onBack={navigationHistory.current.length ? backFromChildPage : undefined}
             previewOnly={previewOnly}
             initialChildId={childId}
             onChildChange={setChildId}

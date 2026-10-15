@@ -78,6 +78,12 @@ export const financeApi = {
     request(`/finance/receipts/${encodeURIComponent(paymentId)}`),
   getCollectionReport: filters =>
     request(`/finance/reports/collections${queryString(filters)}`),
+  getPayrollStaff: () => request('/finance/payroll/staff'),
+  getSalaries: filters => request(`/finance/payroll/salaries${queryString(filters)}`),
+  createSalary: salary => request('/finance/payroll/salaries', { method: 'POST', body: JSON.stringify(salary) }),
+  approveSalary: salaryId => request(`/finance/payroll/salaries/${encodeURIComponent(salaryId)}/approve`, { method: 'POST' }),
+  recordSalaryPayout: (salaryId, payout) => request(`/finance/payroll/salaries/${encodeURIComponent(salaryId)}/payouts`, { method: 'POST', body: JSON.stringify(payout) }),
+  getPayslip: salaryId => request(`/finance/payroll/salaries/${encodeURIComponent(salaryId)}/payslip`),
 };
 
 async function notificationRequest(path, options = {}) {

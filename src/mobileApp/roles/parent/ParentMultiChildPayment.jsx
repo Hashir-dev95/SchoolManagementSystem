@@ -19,6 +19,7 @@ import {
   validateConfirmedReceipt,
 } from "./parentPaymentDesignModel";
 import { paymentDesignInvoices } from "./parentPaymentDesignPreview";
+import { parentApi } from "./parentService";
 
 const palette = {
   cream: "#FFF9F0",
@@ -137,6 +138,7 @@ export default function ParentMultiChildPayment({
     [error, setError] = useState("");
   const [receipt, setReceipt] = useState(null),
     [checkoutId, setCheckoutId] = useState("");
+  const [gateway, setGateway] = useState({ enabled: false, methods: [] });
   const request = useRef(0),
     retryKey = useRef(""),
     inFlight = useRef(false),
@@ -149,14 +151,20 @@ export default function ParentMultiChildPayment({
     (item) => selectedKeys.includes(keyOf(item)) && selectable(item)
   );
   const total = selectionTotal(visible, selectedKeys);
+  const activeAdapter = checkoutAdapter || {
+    enabled: gateway.enabled,
+    methods: gateway.methods,
+    createBatchCheckout: parentApi.createBatchCheckout,
+    getBatchStatus: parentApi.getBatchPaymentStatus,
+  };
   const enabledMethods = preview
     ? methods.map((item) => item[0])
-    : checkoutAdapter?.methods || [];
+    : activeAdapter.methods || [];
   const supported =
     !preview &&
-    checkoutAdapter?.enabled === true &&
-    typeof checkoutAdapter.createBatchCheckout === "function" &&
-    typeof checkoutAdapter.getBatchStatus === "function";
+    activeAdapter.enabled === true &&
+    typeof activeAdapter.createBatchCheckout === "function" &&
+    typeof activeAdapter.getBatchStatus === "function";
   const load = useCallback(async () => {
     if (preview || checkoutId || inFlight.current) return;
     const version = ++request.current;
@@ -166,9 +174,13 @@ export default function ParentMultiChildPayment({
     setInvoices([]);
     retryKey.current = "";
     try {
-      const value = await loadParentPaymentInvoices();
+      const [value, config] = await Promise.all([
+        loadParentPaymentInvoices(),
+        parentApi.getFeeCheckoutConfig(),
+      ]);
       if (version === request.current) {
         setInvoices(value.invoices);
+        setGateway(config || { enabled: false, methods: [] });
         setError(value.errors.join("\n"));
       }
     } catch (failure) {
@@ -221,7 +233,7 @@ export default function ParentMultiChildPayment({
       .toString(36)
       .slice(2)}`;
     try {
-      const value = await checkoutAdapter.createBatchCheckout({
+      const value = await activeAdapter.createBatchCheckout({
         invoices: selected.map((item) => ({
           childId: item.childId,
           invoiceId: item.id,
@@ -254,7 +266,7 @@ export default function ParentMultiChildPayment({
     setError("");
     const version = request.current;
     try {
-      const value = await checkoutAdapter.getBatchStatus(checkoutId);
+      const value = await activeAdapter.getBatchStatus(checkoutId);
       if (version !== request.current) return;
       if (value.status === "confirmed") {
         if (!validateConfirmedReceipt(value.receipt, pendingItems.current))
@@ -311,13 +323,13 @@ export default function ParentMultiChildPayment({
     }
     try {
       if (individual) {
-        if (!checkoutAdapter.openIndividualReceipts)
+        if (!activeAdapter.openIndividualReceipts)
           throw new Error("Individual receipt download is not connected.");
-        await checkoutAdapter.openIndividualReceipts(displayReceipt);
+        await activeAdapter.openIndividualReceipts(displayReceipt);
       } else {
-        if (!checkoutAdapter.downloadReceipt)
+        if (!activeAdapter.downloadReceipt)
           throw new Error("Receipt download is not connected.");
-        await checkoutAdapter.downloadReceipt(displayReceipt.id);
+        await activeAdapter.downloadReceipt(displayReceipt.id);
       }
     } catch (failure) {
       setError(failure.message);

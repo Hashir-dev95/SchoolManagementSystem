@@ -23,6 +23,7 @@ const {
   isFinanceInvoiceStatus,
 } = require('./invoiceStatus');
 const { lockInvoice, invoiceReservedCents } = require('./invoiceReservations');
+const { createFinancePayrollRouter, initializeFinancePayrollIndexes } = require('./financePayrollRoutes');
 const {
   createChatRouter,
   initializeChatIndexes,
@@ -143,6 +144,7 @@ router.use('/parents/me', parentRoutes);
 router.use('/chat', createChatRouter());
 router.use('/applications', applicationReviewRoutes);
 router.use('/finance', requireFinanceContext);
+router.use('/finance/payroll', createFinancePayrollRouter());
 router.use(
   '/finance/me/notifications',
   createUserNotificationRouter('finance'),
@@ -1951,6 +1953,7 @@ router.initializeFinanceIndexes = async function initializeFinanceIndexes() {
     ensurePaymentIdempotencyIndex(payments),
     ensurePaymentReferenceIndex(payments),
   ]);
+  await initializeFinancePayrollIndexes();
 };
 router.initializeChatIndexes = initializeChatIndexes;
 router.setChatRealtimePublisher = setChatRealtimePublisher;

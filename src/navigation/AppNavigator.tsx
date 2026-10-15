@@ -2,7 +2,7 @@ import React, {useCallback, useState} from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import AuthNavigator from './AuthNavigator';
 import MobileApp from '../mobileApp/MobileApp';
-import {logout} from '../mobileApp/authService';
+import {logout} from '../mobileApp/shared/services/authService';
 import SessionBootstrap from '../mobileApp/SessionBootstrap';
 const AppNavigator = ({developmentPreview = false}: {developmentPreview?: boolean}) => {
   const [user, setUser] = useState<any>(null); const [restoring, setRestoring] = useState(true); const [developerPreview, setDeveloperPreview] = useState(false); const preview = (developmentPreview || developerPreview) && typeof __DEV__ !== 'undefined' && __DEV__;

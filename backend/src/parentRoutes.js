@@ -4,6 +4,7 @@ const { getDatabase } = require('./database');
 const { createClassTeacherApplication } = require('./applicationService');
 const { normalizeInvoiceStatuses } = require('./invoiceStatus');
 const parentPaymentRoutes = require('./parentPaymentRoutes');
+const { createLearnerFeatureRouter } = require('./learnerFeatureRoutes');
 const {
   apiId,
   assertSameBranch,
@@ -385,6 +386,11 @@ router.use('/children/:studentId', async (req, res, next) => {
     return next(error);
   }
 });
+
+router.use('/children/:studentId/features', createLearnerFeatureRouter({
+  getStudent: req => req.parentChild,
+  getActor: req => ({ id: req.parentUserId, role: 'parent' }),
+}));
 
 router.get('/children/:studentId/applications', async (req, res, next) => {
   try {

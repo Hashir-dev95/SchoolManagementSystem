@@ -14,6 +14,7 @@ let activeInvoiceIndexPromise;
 let globalActiveInvoiceIndexPromise;
 let parentIdempotencyIndexPromise;
 let reconciliationIndexPromise;
+let batchIdempotencyIndexPromise;
 
 function httpsUrl(value) {
   try {
@@ -176,7 +177,13 @@ async function ensurePaymentIndexes(db) {
       { name: 'parent_payment_reconciliation_claim' },
     );
   }
-  await Promise.all([onlinePaymentIndexPromise, canonicalPaymentIndexPromise, activeInvoiceIndexPromise, globalActiveInvoiceIndexPromise, parentIdempotencyIndexPromise, reconciliationIndexPromise]);
+  if (!batchIdempotencyIndexPromise) {
+    batchIdempotencyIndexPromise = db.collection('parentBatchPayments').createIndex(
+      { parentUserId: 1, idempotencyKey: 1 },
+      { unique: true, name: 'unique_parent_batch_idempotency' },
+    );
+  }
+  await Promise.all([onlinePaymentIndexPromise, canonicalPaymentIndexPromise, activeInvoiceIndexPromise, globalActiveInvoiceIndexPromise, parentIdempotencyIndexPromise, reconciliationIndexPromise, batchIdempotencyIndexPromise]);
 }
 
 async function confirmPayment(payment, merchantStatus) {
@@ -287,6 +294,160 @@ function statusResponse(payment) {
 
 router.get('/checkout/config', (_req, res) => {
   return res.json({ success: true, data: publicGatewayConfiguration() });
+});
+
+function batchHash(invoices, method) {
+  return crypto.createHash('sha256').update(JSON.stringify({
+    invoices: [...invoices].map(item => ({ childId: item.childId, invoiceId: item.invoiceId }))
+      .sort((a, b) => `${a.childId}:${a.invoiceId}`.localeCompare(`${b.childId}:${b.invoiceId}`)),
+    method,
+  })).digest('hex');
+}
+
+function batchResponse(batch) {
+  return {
+    id: String(batch._id), status: batch.status,
+    ...(batch.checkoutUrl ? { checkoutUrl: batch.checkoutUrl } : {}),
+    amount: batch.amount, currency: batch.currency, method: batch.method,
+    reservationReleased: ['failed', 'cancelled'].includes(batch.status),
+    receipt: batch.status === 'confirmed' ? batch.receipt : null,
+  };
+}
+
+async function confirmBatch(batch, merchantStatus) {
+  const db = getDatabase();
+  const { getClient } = require('./database');
+  const session = getClient().startSession();
+  let result;
+  try {
+    await session.withTransaction(async () => {
+      const batches = db.collection('parentBatchPayments');
+      const current = await batches.findOne({ _id: batch._id }, { session });
+      if (!current || current.status === 'confirmed') { result = current; return; }
+      const allocations = await db.collection('parentOnlinePayments').find({ batchPaymentId: String(current._id) }, { session }).toArray();
+      if (!allocations.length || allocations.length !== current.allocations.length) throw new Error('Batch allocation reservation is incomplete.');
+      const receiptAllocations = [];
+      for (const allocation of allocations) {
+        const linked = await findVerifiedParentChild(db, current.parentUserId, allocation.studentId, session);
+        let invoice = await db.collection('invoices').findOne({ id: allocation.invoiceId }, { session });
+        if (!linked || !invoice || String(invoice.branchId) !== String(allocation.branchId) || String(invoice.studentId) !== String(allocation.studentId)) {
+          const error = new Error('Batch settlement identity no longer matches.'); error.statusCode = 409; throw error;
+        }
+        invoice = await lockInvoice(db.collection('invoices'), invoice, session);
+        const totals = await invoiceReservedCents(db, invoice, session, allocation._id);
+        if (!canSettleParentPayment(invoice, allocation, totals)) { const error = new Error('An invoice balance changed before batch settlement.'); error.statusCode = 409; throw error; }
+        const confirmedAt = new Date();
+        const receiptNumber = `RCT-${crypto.randomUUID()}`;
+        await db.collection('payments').insertOne({
+          onlinePaymentId: String(allocation._id), batchPaymentId: String(current._id), invoiceId: allocation.invoiceId,
+          studentId: allocation.studentId, branchId: allocation.branchId, amount: allocation.amount,
+          currency: allocation.currency, method: current.method, status: 'confirmed', provider: current.provider,
+          providerTransactionId: current.providerTransactionId, receiptNumber, confirmedAt,
+          createdAt: current.createdAt, enteredByUserId: 'online-merchant-verification',
+        }, { session });
+        const paidCents = totals.paidCents + cents(allocation.amount);
+        const totalCents = cents(invoice.amount);
+        await db.collection('invoices').updateOne({ _id: invoice._id }, { $set: {
+          paidAmount: paidCents / 100, pendingPaymentAmount: totals.pendingCents / 100,
+          balanceDue: Math.max(totalCents - paidCents, 0) / 100,
+          status: invoiceStatusFromCents(totalCents, paidCents), updatedAt: confirmedAt,
+        } }, { session });
+        await db.collection('parentOnlinePayments').updateOne({ _id: allocation._id }, {
+          $set: { status: 'confirmed', confirmedAt, receiptNumber }, $unset: { activeKey: '' },
+        }, { session });
+        receiptAllocations.push({ childId: allocation.studentId, invoiceId: allocation.invoiceId, amount: allocation.amount, remainingBalance: Math.max(totalCents - paidCents, 0) / 100, receiptNumber });
+      }
+      const receipt = { id: `BATCH-RCT-${crypto.randomUUID()}`, status: 'confirmed', amount: current.amount, currency: current.currency, method: current.method, confirmedAt: new Date(), allocations: receiptAllocations };
+      await batches.updateOne({ _id: current._id }, { $set: { status: 'confirmed', merchantStatus: merchantStatus.status, confirmedAt: receipt.confirmedAt, receipt }, $unset: { activeKey: '', reconciliationReason: '' } }, { session });
+      result = { ...current, status: 'confirmed', receipt };
+    });
+    return result;
+  } catch (error) {
+    await db.collection('parentBatchPayments').updateOne({ _id: batch._id, status: { $ne: 'confirmed' } }, { $set: { status: 'reconciliation_required', reconciliationReason: error.message, lastCheckedAt: new Date() } });
+    throw error;
+  } finally { await session.endSession(); }
+}
+
+router.post('/checkout/batch', async (req, res, next) => {
+  try {
+    const config = gatewayConfiguration();
+    if (!config.enabled) return res.status(503).json({ success: false, error: config.message });
+    const requested = Array.isArray(req.body?.invoices) ? req.body.invoices.map(item => ({ childId: String(item?.childId || '').trim(), invoiceId: String(item?.invoiceId || '').trim() })) : [];
+    const method = String(req.body?.method || '').trim().toLowerCase();
+    const idempotencyKey = String(req.get('Idempotency-Key') || '').trim();
+    const unique = new Set(requested.map(item => `${item.childId}:${item.invoiceId}`));
+    if (!requested.length || requested.length > 20 || unique.size !== requested.length || requested.some(item => !item.childId || !item.invoiceId) || !config.methods.includes(method) || !/^[A-Za-z0-9._:-]{12,128}$/.test(idempotencyKey))
+      return res.status(400).json({ success: false, error: 'Provide 1-20 unique linked invoices, a configured method, and a 12-128 character Idempotency-Key.' });
+    const db = getDatabase(); await ensurePaymentIndexes(db);
+    const requestHash = batchHash(requested, method);
+    const previous = await db.collection('parentBatchPayments').findOne({ parentUserId: req.parentUserId, idempotencyKey });
+    if (previous) {
+      if (previous.requestHash !== requestHash) return res.status(409).json({ success: false, error: 'Idempotency-Key was already used for a different batch.' });
+      return res.status(previous.checkoutUrl ? 200 : 202).json({ success: true, duplicate: true, data: batchResponse(previous) });
+    }
+    const { getClient } = require('./database'); const session = getClient().startSession();
+    let batch;
+    try {
+      await session.withTransaction(async () => {
+        const allocations = []; let currency = ''; let totalCents = 0;
+        for (const item of requested) {
+          const linked = await findVerifiedParentChild(db, req.parentUserId, item.childId, session);
+          let invoice = linked ? await db.collection('invoices').findOne({ id: item.invoiceId }, { session }) : null;
+          if (!linked || !invoice || !referenceValues(linked.student).some(value => String(value) === String(invoice.studentId))) { const error = new Error('An invoice was not found for a verified linked child.'); error.statusCode = 404; throw error; }
+          invoice = await lockInvoice(db.collection('invoices'), invoice, session);
+          const value = availableInvoiceCents(invoice, await invoiceReservedCents(db, invoice, session));
+          const invoiceCurrency = String(invoice.currency || 'PKR').toUpperCase();
+          if (!value || (currency && currency !== invoiceCurrency)) { const error = new Error('All selected invoices must have an available balance in one currency.'); error.statusCode = 409; throw error; }
+          currency = invoiceCurrency; totalCents += value;
+          allocations.push({ studentId: item.childId, invoiceId: item.invoiceId, branchId: invoice.branchId, amount: value / 100, currency });
+        }
+        const inserted = await db.collection('parentBatchPayments').insertOne({ parentUserId: req.parentUserId, idempotencyKey, requestHash, provider: config.provider, method, amount: totalCents / 100, currency, status: 'initiated', activeKey: 'active', allocations, orderRef: `FEE-BATCH-${crypto.createHash('sha256').update(`${req.parentUserId}:${idempotencyKey}`).digest('hex').slice(0, 26).toUpperCase()}`, createdAt: new Date(), expiresAt: new Date(Date.now() + 30 * 60 * 1000) }, { session });
+        batch = await db.collection('parentBatchPayments').findOne({ _id: inserted.insertedId }, { session });
+        for (const allocation of allocations) await db.collection('parentOnlinePayments').insertOne({ ...allocation, parentUserId: req.parentUserId, batchPaymentId: String(batch._id), provider: config.provider, method, orderRef: batch.orderRef, status: 'initiated', activeKey: 'active', createdAt: batch.createdAt, expiresAt: batch.expiresAt }, { session });
+      });
+    } catch (error) { if (error.statusCode) return res.status(error.statusCode).json({ success: false, error: error.message }); throw error; }
+    finally { await session.endSession(); }
+    let merchant;
+    try { merchant = await merchantRequest(config.checkoutUrl, config.apiKey, { storeId: config.storeId, orderRef: batch.orderRef, amount: batch.amount, currency: batch.currency, method, metadata: { batchPaymentId: String(batch._id), invoices: requested }, idempotencyKey }); }
+    catch (error) {
+      await Promise.all([
+        db.collection('parentBatchPayments').updateOne({ _id: batch._id }, { $set: { status: 'reconciliation_required', reconciliationReason: 'merchant_checkout_outcome_unknown' } }),
+        db.collection('parentOnlinePayments').updateMany({ batchPaymentId: String(batch._id) }, { $set: { status: 'reconciliation_required' } }),
+      ]);
+      return res.status(202).json({ success: true, data: { ...batchResponse(batch), status: 'reconciliation_required' }, message: 'Merchant outcome is uncertain; every invoice remains reserved.' });
+    }
+    const checkoutUrl = httpsUrl(merchant.checkoutUrl), providerTransactionId = String(merchant.transactionId || '').trim();
+    if (!checkoutUrl || !providerTransactionId) {
+      await db.collection('parentBatchPayments').updateOne({ _id: batch._id }, { $set: { status: 'reconciliation_required', reconciliationReason: 'invalid_merchant_response' } });
+      await db.collection('parentOnlinePayments').updateMany({ batchPaymentId: String(batch._id) }, { $set: { status: 'reconciliation_required' } });
+      return res.status(202).json({ success: true, data: { ...batchResponse(batch), status: 'reconciliation_required' }, message: 'Merchant response was incomplete; every invoice remains reserved.' });
+    }
+    await db.collection('parentBatchPayments').updateOne({ _id: batch._id }, { $set: { checkoutUrl, providerTransactionId, status: 'pending' } });
+    batch = { ...batch, checkoutUrl, providerTransactionId, status: 'pending' };
+    return res.status(201).json({ success: true, data: batchResponse(batch) });
+  } catch (error) { return next(error); }
+});
+
+router.get('/batches/:batchId/status', async (req, res, next) => {
+  try {
+    if (!ObjectId.isValid(req.params.batchId)) return res.status(400).json({ success: false, error: 'Invalid batch payment ID.' });
+    const db = getDatabase(); let batch = await db.collection('parentBatchPayments').findOne({ _id: new ObjectId(req.params.batchId), parentUserId: req.parentUserId });
+    if (!batch) return res.status(404).json({ success: false, error: 'Batch payment was not found.' });
+    if (['pending', 'initiated', 'reconciliation_required'].includes(batch.status)) {
+      const config = gatewayConfiguration(); if (!config.enabled) return res.status(503).json({ success: false, error: config.message });
+      const verified = await fetchVerifiedMerchantStatus(batch, config);
+      if (verified.confirmed) batch = await confirmBatch(batch, { ...verified, orderRef: batch.orderRef });
+      else if (verified.failed) {
+        const session = require('./database').getClient().startSession();
+        try { await session.withTransaction(async () => {
+          await db.collection('parentBatchPayments').updateOne({ _id: batch._id }, { $set: { status: 'failed', merchantStatus: verified.status, terminalFailureVerifiedAt: new Date() }, $unset: { activeKey: '' } }, { session });
+          await db.collection('parentOnlinePayments').updateMany({ batchPaymentId: String(batch._id) }, { $set: { status: 'failed', merchantStatus: verified.status }, $unset: { activeKey: '' } }, { session });
+        }); } finally { await session.endSession(); }
+        batch = { ...batch, status: 'failed' };
+      }
+    }
+    return res.json({ success: true, data: batchResponse(batch) });
+  } catch (error) { return next(error); }
 });
 
 router.post('/children/:studentId/invoices/:invoiceId/checkout', async (req, res, next) => {

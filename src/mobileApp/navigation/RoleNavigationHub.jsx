@@ -37,6 +37,7 @@ export default function RoleNavigationHub({
   route,
   authorizedPages,
   onNavigate,
+  onBack,
   previewOnly,
   initialChildId,
   onChildChange,
@@ -51,7 +52,7 @@ export default function RoleNavigationHub({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Back to ${page}`}
-          onPress={() => onNavigate(page)}
+          onPress={() => (onBack ? onBack() : onNavigate(page))}
           style={u.back}
         >
           <Text style={u.link}>‹ {page}</Text>

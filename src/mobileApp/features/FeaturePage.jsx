@@ -163,6 +163,17 @@ export default function FeaturePage({
     'Receipt Details',
     'Attendance Calendar',
     'Leave Request',
+    'Academic Calendar',
+    'School Events',
+    'Sports & Activities',
+    'PTM & Appointments',
+    'Learning Resources',
+    'Recorded Lessons',
+    'Documents & Consent',
+    'Helpdesk',
+    'Track My Child',
+    'Travel History',
+    'Transport & Alerts',
   ].includes(page);
   const parentReceiptPage = role === 'Parent' && page === 'Receipt Details';
   const provider = useMemo(
@@ -317,6 +328,21 @@ export default function FeaturePage({
       setNotice(
         result?.notice || 'The connected school service completed the request.',
       );
+    } catch (failure) {
+      setError(failure.message || 'Could not complete this action.');
+    } finally {
+      setLoading(false);
+    }
+  }
+  async function performRecordAction(action, success) {
+    setError('');
+    setNotice('');
+    setLoading(true);
+    try {
+      await action();
+      setSelected(null);
+      setNotice(success);
+      await load(form);
     } catch (failure) {
       setError(failure.message || 'Could not complete this action.');
     } finally {
@@ -701,6 +727,17 @@ export default function FeaturePage({
                     : 'Try a common denominator.'}
                 </Text>
               ) : null}
+              {quizChoice && !previewOnly && provider?.submitQuiz ? (
+                <Button
+                  disabled={loading}
+                  onPress={() => performRecordAction(
+                    () => provider.submitQuiz(records[0], quizChoice),
+                    'Quiz attempt scored and saved.',
+                  )}
+                >
+                  Submit answer
+                </Button>
+              ) : null}
             </View>
           ) : null}
           {role === 'Parent' && page === 'Online Payment' ? (
@@ -813,6 +850,40 @@ export default function FeaturePage({
             </Text>
             {selected?.status ? (
               <Text style={s.status}>{selected.status}</Text>
+            ) : null}
+            {provider?.requestRecord ? (
+              <Button
+                disabled={loading}
+                onPress={() => performRecordAction(
+                  () => provider.requestRecord(selected),
+                  'Request saved for staff review.',
+                )}
+              >
+                Request registration
+              </Button>
+            ) : null}
+            {provider?.recordConsent ? (
+              <>
+                <Button
+                  disabled={loading || !selected?.version}
+                  onPress={() => performRecordAction(
+                    () => provider.recordConsent(selected, 'accepted'),
+                    'Consent decision saved for this exact document version.',
+                  )}
+                >
+                  Accept this version
+                </Button>
+                <Button
+                  secondary
+                  disabled={loading || !selected?.version}
+                  onPress={() => performRecordAction(
+                    () => provider.recordConsent(selected, 'declined'),
+                    'Consent decision saved for this exact document version.',
+                  )}
+                >
+                  Decline this version
+                </Button>
+              </>
             ) : null}
             <Button onPress={() => setSelected(null)}>Close</Button>
           </View>

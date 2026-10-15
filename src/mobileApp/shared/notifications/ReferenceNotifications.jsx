@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -202,7 +203,10 @@ export default function ReferenceNotifications({ role, previewOnly = false, refr
           onPress={markAll}
           style={styles.markButton}
         >
-          <Text style={styles.markText}>Mark all{'\n'}read</Text>
+          <View style={styles.markIcon}>
+            <Image source={require('../../assets/mark.png')} style={styles.markImage} resizeMode="contain" />
+          </View>
+          <Text style={styles.markText}>Mark all read</Text>
         </Pressable>
       </View>
       {loading ? <ActivityIndicator color={c.primary} /> : null}
@@ -321,22 +325,34 @@ export default function ReferenceNotifications({ role, previewOnly = false, refr
 }
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  heading: { flexDirection: 'row', gap: 18, alignItems: 'flex-start' },
+  heading: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   markButton: {
-    minHeight: 50,
-    paddingHorizontal: 17,
-    paddingVertical: 10,
+    minHeight: 46,
+    paddingHorizontal: 15,
+    paddingVertical: 9,
     borderWidth: 1,
-    borderColor: c.line,
-    borderRadius: 15,
-    backgroundColor: '#FFFEFA',
+    borderColor: c.primary,
+    borderRadius: 23,
+    backgroundColor: c.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
+  markIcon: {
+    width: 25,
+    height: 25,
+    borderRadius: 13,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markImage: { width: 16, height: 16 },
   markText: {
     fontSize: 12,
     fontWeight: '800',
-    color: c.primary,
+    color: '#FFFFFF',
     textAlign: 'center',
-    lineHeight: 18,
   },
   tabs: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   tab: {

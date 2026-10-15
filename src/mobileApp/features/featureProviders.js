@@ -417,5 +417,82 @@ export function getFeatureProvider(role, page, preferredChild) {
         };
       },
     };
+  if (['Student', 'Parent'].includes(role)) {
+    const withLearner = async callback => {
+      if (role === 'Student') return callback(studentApi, null);
+      const id = await childId(preferredChild);
+      if (!id) throw new Error('No verified child is linked.');
+      return callback(parentApi, id);
+    };
+    const invoke = (api, id, method, ...args) =>
+      id ? api[method](id, ...args) : api[method](...args);
+    const mapped = data => rows(data).map(record);
+
+    if (page === 'Academic Calendar')
+      return { load: async () => ({ records: mapped(await withLearner((api, id) => invoke(api, id, 'getCalendar'))) }) };
+    if (['School Events', 'Sports & Activities'].includes(page))
+      return {
+        load: async filters => {
+          const data = await withLearner((api, id) => invoke(api, id, 'getEvents'));
+          const category = page === 'Sports & Activities' ? /sport|club|activity/i : null;
+          return { records: mapped(rows(data).filter(item => !category || category.test(String(item.type || item.category || ''))).filter(item => !filters?.Type || matchesText(item.type || item.category, filters.Type))) };
+        },
+        requestRecord: item => withLearner((api, id) => invoke(api, id, 'requestEvent', item.id || item._id)),
+      };
+    if (page === 'PTM & Appointments')
+      return {
+        load: async () => ({ records: mapped(await withLearner((api, id) => invoke(api, id, 'getPtm'))) }),
+        submit: async form => {
+          await withLearner((api, id) => invoke(api, id, 'requestPtm', { teacherId: form.Teacher, date: form.Date, reason: form.Reason }));
+          return { records: [], notice: 'Appointment request saved for staff review.' };
+        },
+      };
+    if (['Learning Resources', 'Recorded Lessons'].includes(page))
+      return {
+        load: async filters => ({ records: mapped(await withLearner((api, id) => invoke(api, id, 'getResources', page === 'Recorded Lessons' ? 'recorded_lesson' : undefined))).filter(item => !filters?.Subject || matchesText(item.subject, filters.Subject)) }),
+        updateProgress: role === 'Student' ? (item, percent) => studentApi.updateResourceProgress(item.id || item._id, percent) : undefined,
+      };
+    if (role === 'Student' && page === 'Notes & Flashcards')
+      return {
+        load: async () => ({ records: mapped(await studentApi.getNotes()) }),
+        submit: async form => { await studentApi.saveNote({ subject: form.Subject, title: form.Title, note: form.Note }); return { records: mapped(await studentApi.getNotes()), notice: 'Note saved.' }; },
+      };
+    if (role === 'Student' && page === 'Revision Planner')
+      return {
+        load: async () => ({ records: mapped(await studentApi.getRevisionPlans()) }),
+        submit: async form => { await studentApi.saveRevisionPlan({ subject: form.Subject, topic: form.Topic, studyDate: form['Study date'], duration: form.Duration }); return { records: mapped(await studentApi.getRevisionPlans()), notice: 'Study session saved.' }; },
+      };
+    if (role === 'Student' && page === 'Quiz')
+      return {
+        load: async () => {
+          const quizzes = rows(await studentApi.getQuizzes());
+          return { records: quizzes.map((quiz, index) => {
+            const question = rows(quiz.questions)[0] || {};
+            return { ...record(quiz, index), quizId: quiz.id || quiz._id, questionId: String(question.id ?? 0), question: question.prompt || question.question || quiz.title, options: rows(question.options).map(option => typeof option === 'object' ? option.label || option.text || option.id : option), optionValues: rows(question.options).map(option => typeof option === 'object' ? option.id : option) };
+          }) };
+        },
+        submitQuiz: (item, choice) => {
+          const index = item.options.indexOf(choice);
+          return studentApi.submitQuiz(item.quizId, { [item.questionId]: item.optionValues[index] });
+        },
+      };
+    if (page === 'Documents & Consent')
+      return {
+        load: async () => ({ records: mapped(await withLearner((api, id) => invoke(api, id, 'getDocuments'))) }),
+        recordConsent: role === 'Parent' ? (item, decision) => parentApi.recordConsent(preferredChild, item.id || item._id, item.version, decision) : undefined,
+      };
+    if (page === 'Helpdesk')
+      return {
+        load: async () => ({ records: mapped(await withLearner((api, id) => invoke(api, id, 'getHelpdeskTickets'))) }),
+        submit: async form => { await withLearner((api, id) => invoke(api, id, 'createHelpdeskTicket', { category: form.Category, subject: form.Subject, message: form.Message })); return { records: [], notice: 'Helpdesk ticket created.' }; },
+      };
+    if (page === 'Travel History')
+      return { load: async () => ({ records: mapped(await withLearner((api, id) => invoke(api, id, 'getTransportHistory'))) }) };
+    if (['Track My Child', 'Transport & Alerts'].includes(page))
+      return { load: async () => {
+        const item = await withLearner((api, id) => invoke(api, id, 'getTransportTracking'));
+        return { records: item ? mapped([item]) : [] };
+      } };
+  }
   return undefined;
 }

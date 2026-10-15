@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node scripts/run-node-tests.js",
     "dev": "node src/server.js",
     "setup:user": "node src/setup-user.js",
     "setup:student": "node src/setup-student.js",

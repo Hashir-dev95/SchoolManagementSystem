@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
 import {Pressable, StyleSheet, Text, TextInput, View} from 'react-native';
-import {login} from '../../mobileApp/authService';
+import {login} from '../../mobileApp/shared/services/authService';
 type Props = {onAuthenticated: (user: any) => void; onDeveloperPreview?: () => void};
 const LoginScreen = ({onAuthenticated, onDeveloperPreview}: Props) => {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);

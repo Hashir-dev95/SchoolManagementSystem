@@ -8,6 +8,7 @@ const { getDatabase } = require('./database');
 const { createClassTeacherApplication } = require('./applicationService');
 const { normalizeInvoiceStatuses } = require('./invoiceStatus');
 const { createUserNotificationRouter } = require('./userNotificationRoutes');
+const { createLearnerFeatureRouter } = require('./learnerFeatureRoutes');
 const {
   apiId,
   assertSameBranch,
@@ -187,6 +188,10 @@ function validateSubmissionFile(file) {
 
 router.use(requireStudentContext);
 router.use('/notifications', createUserNotificationRouter('student'));
+router.use('/features', createLearnerFeatureRouter({
+  getStudent: req => req.studentRecord,
+  getActor: req => ({ id: req.apiUserId, role: 'student' }),
+}));
 
 router.get('/applications', async (req, res, next) => {
   try {

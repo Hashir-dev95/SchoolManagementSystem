@@ -11,6 +11,9 @@ async function request(path, options = {}) {
   }
 }
 
+const featureRequest = (childId, path, options) =>
+  request(`/children/${encodeURIComponent(childId)}/features${path}`, options);
+
 export const parentApi = {
   getChildren: () => request('/children'),
   getNotifications: () => request('/notifications'),
@@ -49,6 +52,14 @@ export const parentApi = {
     ),
   getFeePaymentStatus: paymentId =>
     request(`/payments/transactions/${encodeURIComponent(paymentId)}/status`),
+  createBatchCheckout: ({ invoices, method, idempotencyKey }) =>
+    request('/payments/checkout/batch', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify({ invoices, method }),
+    }),
+  getBatchPaymentStatus: batchId =>
+    request(`/payments/batches/${encodeURIComponent(batchId)}/status`),
   getFeedback: childId =>
     request(`/children/${encodeURIComponent(childId)}/feedback`),
   getApplications: childId =>
@@ -59,4 +70,16 @@ export const parentApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(application),
     }),
+  getCalendar: childId => featureRequest(childId, '/calendar'),
+  getEvents: childId => featureRequest(childId, '/events'),
+  requestEvent: (childId, eventId) => featureRequest(childId, `/events/${encodeURIComponent(eventId)}/requests`, { method: 'POST' }),
+  getPtm: childId => featureRequest(childId, '/ptm'),
+  requestPtm: (childId, value) => featureRequest(childId, '/ptm/requests', { method: 'POST', body: JSON.stringify(value) }),
+  getResources: (childId, kind) => featureRequest(childId, `/resources${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
+  getDocuments: childId => featureRequest(childId, '/documents'),
+  recordConsent: (childId, documentId, version, decision) => featureRequest(childId, `/documents/${encodeURIComponent(documentId)}/consent`, { method: 'POST', body: JSON.stringify({ version, decision }) }),
+  getHelpdeskTickets: childId => featureRequest(childId, '/helpdesk'),
+  createHelpdeskTicket: (childId, value) => featureRequest(childId, '/helpdesk', { method: 'POST', body: JSON.stringify(value) }),
+  getTransportHistory: childId => featureRequest(childId, '/transport/history'),
+  getTransportTracking: childId => featureRequest(childId, '/transport/tracking'),
 };
