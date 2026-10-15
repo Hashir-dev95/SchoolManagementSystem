@@ -1,5 +1,7 @@
 import {ensureAttendanceAmendmentIndexes} from './models/attendanceAmendment';
 import 'dotenv/config';
+import {Syllabus} from './models/syllabus';
+import {LessonPlan} from './models/lessonPlan';
 import mongoose from 'mongoose';
 
 import app from './app';
@@ -22,6 +24,7 @@ const startServer = async (): Promise<void> => {
   await ensureTeacherAccountIndex();
   await ensureAttendanceAmendmentIndexes();
   await ensureAssignmentAdminIndexes();
+  await Promise.all([Syllabus.createIndexes(), LessonPlan.createIndexes()]);
   // These new domain invariants must exist before accepting traffic, including
   // deployments with autoIndex disabled. Only the documented legacy issue index is replaced.
   await Promise.all([Subject.createIndexes(), TeacherAssignment.createIndexes(), ensureTimetableIndexes(), ensureAttendanceIndexes(), ensureTeacherNoticeIndexes(), AssignedWork.createIndexes(), Student.createIndexes(), SchoolNotice.createIndexes()]);

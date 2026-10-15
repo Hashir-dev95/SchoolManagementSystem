@@ -12,6 +12,7 @@ interface Props {
   error: string | null;
   refresh: () => Promise<void>;
   onOpenRoster: (ids: TeacherTupleIds) => void;
+  onOpenAcademic?: (ids: TeacherTupleIds) => void;
   onOpenTimetable?: () => void;
 }
 
@@ -21,6 +22,7 @@ export default function TeacherClassesScreen({
   error,
   refresh,
   onOpenRoster,
+  onOpenAcademic,
   onOpenTimetable,
 }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
@@ -60,7 +62,7 @@ export default function TeacherClassesScreen({
             ]}
             onPress={() => {
               setSelected(item.assignmentId);
-              onOpenRoster({
+              (onOpenAcademic ?? onOpenRoster)({
                 classId: item.classId,
                 sectionId: item.sectionId,
                 subjectId: item.subjectId,

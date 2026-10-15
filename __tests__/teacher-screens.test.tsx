@@ -245,7 +245,7 @@ test('Classes keeps subject and section tuples distinct and navigates using iden
   await act(async () => {
     rows[1].props.onPress();
   });
-  expect(navigation.navigate).toHaveBeenCalledWith('TeacherRoster', {
+  expect(navigation.navigate).toHaveBeenCalledWith('TeacherAcademic', {
     classId: 'class8',
     sectionId: 'sectionA',
     subjectId: 'physics',

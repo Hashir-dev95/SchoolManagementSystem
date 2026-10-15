@@ -1,4 +1,7 @@
 import TeacherAttendanceReviewScreen from '../screens/teacher/TeacherAttendanceReviewScreen';
+import TeacherAcademicScreen from '../screens/teacher/TeacherAcademicScreen';
+import TeacherLessonScreen from '../screens/teacher/TeacherLessonScreen';
+import type {LessonPlan} from '../services/teacher/academicService';
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { TeacherTupleIds } from '../services/teacher/teacherService';
@@ -12,6 +15,8 @@ import TeacherNoticeScreen from '../screens/teacher/TeacherNoticeScreen';
 import TeacherWorkScreen from '../screens/teacher/TeacherWorkScreen';
 
 export type TeacherStackParamList = {
+  TeacherAcademic: TeacherTupleIds;
+  TeacherLesson: TeacherTupleIds & {lesson?: LessonPlan};
   TeacherWorkspace: undefined;
   TeacherAttendanceReview: { sessionId: string; studentId: string };
   TeacherNotice: { noticeId?: string };
@@ -26,7 +31,9 @@ const Stack = createNativeStackNavigator<TeacherStackParamList>();
 
 export default function TeacherNavigator() {
   return (
-    <Stack.Navigator>
+    <Stack.Navigator initialRouteName="TeacherWorkspace">
+      <Stack.Screen name="TeacherAcademic" component={TeacherAcademicScreen} options={{title: 'Class academics'}} />
+      <Stack.Screen name="TeacherLesson" component={TeacherLessonScreen} options={{title: 'Lesson Plan'}} />
       <Stack.Screen
         name="TeacherWorkspace"
         component={TeacherWorkspaceScreen}

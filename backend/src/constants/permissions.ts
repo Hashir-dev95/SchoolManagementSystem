@@ -1,4 +1,7 @@
 export const PERMISSIONS = {
+  SYLLABUS_MANAGE: 'syllabus.manage',
+  TEACHER_ACADEMIC_VIEW: 'teacher.academic.view',
+  TEACHER_LESSONS_MANAGE: 'teacher.lessons.manage',
   TEACHER_NOTICES_VIEW: 'teacher.notices.view',
   TEACHER_NOTICES_MANAGE: 'teacher.notices.manage',
   TEACHER_WORK_VIEW: 'teacher.work.view',

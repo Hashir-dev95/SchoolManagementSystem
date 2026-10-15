@@ -58,6 +58,7 @@ export default function TeacherWorkspaceScreen({
             error={resource.error}
             refresh={resource.refresh}
             onOpenRoster={ids => navigation.navigate('TeacherRoster', ids)}
+            onOpenAcademic={ids => navigation.navigate('TeacherAcademic', ids)}
           />
         ) : (
           <Text style={styles.body}>Class access is unavailable.</Text>

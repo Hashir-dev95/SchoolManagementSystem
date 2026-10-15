@@ -1,4 +1,5 @@
 import attendanceAmendmentRoutes from './routes/attendance-amendment.routes';
+import {academicAdminRouter, teacherAcademicRouter} from './routes/academic.routes';
 import express, {ErrorRequestHandler} from 'express';
 import cors from 'cors';
 import branchRoutes from './routes/branch.routes';
@@ -59,6 +60,8 @@ app.use('/api/health', healthRoutes);
 app.use('/api/approval-requests', approvalRequestRoutes);
 app.use('/api', attendanceAmendmentRoutes);
 app.use('/api/teacher/home', teacherHomeRoutes);
+app.use('/api/syllabuses', academicAdminRouter);
+app.use('/api/teacher/academic', teacherAcademicRouter);
 app.use('/api/teacher/timetable', teacherTimetableRouter);
 app.use('/api/teacher/attendance', teacherAttendanceRoutes);
 app.use('/api/timetables', timetableAdminRouter);
@@ -75,6 +78,7 @@ const teacherParseError: ErrorRequestHandler = (error, _req, res, next) => {
   next(error);
 };
 app.use('/api/teacher', teacherParseError);
+app.use('/api/syllabuses', teacherParseError);
 app.use('/api/assigned-work', teacherParseError);
 app.use('/api/timetables', teacherParseError);
 app.use('/api/teacher-assignments', teacherParseError);
