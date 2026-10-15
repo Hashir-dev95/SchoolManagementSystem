@@ -1,8 +1,16 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput } from 'react-native';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import type {SuperAdminStackParamList} from '../../navigation/SuperAdminNavigator';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { SuperAdminStackParamList } from '../../navigation/SuperAdminNavigator';
 import {
   Button,
   Card,
@@ -13,7 +21,11 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { hasPermission, PERMISSIONS } from '../../constants/permissions';
 import { adminService } from '../../services/admin/adminService';
-import { colors, typography } from '../../theme/hiraDashboard';
+import {
+  AdminFeedback,
+  formStyles,
+} from '../../components/hiraDashboard/AdminForm';
+import { colors, radius, spacing, typography } from '../../theme/hiraDashboard';
 
 type BranchOption = { id: string; name: string; code: string };
 const initial = { fullName: '', email: '', password: '' };
@@ -24,7 +36,8 @@ const passwordBytes = (value: string) =>
   }, 0);
 export default function CreateTeacherScreen() {
   const { user, accessToken } = useAuth();
-  const navigation = useNavigation<NativeStackNavigationProp<SuperAdminStackParamList>>();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<SuperAdminStackParamList>>();
   const [createdTeacherId, setCreatedTeacherId] = useState('');
   const allowed =
     user?.role === 'super_admin' &&
@@ -71,17 +84,17 @@ export default function CreateTeacherScreen() {
       };
     }, [load]),
   );
+  const invalidForm =
+    form.fullName.trim().length < 2 ||
+    form.fullName.trim().length > 100 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) ||
+    form.email.trim().length > 254 ||
+    form.password.length < 12 ||
+    passwordBytes(form.password) > 72 ||
+    !branches.some(b => b.id === branchId);
   const submit = async () => {
     if (busy.current || !allowed || !accessToken) return;
-    if (
-      form.fullName.trim().length < 2 ||
-      form.fullName.trim().length > 100 ||
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) ||
-      form.email.trim().length > 254 ||
-      form.password.length < 12 ||
-      passwordBytes(form.password) > 72 ||
-      !branches.some(b => b.id === branchId)
-    ) {
+    if (invalidForm) {
       setError(
         'Enter a name, valid email, password of at least 12 characters (at most 72 UTF-8 bytes), and active branch.',
       );
@@ -130,129 +143,247 @@ export default function CreateTeacherScreen() {
       </DashboardShell>
     );
   return (
-    <DashboardShell refreshing={loading} onRefresh={load}>
-      <ScreenHeading
-        title="Create Teacher"
-        subtitle="Teacher account and academic assignment are separate."
-      />
-      {success ? (
-        <Card>
-          <Text style={styles.copy}>Teacher account created successfully.</Text>
-          <Text style={styles.copy}>
-            This Teacher still requires class/section/subject assignment before
-            academic modules become available. Assignment administration is
-            managed separately by an authorized school administrator.
-          </Text>
-          <Button
-            title="Assign Teacher"
-            disabled={!hasPermission(user?.role, PERMISSIONS.TEACHER_ASSIGNMENTS_MANAGE)}
-            onPress={() => navigation.navigate('AssignTeacher', {teacherId: createdTeacherId})}
+    <KeyboardAvoidingView
+      style={styles.page}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <DashboardShell
+        refreshing={loading}
+        onRefresh={load}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>ADMINISTRATION</Text>
+        </View>
+        <View accessible accessibilityRole="header">
+          <ScreenHeading
+            title="Create Teacher"
+            subtitle="Create a Teacher account for this school. Academic class, section and subject access is assigned separately."
           />
-          <Button
-            title="Create another Teacher"
-            onPress={() => {
-              setSuccess(false);
-              setBranchId('');
-              load();
-            }}
-          />
-        </Card>
-      ) : (
-        <>
-          <SectionCard title="Login credentials">
-            <Text style={styles.copy}>Role: Teacher (fixed)</Text>
-            {(['fullName', 'email', 'password'] as const).map(field => (
-              <TextInput
-                key={field}
-                accessibilityLabel={
-                  field === 'fullName'
-                    ? 'Full name'
-                    : field === 'email'
-                    ? 'Login email'
-                    : 'Password'
+        </View>
+        {success ? (
+          <>
+            <AdminFeedback
+              kind="success"
+              title="Teacher account created successfully."
+              message="Academic access is not assigned yet."
+            />
+            <SectionCard title="Next step: academic assignment">
+              <Text style={styles.copy}>
+                This Teacher still requires class/section/subject assignment
+                before academic modules become available. Assignment
+                administration is managed separately by an authorized school
+                administrator.
+              </Text>
+              <Button
+                title="Assign Teacher"
+                disabled={
+                  !hasPermission(
+                    user?.role,
+                    PERMISSIONS.TEACHER_ASSIGNMENTS_MANAGE,
+                  )
                 }
-                placeholder={
-                  field === 'fullName'
-                    ? 'Full name'
-                    : field === 'email'
-                    ? 'Login email'
-                    : 'Password (12+ characters)'
+                onPress={() =>
+                  navigation.navigate('AssignTeacher', {
+                    teacherId: createdTeacherId,
+                  })
                 }
-                value={form[field]}
-                editable={!saving}
-                secureTextEntry={field === 'password'}
-                autoCapitalize={field === 'fullName' ? 'words' : 'none'}
-                autoCorrect={false}
-                keyboardType={field === 'email' ? 'email-address' : 'default'}
-                onChangeText={value =>
-                  setForm(current => ({ ...current, [field]: value }))
-                }
-                style={styles.input}
+                style={styles.primaryAction}
               />
-            ))}
-          </SectionCard>
-          <SectionCard title="Active branch">
-            {loading ? (
-              <ActivityIndicator
-                accessibilityLabel="Loading branches"
-                color={colors.primary}
+              <Button
+                title="Create another Teacher"
+                variant="secondary"
+                onPress={() => {
+                  setSuccess(false);
+                  setBranchId('');
+                  load();
+                }}
               />
-            ) : branchError ? (
-              <>
-                <Text style={styles.copy}>{branchError}</Text>
-                <Button
-                  title="Retry branches"
-                  onPress={() => {
-                    load();
-                  }}
+            </SectionCard>
+          </>
+        ) : (
+          <>
+            <SectionCard title="Teacher Account">
+              <Text style={styles.copy}>
+                Create login credentials and assign the Teacher to an active
+                branch. Academic teaching access is configured after account
+                creation.
+              </Text>
+              <Text style={styles.role}>Role: Teacher (fixed)</Text>
+            </SectionCard>
+            <Card>
+              <Text accessibilityRole="header" style={formStyles.heading}>
+                Teacher Details
+              </Text>
+              <Text style={styles.copy}>
+                Enter the Teacher’s identity and login information. All fields
+                are required.
+              </Text>
+              <Text accessibilityRole="header" style={styles.groupTitle}>
+                Personal Information
+              </Text>
+              {(['fullName', 'email'] as const).map(field => (
+                <View key={field} style={formStyles.field}>
+                  <Text style={formStyles.label}>
+                    {field === 'fullName' ? 'Full name' : 'Email address'}
+                  </Text>
+                  <TextInput
+                    accessibilityLabel={
+                      field === 'fullName' ? 'Full name' : 'Login email'
+                    }
+                    placeholder={
+                      field === 'fullName'
+                        ? 'Enter full name'
+                        : 'teacher@school.com'
+                    }
+                    value={form[field]}
+                    editable={!saving}
+                    autoCapitalize={field === 'fullName' ? 'words' : 'none'}
+                    autoCorrect={false}
+                    keyboardType={
+                      field === 'email' ? 'email-address' : 'default'
+                    }
+                    onChangeText={value =>
+                      setForm(current => ({ ...current, [field]: value }))
+                    }
+                    placeholderTextColor={colors.muted}
+                    style={[formStyles.input, styles.input]}
+                  />
+                </View>
+              ))}
+              <Text accessibilityRole="header" style={styles.groupTitle}>
+                Account Security
+              </Text>
+              <View style={formStyles.field}>
+                <Text style={formStyles.label}>Password</Text>
+                <TextInput
+                  accessibilityLabel="Password"
+                  placeholder="Enter a secure password"
+                  placeholderTextColor={colors.muted}
+                  value={form.password}
+                  editable={!saving}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onChangeText={value =>
+                    setForm(current => ({ ...current, password: value }))
+                  }
+                  style={[formStyles.input, styles.input]}
                 />
-              </>
-            ) : branches.length === 0 ? (
-              <Text style={styles.copy}>No active branches are available.</Text>
-            ) : (
-              branches.map(branch => (
-                <Button
-                  key={branch.id}
-                  title={`${branch.name} (${branch.code})${
-                    branchId === branch.id ? ' — Selected' : ''
-                  }`}
-                  variant={branchId === branch.id ? 'primary' : 'secondary'}
-                  disabled={saving}
-                  onPress={() => setBranchId(branch.id)}
-                  style={styles.option}
-                />
-              ))
-            )}
-          </SectionCard>
-          {error ? (
-            <Text accessibilityRole="alert" style={styles.error}>
-              {error}
+                <Text style={formStyles.helper}>
+                  Use at least 12 characters, with a maximum of 72 UTF-8 bytes.
+                </Text>
+              </View>
+              <Text accessibilityRole="header" style={styles.groupTitle}>
+                School Assignment
+              </Text>
+              <Text style={formStyles.label}>Active branch</Text>
+              <Text style={styles.copy}>
+                Select the branch this Teacher account belongs to. Class,
+                section and subject access is assigned in the next step.
+              </Text>
+              {loading ? (
+                <View style={styles.branchState}>
+                  <ActivityIndicator
+                    accessibilityLabel="Loading branches"
+                    color={colors.primary}
+                  />
+                  <Text style={formStyles.helper}>
+                    Loading active branches…
+                  </Text>
+                </View>
+              ) : branchError ? (
+                <>
+                  <Text accessibilityRole="alert" style={styles.error}>
+                    {branchError}
+                  </Text>
+                  <Button
+                    title="Retry branches"
+                    onPress={() => {
+                      load();
+                    }}
+                  />
+                </>
+              ) : branches.length === 0 ? (
+                <Text style={styles.copy}>
+                  No active branches are available.
+                </Text>
+              ) : (
+                branches.map(branch => (
+                  <Button
+                    key={branch.id}
+                    title={`${branch.name} (${branch.code})${
+                      branchId === branch.id ? ' — Selected' : ''
+                    }`}
+                    variant={branchId === branch.id ? 'primary' : 'secondary'}
+                    disabled={saving}
+                    onPress={() => setBranchId(branch.id)}
+                    style={styles.option}
+                  />
+                ))
+              )}
+            </Card>
+            {error ? (
+              <AdminFeedback
+                kind="error"
+                title="Unable to create Teacher"
+                message={error}
+              />
+            ) : null}
+            <Button
+              title={saving ? 'Creating Teacher…' : 'Create Teacher'}
+              disabled={
+                saving ||
+                loading ||
+                !!branchError ||
+                !branches.length ||
+                invalidForm
+              }
+              onPress={() => {
+                submit();
+              }}
+              style={styles.primaryAction}
+            />
+            <Text style={styles.footer}>
+              Only authorized Super Admin users can create Teacher accounts.
             </Text>
-          ) : null}
-          <Button
-            title={saving ? 'Creating Teacher…' : 'Create Teacher account'}
-            disabled={saving || loading || !!branchError || !branches.length}
-            onPress={() => {
-              submit();
-            }}
-          />
-        </>
-      )}
-    </DashboardShell>
+          </>
+        )}
+      </DashboardShell>
+    </KeyboardAvoidingView>
   );
 }
 const styles = StyleSheet.create({
-  copy: { ...typography.body, color: colors.muted, marginBottom: 12 },
-  input: {
-    ...typography.body,
-    color: colors.ink,
-    backgroundColor: colors.card,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
+  page: { flex: 1, backgroundColor: colors.background },
+  badge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.soft,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    marginBottom: spacing.md,
   },
-  option: { marginBottom: 8 },
-  error: { ...typography.body, color: colors.danger.text, marginBottom: 12 },
+  badgeText: {
+    ...typography.caption,
+    color: colors.primary,
+    letterSpacing: 0.8,
+  },
+  copy: { ...typography.body, color: colors.muted, marginBottom: spacing.md },
+  role: { ...typography.bodyStrong, color: colors.primary },
+  groupTitle: {
+    ...typography.h3,
+    color: colors.ink,
+    marginBottom: spacing.md,
+    marginTop: spacing.sm,
+  },
+  input: { minHeight: 52, backgroundColor: colors.cardWarm },
+  branchState: { alignItems: 'center', paddingVertical: spacing.md },
+  primaryAction: { minHeight: 54, marginBottom: spacing.md },
+  footer: { ...typography.small, color: colors.muted, textAlign: 'center' },
+  option: { marginBottom: spacing.sm },
+  error: {
+    ...typography.body,
+    color: colors.danger.text,
+    marginBottom: spacing.md,
+  },
 });

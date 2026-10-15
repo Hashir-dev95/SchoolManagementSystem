@@ -147,7 +147,7 @@ test('loading branches disables creation and branch selection comes from the ser
     }),
   );
   const tree = await render();
-  expect(button(tree, 'Create Teacher account').props.disabled).toBe(true);
+  expect(button(tree, 'Create Teacher').props.disabled).toBe(true);
   expect(
     tree.root.findAll(n => n.props.accessibilityLabel === 'Loading branches')
       .length,
@@ -163,7 +163,7 @@ test('loading branches disables creation and branch selection comes from the ser
 });
 test('validation prevents a request; password is secure and role has no input', async () => {
   const tree = await render();
-  await act(async () => button(tree, 'Create Teacher account').props.onPress());
+  await act(async () => button(tree, 'Create Teacher').props.onPress());
   expect(createSpy).not.toHaveBeenCalled();
   expect(text(tree)).toContain('Enter a name');
   const fields = tree.root.findAllByType(TextInput);
@@ -181,11 +181,18 @@ test('success waits for confirmation; double-click sends once and explains separ
   const tree = await render();
   await fill(tree);
   await act(async () => {
-    const press = button(tree, 'Create Teacher account').props.onPress;
+    const press = button(tree, 'Create Teacher').props.onPress;
     press();
     press();
   });
   expect(createSpy).toHaveBeenCalledTimes(1);
+  expect(button(tree, 'Creating Teacher…').props.disabled).toBe(true);
+  expect(
+    tree.root
+      .findAllByType(TextInput)
+      .every(field => field.props.editable === false),
+  ).toBe(true);
+  expect(mockNavigate).not.toHaveBeenCalled();
   expect(text(tree)).not.toContain('Teacher account created successfully.');
   expect(createSpy).toHaveBeenCalledWith('admin-token', {
     fullName: 'New Teacher',
@@ -195,6 +202,7 @@ test('success waits for confirmation; double-click sends once and explains separ
   });
   await act(async () => resolve(confirmed));
   expect(text(tree)).toContain('Teacher account created successfully.');
+  expect(text(tree)).toContain('Academic access is not assigned yet.');
   expect(text(tree)).toContain(
     'still requires class/section/subject assignment',
   );
@@ -209,7 +217,7 @@ test.each([
   createSpy.mockRejectedValue(new Error(message));
   const tree = await render();
   await fill(tree);
-  await act(async () => button(tree, 'Create Teacher account').props.onPress());
+  await act(async () => button(tree, 'Create Teacher').props.onPress());
   expect(text(tree)).toContain(message);
   expect(tree.root.findAllByType(TextInput)[0].props.value).toBe('New Teacher');
   expect(tree.root.findAllByType(TextInput)[2].props.value).toBe(
@@ -232,7 +240,7 @@ test('unconfirmed server response cannot produce success', async () => {
   } as any);
   const tree = await render();
   await fill(tree);
-  await act(async () => button(tree, 'Create Teacher account').props.onPress());
+  await act(async () => button(tree, 'Create Teacher').props.onPress());
   expect(text(tree)).toContain('Account creation was not confirmed');
   expect(tree.root.findAllByType(TextInput)).toHaveLength(3);
 });
@@ -285,13 +293,113 @@ test('no active branches prevents submission', async () => {
   branchSpy.mockResolvedValue({ success: true, data: [] });
   const tree = await render();
   expect(text(tree)).toContain('No active branches');
-  expect(button(tree, 'Create Teacher account').props.disabled).toBe(true);
+  expect(button(tree, 'Create Teacher').props.disabled).toBe(true);
 });
 
 test('confirmed Teacher account creation hands off to assignment with the created Teacher ID', async () => {
-  const tree = await render(); await fill(tree);
-  await act(async () => button(tree, 'Create Teacher account').props.onPress());
-  expect(text(tree)).toContain('still requires class/section/subject assignment');
+  const tree = await render();
+  await fill(tree);
+  await act(async () => button(tree, 'Create Teacher').props.onPress());
+  expect(text(tree)).toContain(
+    'still requires class/section/subject assignment',
+  );
   await act(async () => button(tree, 'Assign Teacher').props.onPress());
-  expect(mockNavigate).toHaveBeenCalledWith('AssignTeacher', {teacherId: 'teacher'});
+  expect(mockNavigate).toHaveBeenCalledWith('AssignTeacher', {
+    teacherId: 'teacher',
+  });
+});
+
+test('Teacher creation has a clear accessible identity, titled form and distinct field groups', async () => {
+  const tree = await render();
+  const copy = text(tree);
+  for (const label of [
+    'Create Teacher',
+    'Create a Teacher account for this school.',
+    'Academic class, section and subject access is assigned separately.',
+    'Teacher Account',
+    'Teacher Details',
+    'Personal Information',
+    'Account Security',
+    'School Assignment',
+    'Full name',
+    'Email address',
+    'Password',
+    'Active branch',
+    'Role: Teacher (fixed)',
+    'maximum of 72 UTF-8 bytes',
+  ])
+    expect(copy).toContain(label);
+  expect(
+    tree.root.findAll(node => node.props.accessibilityRole === 'header').length,
+  ).toBeGreaterThan(0);
+  expect(
+    tree.root
+      .findAllByType(TextInput)
+      .map(field => field.props.accessibilityLabel),
+  ).toEqual(['Full name', 'Login email', 'Password']);
+  expect(button(tree, 'Create Teacher').props.disabled).toBe(true);
+  await fill(tree);
+  expect(button(tree, 'Create Teacher').props.disabled).toBe(false);
+});
+
+test('password policy still rejects over 72 UTF-8 bytes and accepts the existing boundary', async () => {
+  const tree = await render();
+  await fill(tree);
+  await act(async () =>
+    tree.root.findAllByType(TextInput)[2].props.onChangeText('😀'.repeat(19)),
+  );
+  expect(button(tree, 'Create Teacher').props.disabled).toBe(true);
+  await act(async () => button(tree, 'Create Teacher').props.onPress());
+  expect(createSpy).not.toHaveBeenCalled();
+  expect(text(tree)).toContain('at most 72 UTF-8 bytes');
+  await act(async () =>
+    tree.root.findAllByType(TextInput)[2].props.onChangeText('😀'.repeat(18)),
+  );
+  expect(button(tree, 'Create Teacher').props.disabled).toBe(false);
+  await act(async () => button(tree, 'Create Teacher').props.onPress());
+  expect(createSpy).toHaveBeenCalledWith(
+    'admin-token',
+    expect.objectContaining({ password: '😀'.repeat(18) }),
+  );
+});
+
+test('polished Administration card keeps separate creation and academic assignment actions', async () => {
+  const tree = await render(
+    <TeacherProvisioningCard onCreate={mockNavigate} onAssign={mockNavigate} />,
+  );
+  expect(text(tree)).toContain('Teacher Management');
+  expect(text(tree)).toContain(
+    'Create Teacher accounts and continue to academic assignment.',
+  );
+  expect(button(tree, 'Create Teacher')).toBeDefined();
+  expect(button(tree, 'Assign Teacher').props.variant).toBe('secondary');
+});
+
+test('long branch labels stay readable and failed creation remains safely retryable', async () => {
+  const branchName =
+    'Hira School — Senior Campus and Community Learning Centre';
+  branchSpy.mockResolvedValue({
+    success: true,
+    data: [{ id: 'branch', name: branchName, code: 'LONG' }],
+  });
+  const tree = await render();
+  await act(async () => {
+    const fields = tree.root.findAllByType(TextInput);
+    fields[0].props.onChangeText('Teacher Name');
+    fields[1].props.onChangeText(
+      'long.teacher.email.address@example.school.com',
+    );
+    fields[2].props.onChangeText('StrongPassword123!');
+    button(tree, `${branchName} (LONG)`).props.onPress();
+  });
+  createSpy.mockRejectedValueOnce(new Error('Network request failed'));
+  await act(async () => button(tree, 'Create Teacher').props.onPress());
+  expect(text(tree)).toContain(branchName);
+  expect(tree.root.findAllByType(TextInput)[1].props.value).toBe(
+    'long.teacher.email.address@example.school.com',
+  );
+  expect(button(tree, 'Create Teacher').props.disabled).toBe(false);
+  await act(async () => button(tree, 'Create Teacher').props.onPress());
+  expect(createSpy).toHaveBeenCalledTimes(2);
+  expect(text(tree)).toContain('Teacher account created successfully.');
 });
