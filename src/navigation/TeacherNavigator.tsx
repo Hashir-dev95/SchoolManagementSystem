@@ -17,6 +17,9 @@ import TeacherAttendanceQueueScreen from '../screens/teacher/TeacherAttendanceQu
 import TeacherAttendanceScreen from '../screens/teacher/TeacherAttendanceScreen';
 import TeacherNoticeScreen from '../screens/teacher/TeacherNoticeScreen';
 import TeacherWorkScreen from '../screens/teacher/TeacherWorkScreen';
+import TeacherReviewQueueScreen from '../screens/teacher/TeacherReviewQueueScreen';
+import TeacherReviewScreen from '../screens/teacher/TeacherReviewScreen';
+import type {ReviewTargetType} from '../services/teacher/academicReviewService';
 
 export type TeacherStackParamList = {
   TeacherAcademic: TeacherTupleIds;
@@ -29,6 +32,8 @@ export type TeacherStackParamList = {
   TeacherAttendanceReview: { sessionId: string; studentId: string };
   TeacherNotice: { noticeId?: string };
   TeacherWork: { workId: string };
+  TeacherReviewQueue: undefined;
+  TeacherReview: {targetType: ReviewTargetType; evidenceId: string};
   TeacherRoster: TeacherTupleIds;
   TeacherTimetable: undefined;
   TeacherPeriod: { periodId: string; date: string };
@@ -91,6 +96,8 @@ export default function TeacherNavigator() {
         component={TeacherWorkScreen}
         options={{ title: 'Assigned work' }}
       />
+      <Stack.Screen name="TeacherReviewQueue" component={TeacherReviewQueueScreen} options={{title: 'Submissions & review'}} />
+      <Stack.Screen name="TeacherReview" component={TeacherReviewScreen} options={{title: 'Review learner evidence'}} />
     </Stack.Navigator>
   );
 }

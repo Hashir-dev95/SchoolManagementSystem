@@ -23,9 +23,11 @@ export const workDueLabel = (due: string | null) =>
 export default function TeacherTasksScreen({
   active,
   onOpen,
+  onOpenReviews,
 }: {
   active: boolean;
   onOpen: (workId: string) => void;
+  onOpenReviews?: () => void;
 }) {
   const { accessToken } = useAuth();
   const [selected, setSelected] = useState<string | null>(null);
@@ -50,6 +52,7 @@ export default function TeacherTasksScreen({
         title="Assigned work"
         subtitle="Operational work assigned to you"
       />
+      {onOpenReviews ? <Button title="Open Submissions & Review" onPress={onOpenReviews} /> : null}
       <LoadState
         {...resource}
         retry={resource.refresh}

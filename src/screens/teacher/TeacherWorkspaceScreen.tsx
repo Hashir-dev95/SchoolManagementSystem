@@ -79,6 +79,7 @@ export default function TeacherWorkspaceScreen({
           <TeacherTasksScreen
             active={destination === 'Tasks'}
             onOpen={workId => navigation.navigate('TeacherWork', { workId })}
+            onOpenReviews={() => navigation.navigate('TeacherReviewQueue')}
           />
         </View>
       ) : null}
