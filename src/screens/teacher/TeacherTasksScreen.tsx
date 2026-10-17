@@ -24,10 +24,12 @@ export default function TeacherTasksScreen({
   active,
   onOpen,
   onOpenReviews,
+  onOpenCatchUps,
 }: {
   active: boolean;
   onOpen: (workId: string) => void;
   onOpenReviews?: () => void;
+  onOpenCatchUps?: () => void;
 }) {
   const { accessToken } = useAuth();
   const [selected, setSelected] = useState<string | null>(null);
@@ -53,6 +55,7 @@ export default function TeacherTasksScreen({
         subtitle="Operational work assigned to you"
       />
       {onOpenReviews ? <Button title="Open Submissions & Review" onPress={onOpenReviews} /> : null}
+      {onOpenCatchUps ? <Button title="Open Catch-up" onPress={onOpenCatchUps} /> : null}
       <LoadState
         {...resource}
         retry={resource.refresh}

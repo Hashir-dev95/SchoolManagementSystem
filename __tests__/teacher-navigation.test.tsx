@@ -85,5 +85,7 @@ test('authenticated Teacher enters the Teacher stack with no duplicate route own
     'TeacherWork',
     'TeacherReviewQueue',
     'TeacherReview',
+    'TeacherCatchUpQueue',
+    'TeacherCatchUp',
   ]);
 });

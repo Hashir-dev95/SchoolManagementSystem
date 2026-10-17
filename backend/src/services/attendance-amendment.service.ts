@@ -26,6 +26,7 @@ import {
   suppressStaleAttendanceIntents,
   stageSubmittedAbsenceIntents,
 } from './attendance-effective.service';
+import {suppressCatchUpsForCorrection} from './catch-up.service';
 import { assertApprovalAuthority } from './approval-authority.policy';
 import { PERMISSIONS, type Permission } from '../constants/permissions';
 import { ROLE_PERMISSIONS } from '../constants/rolePermissions';
@@ -780,6 +781,14 @@ export const decideAttendanceAmendment = async (
             String(current._id),
             tx,
           );
+          if (correction.requestedStatus !== 'absent')
+            await suppressCatchUpsForCorrection(
+              branchId,
+              String(current.attendanceSessionId),
+              String(current.studentId),
+              String(current._id),
+              tx,
+            );
         }
       }
       const update = {

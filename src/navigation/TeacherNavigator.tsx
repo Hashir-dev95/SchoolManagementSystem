@@ -20,6 +20,8 @@ import TeacherWorkScreen from '../screens/teacher/TeacherWorkScreen';
 import TeacherReviewQueueScreen from '../screens/teacher/TeacherReviewQueueScreen';
 import TeacherReviewScreen from '../screens/teacher/TeacherReviewScreen';
 import type {ReviewTargetType} from '../services/teacher/academicReviewService';
+import TeacherCatchUpQueueScreen from '../screens/teacher/TeacherCatchUpQueueScreen';
+import TeacherCatchUpScreen from '../screens/teacher/TeacherCatchUpScreen';
 
 export type TeacherStackParamList = {
   TeacherAcademic: TeacherTupleIds;
@@ -34,6 +36,8 @@ export type TeacherStackParamList = {
   TeacherWork: { workId: string };
   TeacherReviewQueue: undefined;
   TeacherReview: {targetType: ReviewTargetType; evidenceId: string};
+  TeacherCatchUpQueue: undefined;
+  TeacherCatchUp: {catchUpId: string};
   TeacherRoster: TeacherTupleIds;
   TeacherTimetable: undefined;
   TeacherPeriod: { periodId: string; date: string };
@@ -98,6 +102,8 @@ export default function TeacherNavigator() {
       />
       <Stack.Screen name="TeacherReviewQueue" component={TeacherReviewQueueScreen} options={{title: 'Submissions & review'}} />
       <Stack.Screen name="TeacherReview" component={TeacherReviewScreen} options={{title: 'Review learner evidence'}} />
+      <Stack.Screen name="TeacherCatchUpQueue" component={TeacherCatchUpQueueScreen} options={{title: 'Catch-up'}} />
+      <Stack.Screen name="TeacherCatchUp" component={TeacherCatchUpScreen} options={{title: 'Catch-up detail'}} />
     </Stack.Navigator>
   );
 }

@@ -80,6 +80,7 @@ export default function TeacherWorkspaceScreen({
             active={destination === 'Tasks'}
             onOpen={workId => navigation.navigate('TeacherWork', { workId })}
             onOpenReviews={() => navigation.navigate('TeacherReviewQueue')}
+            onOpenCatchUps={() => navigation.navigate('TeacherCatchUpQueue')}
           />
         </View>
       ) : null}
