@@ -52,7 +52,7 @@ const authorizeReview = async (
 };
 
 const assertCanDelegate = (request: IApprovalRequest, isDelegate: boolean) => {
-  if (['attendance_correction','student_leave'].includes(request.entityType)) throw new ApprovalAccessError(400, 'Use the typed attendance review workflow');
+  if (['attendance_correction','student_leave','lesson_plan'].includes(request.entityType)) throw new ApprovalAccessError(400, 'Use the typed review workflow');
   if (isDelegate) throw new ApprovalAccessError(403, 'Delegated reviewers cannot redelegate');
   if (request.delegatedTo) throw new ApprovalAccessError(409, 'Request already has a delegation');
 };
@@ -152,7 +152,7 @@ export const processApprovalRequest = async (data: ApprovalActionInput) => {
   }
   const request = await ApprovalRequest.findOne({_id: data.requestId, branchId: data.branchId});
   if (!request) throw new ApprovalAccessError(404, 'Approval request not found');
-  if (['attendance_correction','student_leave'].includes(request.entityType)) throw new ApprovalAccessError(400, 'Use the typed attendance review workflow');
+  if (['attendance_correction','student_leave','lesson_plan'].includes(request.entityType)) throw new ApprovalAccessError(400, 'Use the typed review workflow');
   const {now, isDelegate} = await authorizeReview(request, data.actorId, data.branchId);
   if (isDelegate && data.action === 'delegated') {
     throw new ApprovalAccessError(403, 'Delegated reviewers cannot redelegate');

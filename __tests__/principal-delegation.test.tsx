@@ -1,6 +1,9 @@
 import React from 'react';
 import { TextInput } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
+jest.mock('@react-navigation/native', () => ({
+  useFocusEffect: (effect: () => void) => jest.requireActual('react').useEffect(effect, [effect]),
+}));
 import { Button } from '../src/components/hiraDashboard';
 import ApprovalDelegationForm from '../src/screens/principal/ApprovalDelegationForm';
 import ApprovalDetailScreen from '../src/screens/principal/ApprovalDetailScreen';

@@ -5,6 +5,10 @@ import User from '../models/user';
 import Student from '../models/student';
 import Fee from '../models/fee';
 import {ApprovalAccessError} from './approval-authority.policy';
+import {LessonPlan} from '../models/lessonPlan';
+import {planAcademicContext} from './academic-plan-context.service';
+import {RequestContractError} from '../utils/request-validation';
+import {teacherAcademicContext} from './syllabus.service';
 
 export const validateApprovalId = (value: string, field: string): void => {
   if (typeof value !== 'string' || !Types.ObjectId.isValid(value)) {
@@ -27,7 +31,21 @@ export const assertApprovalReferences = async (request: IApprovalRequest): Promi
   }
   // Explicit category-to-model allowlist; never resolve arbitrary model names.
   let scoped: unknown = false;
-  if (request.entityType === 'attendance_correction' && request.approvalType === 'attendance_correction') {
+  if (request.entityType === 'lesson_plan' && request.approvalType === 'lesson_plan') {
+    const plan = await LessonPlan.findOne({_id: request.entityId, branchId, teacherId: request.requesterId}).read('primary');
+    scoped = plan && plan.submissions.some(s => s.revision === request.lessonPlanRevision);
+    if (plan && scoped) {
+      try {
+        await planAcademicContext(plan);
+        const assigned = await teacherAcademicContext({userId: String(plan.teacherId), role: 'teacher'}, {
+          classId: String(plan.classId), sectionId: String(plan.sectionId), subjectId: String(plan.subjectId),
+        });
+        if (assigned.tuple.assignmentId !== String(plan.assignmentId) || (request.status === 'pending' &&
+          (plan.state !== 'submitted' || plan.revision !== request.lessonPlanRevision || String(plan.approvalRequestId) !== String((request as unknown as {_id: unknown})._id)))) scoped = false;
+      }
+      catch (e) { if (e instanceof RequestContractError) throw new ApprovalAccessError(e.status, 'Academic context is unavailable'); throw e; }
+    }
+  } else if (request.entityType === 'attendance_correction' && request.approvalType === 'attendance_correction') {
     scoped = await AttendanceCorrection.exists({}).where('_id').equals(request.entityId).where('branchId').equals(branchId).where('approvalRequestId').equals((request as unknown as {_id:unknown})._id);
   } else if (request.entityType === 'student_leave' && request.approvalType === 'leave') {
     scoped = await StudentLeave.exists({}).where('_id').equals(request.entityId).where('branchId').equals(branchId).where('approvalRequestId').equals((request as unknown as {_id:unknown})._id);

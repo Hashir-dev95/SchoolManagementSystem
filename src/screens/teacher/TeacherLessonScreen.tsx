@@ -54,7 +54,7 @@ function LessonEditor({ route }: LessonScreenProps) {
       : {
           unitId: '',
           topicIds: [],
-          teachingDate: '',
+          teachingDate: route.params.occurrence?.date ?? '',
           objectives: '',
           teachingActivities: '',
           resources: '',
@@ -83,7 +83,7 @@ function LessonEditor({ route }: LessonScreenProps) {
     context = resource.data,
     syllabus = context?.syllabus;
   const unit = syllabus?.units.find(u => u.unitId === form.unitId);
-  const readonly = saved?.state === 'submitted';
+  const readonly = !!saved && saved.state !== 'draft';
   const disabled =
     busy ||
     readonly ||
@@ -167,6 +167,7 @@ function LessonEditor({ route }: LessonScreenProps) {
               sectionId,
               subjectId,
               syllabusId: syllabus.syllabusId,
+              occurrence: route.params.occurrence,
               clientOperationId,
             });
         setSaved(lesson);
@@ -199,7 +200,7 @@ function LessonEditor({ route }: LessonScreenProps) {
         kind: 'success',
         title: submit ? 'Lesson submitted' : 'Draft saved',
         message: submit
-          ? 'Your submitted content is frozen. Principal review is not yet available; submission does not mean approval or delivery.'
+          ? 'Your submitted content is frozen and awaits an authorized Principal review. Submission does not mean approval or delivery.'
           : `Server confirmed revision ${lesson.revision}. You can continue editing this draft.`,
       });
     } catch (e) {
@@ -243,13 +244,13 @@ function LessonEditor({ route }: LessonScreenProps) {
         <StatusBadge
           status="pending"
           label={`${
-            saved.state === 'draft' ? 'Draft' : 'Submitted'
+            saved.state.replaceAll('_', ' ')
           } • Revision ${saved.revision}`}
         />
       ) : null}
       {readonly ? (
         <Text style={formStyles.copy}>
-          Submitted content is read-only. Academic review is not yet available.
+          Submitted content is read-only. Review decisions do not record actual delivery.
         </Text>
       ) : null}
       {context && !syllabus ? (
@@ -275,9 +276,23 @@ function LessonEditor({ route }: LessonScreenProps) {
           helper="YYYY-MM-DD • Planning date within your assignment validity"
         />
         <Text style={formStyles.helper}>
-          Date-based planning. No timetable period is linked.
+          {saved?.occurrence || route.params.occurrence ? 'Linked to the selected timetable occurrence. Its teaching date must match.' : 'Date-based planning. No timetable period is linked.'}
         </Text>
       </SectionCard>
+      {saved?.reviews?.length ? <SectionCard title="Review History">{saved.reviews.map((review, i) => <Text key={i} style={formStyles.copy}>Revision {review.submittedRevision}: {review.action.replaceAll('_', ' ')} • {review.reviewedAt}{'\n'}{review.note}</Text>)}</SectionCard> : null}
+      {saved?.submissions?.length ? <SectionCard title="Submitted Revisions">{saved.submissions.map(s => <Text key={s.revision} style={formStyles.copy}>Revision {s.revision} • {s.submittedAt}{'\n'}{s.content.objectives}{'\n'}{s.content.teachingActivities}</Text>)}</SectionCard> : null}
+      {saved?.state === 'needs_revision' || (saved?.state === 'submitted' && !saved.approvalRequestId) ? <Button title={saved.state === 'needs_revision' ? 'Start Revised Draft' : 'Request Principal Review'} disabled={busy || conflict || resource.loading || !!resource.error} onPress={async () => {
+        if (lock.current || !accessToken) return;
+        lock.current = true; setBusy(true); setFeedback(null);
+        const action = saved.state === 'needs_revision' ? 'revise' : 'submit';
+        try {
+          const result = await academicService[action](accessToken, saved.lessonPlanId, saved.revision, operation(`${action}:${saved.lessonPlanId}:${saved.revision}`));
+          setSaved(result); pending.current = null;
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 409) setConflict(true);
+          setFeedback({kind: 'error', title: 'Unable to update lesson', message: e instanceof Error ? e.message : 'Please retry. Your input is retained.'});
+        } finally { lock.current = false; setBusy(false); }
+      }} /> : null}
       <SectionCard title="2. Syllabus Mapping">
         <Text style={formStyles.label}>
           {syllabus
@@ -401,8 +416,8 @@ function LessonEditor({ route }: LessonScreenProps) {
           {form.objectives}
         </Text>
         <Text style={formStyles.helper}>
-          Submission freezes this revision. Principal review will be enabled in
-          a later phase.
+          Submission freezes this revision for authorized Principal review.
+          Approval does not mean delivery.
         </Text>
       </AdminDialog>
     </DashboardShell>

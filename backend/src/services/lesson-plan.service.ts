@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { LessonPlan } from '../models/lessonPlan';
+import ApprovalRequest from '../models/approvalRequest';
+import { getTeacherPeriod } from './teacher-timetable.service';
 import TeacherAssignment from '../models/teacherAssignment';
 import { schoolDateTime } from './school-date.service';
 import { PERMISSIONS } from '../constants/permissions';
@@ -23,12 +25,12 @@ import {
   textField,
 } from '../utils/request-validation';
 
-const operationId = (v: unknown) => {
+export const operationId = (v: unknown) => {
   if (typeof v !== 'string' || !/^[A-Za-z0-9_-]{16,80}$/.test(v))
     throw new RequestContractError(400, 'Invalid operation ID');
   return v;
 };
-const hash = (v: unknown) =>
+export const hash = (v: unknown) =>
   createHash('sha256').update(JSON.stringify(v)).digest('hex');
 const fields = [
   'unitId',
@@ -97,6 +99,11 @@ export const lessonDTO = (row: InstanceType<typeof LessonPlan>) => ({
   resources: row.resources,
   notes: row.notes,
   state: row.state,
+  occurrence: row.occurrence ? { periodId: String(row.occurrence.periodId), timetableVersionId: String(row.occurrence.timetableVersionId), date: row.occurrence.date } : null,
+  approvalRequestId: row.approvalRequestId?.toString() ?? null,
+  approvedRevision: row.approvedRevision ?? null,
+  submissions: row.submissions.map(s => ({ revision: s.revision, content: s.content, submittedAt: s.submittedAt.toISOString() })),
+  reviews: row.reviews.map(r => ({ submittedRevision: r.submittedRevision, action: r.action, note: r.note, reviewedAt: r.reviewedAt.toISOString() })),
   revision: row.revision,
   submittedAt: row.submittedAt?.toISOString() ?? null,
   updatedAt: row.updatedAt.toISOString(),
@@ -121,7 +128,7 @@ export const listLessons = async (
 export const writeLesson = async (
   identity: JwtPayload | undefined,
   token: string,
-  action: 'create' | 'update' | 'submit',
+  action: 'create' | 'update' | 'submit' | 'revise',
   id: unknown,
   body: unknown,
 ) => {
@@ -134,6 +141,7 @@ export const writeLesson = async (
           'subjectId',
           'syllabusId',
           'clientOperationId',
+          'occurrence',
           ...fields,
         ]
       : action === 'update'
@@ -165,7 +173,14 @@ export const writeLesson = async (
           subjectId: input.subjectId,
         },
   );
-  const content = action === 'submit' ? null : details(input);
+  const content = action === 'submit' || action === 'revise' ? null : details(input);
+  const occurrenceInput = action === 'create' && input.occurrence != null
+    ? objectBody(input.occurrence, ['periodId', 'timetableVersionId', 'date']) : null;
+  const occurrence = occurrenceInput ? {
+    periodId: objectIdField(occurrenceInput.periodId, 'period ID'),
+    timetableVersionId: objectIdField(occurrenceInput.timetableVersionId, 'timetable version ID'),
+    date: typeof occurrenceInput.date === 'string' ? occurrenceInput.date : '',
+  } : null;
   if (existing && String(existing.assignmentId) !== ctx.tuple.assignmentId) {
     throw academicMissing();
   }
@@ -181,6 +196,7 @@ export const writeLesson = async (
     syllabusId,
     content,
     expected,
+    occurrence,
   });
   return withTeacherCommunication(
     identity,
@@ -224,7 +240,8 @@ export const writeLesson = async (
             );
           return lessonDTO(row);
         }
-        if (row.revision !== expected || row.state !== 'draft')
+        const legacySubmission = action === 'submit' && row.state === 'submitted' && !row.approvalRequestId;
+        if (row.revision !== expected || (action === 'revise' ? row.state !== 'needs_revision' : row.state !== 'draft' && !legacySubmission))
           throw new RequestContractError(
             409,
             'Lesson changed or was submitted. Reload before editing.',
@@ -252,6 +269,14 @@ export const writeLesson = async (
           'Teaching date is outside the assignment validity',
         );
       mapped(current.syllabus, selected);
+      const linked = row?.occurrence ?? occurrence;
+      if (linked) {
+        const period = await getTeacherPeriod(identity, String(linked.periodId), linked.date);
+        if (period.approvedVersion.versionId !== String(linked.timetableVersionId) ||
+          period.classId !== ctx.tuple.classId || period.sectionId !== ctx.tuple.sectionId ||
+          period.subjectId !== ctx.tuple.subjectId || period.date !== selected.teachingDate)
+          throw academicMissing();
+      }
       if (action === 'create') {
         const created = new LessonPlan({
           branchId: scope.branchId,
@@ -262,6 +287,7 @@ export const writeLesson = async (
           subjectId: ctx.tuple.subjectId,
           academicYear: current.academicYear,
           syllabusId,
+          occurrence: occurrence ?? undefined,
           ...selected,
           createOperationId: op,
           createFingerprint: fingerprint,
@@ -273,17 +299,28 @@ export const writeLesson = async (
       }
       if (!row) throw academicMissing();
       if (action === 'update') row.set(selected);
-      row.revision += 1;
+      const legacySubmission = action === 'submit' && row.state === 'submitted' && !row.approvalRequestId;
+      if (!legacySubmission) row.revision += 1;
       row.updatedBy = row.teacherId;
+      if (action === 'revise') row.state = 'draft';
       if (action === 'submit') {
         row.state = 'submitted';
-        row.submittedAt = new Date();
-        row.submissions.push({
+        if (!legacySubmission) {
+          row.submittedAt = new Date();
+          row.submissions.push({
           revision: row.revision,
-          content: { ...lessonDTO(row), state: 'submitted' },
+          content: { ...selected, classId: String(row.classId), sectionId: String(row.sectionId),
+            subjectId: String(row.subjectId), academicYear: row.academicYear, syllabusId: String(row.syllabusId),
+            occurrence: row.occurrence ? { periodId: String(row.occurrence.periodId), timetableVersionId: String(row.occurrence.timetableVersionId), date: row.occurrence.date } : null, revision: row.revision, state: 'submitted' },
           submittedAt: row.submittedAt,
           submittedBy: row.teacherId,
-        });
+          });
+        }
+        const approval = new ApprovalRequest({ branchId: row.branchId, requesterId: row.teacherId,
+          entityType: 'lesson_plan', entityId: row._id, lessonPlanRevision: row.revision,
+          approvalType: 'lesson_plan', reason: 'Review submitted lesson plan', status: 'pending', history: [] });
+        await approval.save({ session });
+        row.approvalRequestId = approval._id;
       }
       row.operations.push({ id: op, fingerprint, revision: row.revision });
       await row.save({ session });

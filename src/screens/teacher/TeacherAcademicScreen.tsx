@@ -14,6 +14,7 @@ import { formStyles } from '../../components/hiraDashboard/AdminForm';
 import { academicService } from '../../services/teacher/academicService';
 import { useTeacherResource } from './useTeacherResource';
 import { LoadState } from './teacherUi';
+import SyllabusCoverage from '../../components/academic/SyllabusCoverage';
 
 export default function TeacherAcademicScreen({
   route,
@@ -25,11 +26,12 @@ export default function TeacherAcademicScreen({
   const load = useCallback(async () => {
     if (!accessToken) throw new Error('Authentication required');
     const ids = { classId, sectionId, subjectId };
-    const [context, lessons] = await Promise.all([
+    const [context, lessons, coverage] = await Promise.all([
       academicService.context(accessToken, ids),
       academicService.lessons(accessToken, ids),
+      academicService.coverage(accessToken, ids),
     ]);
-    return { context, lessons };
+    return { context, lessons, coverage };
   }, [accessToken, classId, sectionId, subjectId]);
   const resource = useTeacherResource(load);
   const context = resource.data?.context,
@@ -99,6 +101,7 @@ export default function TeacherAcademicScreen({
               {syllabus ? (
                 <>
                   <StatusBadge status="paid" label="Published" />
+                  {resource.data?.coverage ? <SyllabusCoverage coverage={resource.data.coverage} /> : null}
                   {syllabus.units.map(unit => (
                     <SectionCard
                       key={unit.unitId}
@@ -133,7 +136,7 @@ export default function TeacherAcademicScreen({
             <>
               <ScreenHeading
                 title="Lessons"
-                subtitle="Draft and submitted planning"
+                subtitle="Planning, academic review and actual delivery"
               />
               {syllabus ? (
                 <Button
@@ -160,10 +163,11 @@ export default function TeacherAcademicScreen({
                   <StatusBadge
                     status="pending"
                     label={`${
-                      lesson.state === 'draft' ? 'Draft' : 'Submitted'
+                      lesson.state.replaceAll('_', ' ')
                     } • Revision ${lesson.revision}`}
                   />
                   <Text style={formStyles.copy}>{lesson.objectives}</Text>
+                  {lesson.state === 'approved' ? <Button title="Record Delivery" onPress={() => navigation.navigate('TeacherDelivery', {lessonPlanId: lesson.lessonPlanId})} /> : null}
                   <Button
                     title={
                       lesson.state === 'draft'

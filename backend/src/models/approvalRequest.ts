@@ -2,6 +2,7 @@ import { Schema, model, Types } from 'mongoose';
 
 export const APPROVAL_TYPES = {
   LEAVE: 'leave',
+  LESSON_PLAN: 'lesson_plan',
   ATTENDANCE_CORRECTION: 'attendance_correction',
   REFUND: 'refund',
   DISCOUNT: 'discount',
@@ -43,6 +44,7 @@ export interface IApprovalRequest {
 
   entityType: string;
   entityId?: Types.ObjectId;
+  lessonPlanRevision?: number;
 
   approvalType: ApprovalType;
 
@@ -129,6 +131,7 @@ const approvalRequestSchema = new Schema<IApprovalRequest>(
     entityId: {
       type: Schema.Types.ObjectId,
     },
+    lessonPlanRevision: { type: Number, min: 1 },
 
     approvalType: {
       type: String,

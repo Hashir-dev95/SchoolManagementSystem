@@ -68,6 +68,8 @@ test('authenticated Teacher enters the Teacher stack with no duplicate route own
       .findAll(node => String(node.type) === 'StackScreen')
       .map(node => node.props.name),
   ).toEqual([
+    'TeacherDelivery',
+    'TeacherOccurrenceLessons',
     'TeacherAcademic',
     'TeacherLesson',
     'TeacherWorkspace',

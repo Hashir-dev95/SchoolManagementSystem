@@ -19,6 +19,7 @@ import { colors, typography } from '../../theme/hiraDashboard';
 import type { PrincipalStackParamList } from '../../navigation/PrincipalNavigator';
 
 import ApprovalDelegationForm from './ApprovalDelegationForm';
+import PrincipalLessonReviewScreen from './PrincipalLessonReviewScreen';
 
 type Props = NativeStackScreenProps<PrincipalStackParamList, 'ApprovalDetail'>;
 
@@ -39,7 +40,12 @@ const prettyValue = (value: string): string =>
     ? 'Changes requested'
     : value.replaceAll('_', ' ').replace(/^./, first => first.toUpperCase());
 
-export default function ApprovalDetailScreen({ route, navigation }: Props) {
+export default function ApprovalDetailScreen(props: Props) {
+  return props.route.params.request.entityType === 'lesson_plan'
+    ? <PrincipalLessonReviewScreen key={props.route.params.request._id} {...props} />
+    : <GenericApprovalDetail {...props} />;
+}
+function GenericApprovalDetail({ route, navigation }: Props) {
   const { accessToken } = useAuth();
   const [loadedRequest, setLoadedRequest] = useState(route.params.request);
   const [detailError, setDetailError] = useState<string | null>(null);

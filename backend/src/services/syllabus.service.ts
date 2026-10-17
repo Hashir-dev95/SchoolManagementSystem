@@ -102,7 +102,7 @@ const adminActor = async (identity: JwtPayload | undefined) => {
 };
 // Reads and writes share the same current administrative context. The persisted
 // syllabus pins branch/year; it must never be rebound to a changed class.
-const assertManagedSyllabusContext = async (
+export const assertManagedSyllabusContext = async (
   context: {
     classId: string;
     subjectId: string;

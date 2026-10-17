@@ -69,6 +69,11 @@ export default function TeacherPeriodScreen({
       {period ? (
         <Card>
           <PeriodSummary period={period} />
+          <Button title="Occurrence Lessons" variant="secondary" onPress={() => navigation.navigate('TeacherOccurrenceLessons', {periodId, date})} />
+          {!period.isSubstitute ? <Button title="Plan Lesson for Period" variant="secondary" onPress={() => navigation.navigate('TeacherLesson', {
+            classId: period.classId, sectionId: period.sectionId, subjectId: period.subjectId,
+            occurrence: {periodId, date, timetableVersionId: period.approvedVersion.versionId},
+          })} /> : null}
           {hasPermission(user?.role, PERMISSIONS.TEACHER_ATTENDANCE_VIEW) ? (
             <Button
               title="Open attendance"

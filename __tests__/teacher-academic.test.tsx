@@ -35,6 +35,8 @@ jest.mock('../src/services/teacher/academicService', () => ({
     create: jest.fn(),
     update: jest.fn(),
     submit: jest.fn(),
+    coverage: jest.fn(),
+    revise: jest.fn(),
   },
 }));
 const service = jest.mocked(academicService);
@@ -152,6 +154,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   service.context.mockResolvedValue(context);
   service.lessons.mockResolvedValue([]);
+  service.coverage.mockResolvedValue(null);
   service.create.mockResolvedValue(lesson);
   service.update.mockResolvedValue({ ...lesson, revision: 2 });
   service.submit.mockResolvedValue({
@@ -276,7 +279,7 @@ test('duplicate taps fenced, confirmation summarizes context, submitted state is
     .findAllByType(AdminDialog)
     .find(d => d.props.title === 'Submit lesson?')!;
   expect(dialog.props.visible).toBe(true);
-  expect(contents(tree)).toContain('Principal review will be enabled');
+  expect(contents(tree)).toContain('authorized Principal review');
   const submit = dialog.props.onConfirm;
   await act(async () => {
     submit();

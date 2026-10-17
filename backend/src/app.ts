@@ -1,5 +1,5 @@
 import attendanceAmendmentRoutes from './routes/attendance-amendment.routes';
-import {academicAdminRouter, teacherAcademicRouter} from './routes/academic.routes';
+import {academicAdminRouter, teacherAcademicRouter, principalAcademicRouter} from './routes/academic.routes';
 import express, {ErrorRequestHandler} from 'express';
 import cors from 'cors';
 import branchRoutes from './routes/branch.routes';
@@ -62,6 +62,7 @@ app.use('/api', attendanceAmendmentRoutes);
 app.use('/api/teacher/home', teacherHomeRoutes);
 app.use('/api/syllabuses', academicAdminRouter);
 app.use('/api/teacher/academic', teacherAcademicRouter);
+app.use('/api/principal/academic-review', principalAcademicRouter);
 app.use('/api/teacher/timetable', teacherTimetableRouter);
 app.use('/api/teacher/attendance', teacherAttendanceRoutes);
 app.use('/api/timetables', timetableAdminRouter);

@@ -22,7 +22,7 @@ const requesterRecord = async (requestId: string, actorId: string, branchId: str
 // Owner-facing DTO intentionally omits reviewer identities, attachments and mixed payloads.
 export const serializeResubmission = (request: HydratedDocument<IApprovalRequest>) => ({
   _id: request._id.toString(), status: request.status, reason: request.reason,
-  revision: request.__v ?? 0, canResubmit: request.status === 'changes_requested',
+  revision: request.__v ?? 0, canResubmit: request.status === 'changes_requested' && request.entityType !== 'lesson_plan',
   changeReason: [...request.history].reverse().find(entry => entry.action === 'changes_requested')?.reason,
 });
 
@@ -35,6 +35,7 @@ export const resubmitApprovalRequest = async (data: {
   const reason = textField(data.reason, 'request reason', 500, 1);
   if (!Number.isSafeInteger(data.revision) || data.revision < 0) throw new ApprovalAccessError(400, 'Invalid request revision');
   const request = await requesterRecord(data.requestId, data.actorId, data.branchId);
+  if (request.entityType === 'lesson_plan') throw new ApprovalAccessError(400, 'Revise and submit through the typed lesson workflow');
   if (request.status !== 'changes_requested' || (request.__v ?? 0) !== data.revision) {
     throw new ApprovalAccessError(409, 'Request changed or is not awaiting resubmission');
   }

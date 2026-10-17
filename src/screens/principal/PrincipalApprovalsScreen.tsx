@@ -15,6 +15,7 @@ import {
   principalService,
 } from '../../services/principal/principalService';
 import { colors, typography } from '../../theme/hiraDashboard';
+import { lessonReviewService } from '../../services/teacher/academicService';
 
 interface PrincipalApprovalsScreenProps {
   onReview: (request: ApprovalRequest) => void;
@@ -28,6 +29,7 @@ const entityLabel = (type: string) =>
     : type;
 const approvalTitle = (request: ApprovalRequest): string => {
   const typeNames: Record<string, string> = {
+    lesson_plan: 'Lesson plan',
     leave: 'Leave request',
     attendance_correction: 'Attendance correction',
     refund: 'Refund request',
@@ -64,6 +66,7 @@ export default function PrincipalApprovalsScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [lessonHistory, setLessonHistory] = useState(false);
   const [typeFilter, setTypeFilter] = useState('all');
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(
     null,
@@ -80,8 +83,9 @@ export default function PrincipalApprovalsScreen({
     setLoading(true);
     setError(null);
     try {
-      const response = await principalService.getPendingApprovals(accessToken);
-      if (current === generation.current) setRequests(response.data.requests);
+      const rows = lessonHistory ? await lessonReviewService.history(accessToken)
+        : (await principalService.getPendingApprovals(accessToken)).data.requests;
+      if (current === generation.current) setRequests(rows);
     } catch (requestError: unknown) {
       if (current === generation.current)
         setError(
@@ -92,7 +96,7 @@ export default function PrincipalApprovalsScreen({
     } finally {
       if (current === generation.current) setLoading(false);
     }
-  }, [accessToken]);
+  }, [accessToken, lessonHistory]);
 
   const visibleRequests = requests.filter(request => {
     const requester = request.requesterId;
@@ -131,10 +135,11 @@ export default function PrincipalApprovalsScreen({
       onRefresh={() => load()}
     >
       <ScreenHeading
-        title="A thoughtful second look."
-        subtitle="Review the requests that keep your school moving."
+        title={lessonHistory ? 'Lesson History & Coverage' : 'A thoughtful second look.'}
+        subtitle={lessonHistory ? 'Read lesson decisions and actual delivery evidence in your branch.' : 'Review the requests that keep your school moving.'}
       />
-      <SectionCard title="Approval inbox">
+      <SectionCard title={lessonHistory ? 'Reviewed and submitted lessons' : 'Approval inbox'}>
+        <Button title={lessonHistory ? 'Pending Approval Inbox' : 'Lesson History & Coverage'} variant="secondary" onPress={() => { setLessonHistory(v => !v); setTypeFilter('all'); setSelectedRequestId(null); setRequests([]); }} />
         {selectedRequestId ? (
           <Text style={styles.muted}>
             Selected request:{' '}
@@ -143,7 +148,7 @@ export default function PrincipalApprovalsScreen({
                 item => item._id === selectedRequestId,
               );
               return selected &&
-                ['attendance_correction', 'student_leave'].includes(
+                ['attendance_correction', 'student_leave', 'lesson_plan'].includes(
                   selected.entityType,
                 )
                 ? approvalTitle(selected)
@@ -233,9 +238,9 @@ export default function PrincipalApprovalsScreen({
                 </Text>
               </View>
               <View style={styles.rowActions}>
-                <Text style={styles.pending}>Pending</Text>
+                <Text style={styles.pending}>{request.status.replaceAll('_', ' ')}</Text>
                 <Button
-                  title="Review"
+                  title={lessonHistory && request.status !== 'pending' ? 'View lesson' : 'Review'}
                   variant="secondary"
                   onPress={() => {
                     setSelectedRequestId(request._id);
