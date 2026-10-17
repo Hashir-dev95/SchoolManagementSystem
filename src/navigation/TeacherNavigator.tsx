@@ -3,6 +3,8 @@ import TeacherAcademicScreen from '../screens/teacher/TeacherAcademicScreen';
 import TeacherLessonScreen from '../screens/teacher/TeacherLessonScreen';
 import TeacherDeliveryScreen from '../screens/teacher/TeacherDeliveryScreen';
 import TeacherOccurrenceLessonsScreen from '../screens/teacher/TeacherOccurrenceLessonsScreen';
+import TeacherHomeworkScreen from '../screens/teacher/TeacherHomeworkScreen';
+import TeacherQuizScreen from '../screens/teacher/TeacherQuizScreen';
 import type {LessonPlan} from '../services/teacher/academicService';
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -20,6 +22,8 @@ export type TeacherStackParamList = {
   TeacherAcademic: TeacherTupleIds;
   TeacherDelivery: {lessonPlanId: string};
   TeacherOccurrenceLessons: {periodId: string; date: string};
+  TeacherHomework: {lessonPlanId: string};
+  TeacherQuiz: {lessonPlanId: string};
   TeacherLesson: TeacherTupleIds & {lesson?: LessonPlan; occurrence?: LessonPlan['occurrence']};
   TeacherWorkspace: undefined;
   TeacherAttendanceReview: { sessionId: string; studentId: string };
@@ -38,6 +42,8 @@ export default function TeacherNavigator() {
     <Stack.Navigator initialRouteName="TeacherWorkspace">
       <Stack.Screen name="TeacherDelivery" component={TeacherDeliveryScreen} options={{title: 'Lesson delivery'}} />
       <Stack.Screen name="TeacherOccurrenceLessons" component={TeacherOccurrenceLessonsScreen} options={{title: 'Occurrence lessons'}} />
+      <Stack.Screen name="TeacherHomework" component={TeacherHomeworkScreen} options={{title: 'Homework'}} />
+      <Stack.Screen name="TeacherQuiz" component={TeacherQuizScreen} options={{title: 'Quiz'}} />
       <Stack.Screen name="TeacherAcademic" component={TeacherAcademicScreen} options={{title: 'Class academics'}} />
       <Stack.Screen name="TeacherLesson" component={TeacherLessonScreen} options={{title: 'Lesson Plan'}} />
       <Stack.Screen

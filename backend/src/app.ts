@@ -21,6 +21,7 @@ import {teacherCommunicationRouter, assignedWorkManagementRouter} from './routes
 import teacherAttendanceRoutes from './routes/teacher-attendance.routes';
 import {teacherTimetableRouter, timetableAdminRouter} from './routes/timetable.routes';
 import teacherAssignmentRoutes from './routes/teacher-assignment.routes';
+import {studentAcademicWorkRouter, teacherAcademicWorkRouter} from './routes/academic-work.routes';
 
 const backupRoutes = (backupRoutesModule as any).default ?? backupRoutesModule;
 
@@ -62,6 +63,8 @@ app.use('/api', attendanceAmendmentRoutes);
 app.use('/api/teacher/home', teacherHomeRoutes);
 app.use('/api/syllabuses', academicAdminRouter);
 app.use('/api/teacher/academic', teacherAcademicRouter);
+app.use('/api/teacher/academic-work', teacherAcademicWorkRouter);
+app.use('/api/student/academic-work', studentAcademicWorkRouter);
 app.use('/api/principal/academic-review', principalAcademicRouter);
 app.use('/api/teacher/timetable', teacherTimetableRouter);
 app.use('/api/teacher/attendance', teacherAttendanceRoutes);

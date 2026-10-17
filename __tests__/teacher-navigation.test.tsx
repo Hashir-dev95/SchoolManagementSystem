@@ -70,6 +70,8 @@ test('authenticated Teacher enters the Teacher stack with no duplicate route own
   ).toEqual([
     'TeacherDelivery',
     'TeacherOccurrenceLessons',
+    'TeacherHomework',
+    'TeacherQuiz',
     'TeacherAcademic',
     'TeacherLesson',
     'TeacherWorkspace',

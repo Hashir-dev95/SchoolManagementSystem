@@ -167,6 +167,8 @@ export default function TeacherAcademicScreen({
                     } • Revision ${lesson.revision}`}
                   />
                   <Text style={formStyles.copy}>{lesson.objectives}</Text>
+                  <Button title="Create Homework" variant="secondary" onPress={() => navigation.navigate('TeacherHomework', {lessonPlanId: lesson.lessonPlanId})} />
+                  <Button title="Create Quiz" variant="secondary" onPress={() => navigation.navigate('TeacherQuiz', {lessonPlanId: lesson.lessonPlanId})} />
                   {lesson.state === 'approved' ? <Button title="Record Delivery" onPress={() => navigation.navigate('TeacherDelivery', {lessonPlanId: lesson.lessonPlanId})} /> : null}
                   <Button
                     title={
