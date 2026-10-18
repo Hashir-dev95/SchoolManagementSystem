@@ -21,4 +21,7 @@ export const authService = {
       },
     });
   },
+  logout: async (token: string): Promise<void> => {
+    await apiClient.request('/auth/logout', {method: 'POST', token});
+  },
 };

@@ -3,6 +3,7 @@ import { Router } from 'express';
 import {
   getCurrentUser,
   login,
+  logout,
   register,
   rbacTest,
 } from '../controllers/auth.controller';
@@ -15,6 +16,7 @@ const router = Router();
 
 router.post('/register', register);
 router.post('/login', login);
+router.post('/logout', authenticateToken, logout);
 router.get('/me', authenticateToken, getCurrentUser);
 router.get('/rbac-test', authenticateToken, requireRole('principal'), rbacTest);
 router.get(

@@ -25,6 +25,7 @@ import {studentAcademicWorkRouter, teacherAcademicWorkRouter} from './routes/aca
 import {studentEvidenceRouter, teacherReviewRouter} from './routes/academic-evidence.routes';
 import {studentCatchUpRouter, teacherCatchUpRouter} from './routes/catch-up.routes';
 import {principalResultRouter, studentResultRouter, teacherResultRouter} from './routes/academic-result.routes';
+import teacherNotificationRoutes from './routes/teacher-notification.routes';
 
 const backupRoutes = (backupRoutesModule as any).default ?? backupRoutesModule;
 
@@ -73,6 +74,7 @@ app.use('/api/teacher/reviews', teacherReviewRouter);
 app.use('/api/teacher/catch-ups', teacherCatchUpRouter);
 app.use('/api/student/catch-ups', studentCatchUpRouter);
 app.use('/api/teacher/results', teacherResultRouter);
+app.use('/api/teacher', teacherNotificationRoutes);
 app.use('/api/principal/results', principalResultRouter);
 app.use('/api/student/results', studentResultRouter);
 app.use('/api/principal/academic-review', principalAcademicRouter);

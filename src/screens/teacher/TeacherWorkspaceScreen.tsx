@@ -12,6 +12,7 @@ import TeacherTasksScreen from './TeacherTasksScreen';
 import { useTeacherResource } from './useTeacherResource';
 import { TeacherButton, styles } from './teacherUi';
 import TeacherHomeScreen from './TeacherHomeScreen';
+import {AdminDialog} from '../../components/hiraDashboard/AdminForm';
 
 export const teacherDestinations = [
   'Home',
@@ -28,6 +29,7 @@ export default function TeacherWorkspaceScreen({
   const { user, accessToken, logout } = useAuth();
   const [destination, setDestination] = useState<Destination>('Home');
   const [visited, setVisited] = useState({ Inbox: false, Tasks: false });
+  const [confirmLogout,setConfirmLogout]=useState(false);
   const canViewClasses = hasPermission(
     user?.role,
     PERMISSIONS.TEACHER_CLASSES_VIEW,
@@ -99,7 +101,9 @@ export default function TeacherWorkspaceScreen({
           <Text style={styles.body}>{user?.fullName}</Text>
           <Text style={styles.muted}>Teacher</Text>
           <Text style={styles.body}>{user?.email}</Text>
-          <TeacherButton title="Log out" onPress={logout} />
+          <TeacherButton title="Notifications & Preferences" onPress={()=>navigation.navigate('TeacherNotifications')} />
+          <TeacherButton title="Log out" onPress={()=>setConfirmLogout(true)} />
+          <AdminDialog visible={confirmLogout} title="Log out of this device?" confirmTitle="Log out" danger onClose={()=>setConfirmLogout(false)} onConfirm={()=>{setConfirmLogout(false);logout().catch(()=>undefined);}}><Text style={styles.body}>Protected screens are cleared immediately. Server revocation is requested, but may remain unconfirmed if this device is offline.</Text></AdminDialog>
         </ScrollView>
       ) : null}
       <View style={styles.tabs}>

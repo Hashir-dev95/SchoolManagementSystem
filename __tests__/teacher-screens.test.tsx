@@ -211,6 +211,7 @@ test('Teacher login projects Home and preserves five primary destinations', asyn
   await tab(tree, 'Me');
   expect(contents(tree)).toContain('teacher@test.invalid');
   expect(contents(tree)).toContain('Log out');
+  expect(contents(tree)).toContain('Notifications & Preferences');
   for (const fake of [
     'Today periods',
     'attendance pending',

@@ -88,5 +88,6 @@ test('authenticated Teacher enters the Teacher stack with no duplicate route own
     'TeacherCatchUpQueue',
     'TeacherCatchUp',
     'TeacherMarks',
+    'TeacherNotifications',
   ]);
 });
