@@ -345,6 +345,7 @@ test('Principal navigator retains one stack with unique existing screens and no 
     'SafetyOverview',
     'SafetyDetail',
     'AssignTeacher',
+    'ResultModeration',
   ]);
   expect(new Set(names).size).toBe(names.length);
   expect(contents(tree)).not.toContain('NavigationContainer');
@@ -370,5 +371,24 @@ test('typed corrections use Principal attendance review from the existing approv
   await press(tree, 'Review');
   expect(mockNavigation.navigate).toHaveBeenCalledWith('AttendanceReview', {
     approvalId: 'correction-1',
+  });
+});
+
+test('typed academic results use the marks moderation workflow', async () => {
+  const resultRequest = {
+    ...leave,
+    _id: 'result-1',
+    entityType: 'academic_result',
+    approvalType: 'result',
+  };
+  service.getPendingApprovals.mockResolvedValue({
+    data: {requests: [resultRequest], total: 1},
+    message: '',
+  });
+  const tree = await mount();
+  await press(tree, 'Open approvals');
+  await press(tree, 'Review');
+  expect(mockNavigation.navigate).toHaveBeenCalledWith('ResultModeration', {
+    approvalId: 'result-1',
   });
 });

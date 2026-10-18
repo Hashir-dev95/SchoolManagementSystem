@@ -12,6 +12,7 @@ import PrincipalTaskDetailScreen from '../screens/principal/PrincipalTaskDetailS
 import AssignPrincipalTaskScreen from '../screens/principal/AssignPrincipalTaskScreen';
 import PrincipalSafetyOverviewScreen from '../screens/principal/PrincipalSafetyOverviewScreen';
 import PrincipalSafetyDetailScreen from '../screens/principal/PrincipalSafetyDetailScreen';
+import PrincipalResultModerationScreen from '../screens/principal/PrincipalResultModerationScreen';
 
 export type PrincipalStackParamList = {
   AssignTeacher: {teacherId?: string} | undefined;
@@ -24,6 +25,7 @@ export type PrincipalStackParamList = {
   AssignTask: undefined;
   SafetyOverview: undefined;
   SafetyDetail: { alertId: string };
+  ResultModeration: {approvalId: string};
 };
 
 const Stack = createNativeStackNavigator<PrincipalStackParamList>();
@@ -53,6 +55,7 @@ export default function PrincipalNavigator() {
         component={PrincipalSafetyDetailScreen}
       />
       <Stack.Screen name="AssignTeacher" component={TeacherAssignmentAdminScreen} options={{headerShown:false}} />
+      <Stack.Screen name="ResultModeration" component={PrincipalResultModerationScreen} options={{headerShown:true,title:'Marks moderation'}} />
     </Stack.Navigator>
   );
 }

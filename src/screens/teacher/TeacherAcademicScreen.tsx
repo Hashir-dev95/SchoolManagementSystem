@@ -79,6 +79,11 @@ export default function TeacherAcademicScreen({
               variant="secondary"
               onPress={() => setTab('lessons')}
             />
+            <Button
+              title="Assessments / Marks"
+              variant="secondary"
+              onPress={() => navigation.navigate('TeacherMarks', route.params)}
+            />
           </SectionCard>
           {tab === 'context' ? (
             <SectionCard title="Academic planning">

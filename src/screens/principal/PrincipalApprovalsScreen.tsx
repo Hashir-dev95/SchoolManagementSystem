@@ -30,6 +30,7 @@ const entityLabel = (type: string) =>
 const approvalTitle = (request: ApprovalRequest): string => {
   const typeNames: Record<string, string> = {
     lesson_plan: 'Lesson plan',
+    academic_result: 'Marks moderation',
     leave: 'Leave request',
     attendance_correction: 'Attendance correction',
     refund: 'Refund request',

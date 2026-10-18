@@ -45,6 +45,7 @@ export interface IApprovalRequest {
   entityType: string;
   entityId?: Types.ObjectId;
   lessonPlanRevision?: number;
+  resultRevision?: number;
 
   approvalType: ApprovalType;
 
@@ -132,6 +133,7 @@ const approvalRequestSchema = new Schema<IApprovalRequest>(
       type: Schema.Types.ObjectId,
     },
     lessonPlanRevision: { type: Number, min: 1 },
+    resultRevision: { type: Number, min: 1 },
 
     approvalType: {
       type: String,

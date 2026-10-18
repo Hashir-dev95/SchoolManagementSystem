@@ -6,6 +6,7 @@ import {LessonDelivery} from './models/lessonDelivery';
 import {ensureAcademicWorkIndexes} from './services/academic-work.service';
 import {ensureAcademicEvidenceIndexes} from './services/academic-evidence.service';
 import {ensureCatchUpIndexes} from './services/catch-up.service';
+import {ensureAcademicResultIndexes} from './services/academic-result.service';
 import mongoose from 'mongoose';
 
 import app from './app';
@@ -32,6 +33,7 @@ const startServer = async (): Promise<void> => {
   await ensureAcademicWorkIndexes();
   await ensureAcademicEvidenceIndexes();
   await ensureCatchUpIndexes();
+  await ensureAcademicResultIndexes();
   // These new domain invariants must exist before accepting traffic, including
   // deployments with autoIndex disabled. Only the documented legacy issue index is replaced.
   await Promise.all([Subject.createIndexes(), TeacherAssignment.createIndexes(), ensureTimetableIndexes(), ensureAttendanceIndexes(), ensureTeacherNoticeIndexes(), AssignedWork.createIndexes(), Student.createIndexes(), SchoolNotice.createIndexes()]);

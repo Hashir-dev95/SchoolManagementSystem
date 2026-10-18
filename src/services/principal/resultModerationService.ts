@@ -1,0 +1,4 @@
+import {apiClient} from '../api/apiClient';import type{TeacherResult}from'../teacher/resultService';
+export interface ResultModerationDetail{approvalId:string;approvalStatus:string;canModerate:boolean;canPublish:boolean;result:TeacherResult}
+const request=async(token:string,path:string,method:'GET'|'POST'='GET',body?:unknown)=>(await apiClient.request<{success:boolean;data:ResultModerationDetail}>(`/principal/results${path}`,{token,method,...(body===undefined?{}:{body})})).data;
+export const resultModerationService={detail:(token:string,id:string)=>request(token,`/${encodeURIComponent(id)}`),moderate:(token:string,id:string,body:Record<string,unknown>)=>request(token,`/${encodeURIComponent(id)}/moderate`,'POST',body),publish:(token:string,id:string,body:Record<string,unknown>)=>request(token,`/${encodeURIComponent(id)}/publish`,'POST',body)};

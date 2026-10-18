@@ -24,6 +24,7 @@ import teacherAssignmentRoutes from './routes/teacher-assignment.routes';
 import {studentAcademicWorkRouter, teacherAcademicWorkRouter} from './routes/academic-work.routes';
 import {studentEvidenceRouter, teacherReviewRouter} from './routes/academic-evidence.routes';
 import {studentCatchUpRouter, teacherCatchUpRouter} from './routes/catch-up.routes';
+import {principalResultRouter, studentResultRouter, teacherResultRouter} from './routes/academic-result.routes';
 
 const backupRoutes = (backupRoutesModule as any).default ?? backupRoutesModule;
 
@@ -71,6 +72,9 @@ app.use('/api/student/evidence', studentEvidenceRouter);
 app.use('/api/teacher/reviews', teacherReviewRouter);
 app.use('/api/teacher/catch-ups', teacherCatchUpRouter);
 app.use('/api/student/catch-ups', studentCatchUpRouter);
+app.use('/api/teacher/results', teacherResultRouter);
+app.use('/api/principal/results', principalResultRouter);
+app.use('/api/student/results', studentResultRouter);
 app.use('/api/principal/academic-review', principalAcademicRouter);
 app.use('/api/teacher/timetable', teacherTimetableRouter);
 app.use('/api/teacher/attendance', teacherAttendanceRoutes);

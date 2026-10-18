@@ -9,6 +9,7 @@ import {LessonPlan} from '../models/lessonPlan';
 import {planAcademicContext} from './academic-plan-context.service';
 import {RequestContractError} from '../utils/request-validation';
 import {teacherAcademicContext} from './syllabus.service';
+import {AcademicResult} from '../models/academicResult';
 
 export const validateApprovalId = (value: string, field: string): void => {
   if (typeof value !== 'string' || !Types.ObjectId.isValid(value)) {
@@ -45,6 +46,10 @@ export const assertApprovalReferences = async (request: IApprovalRequest): Promi
       }
       catch (e) { if (e instanceof RequestContractError) throw new ApprovalAccessError(e.status, 'Academic context is unavailable'); throw e; }
     }
+  } else if (request.entityType === 'academic_result' && request.approvalType === 'result') {
+    const result: any = await (AcademicResult as any).findOne({_id: request.entityId, branchId, teacherId: request.requesterId, approvalRequestId: (request as unknown as {_id: unknown})._id}).read('primary');
+    scoped = result && result.submittedRevision === request.resultRevision && (request.status !== 'pending' ||
+      (['submitted_for_moderation','resubmitted_for_moderation'].includes(result.status) && result.currentRevision === request.resultRevision));
   } else if (request.entityType === 'attendance_correction' && request.approvalType === 'attendance_correction') {
     scoped = await AttendanceCorrection.exists({}).where('_id').equals(request.entityId).where('branchId').equals(branchId).where('approvalRequestId').equals((request as unknown as {_id:unknown})._id);
   } else if (request.entityType === 'student_leave' && request.approvalType === 'leave') {
