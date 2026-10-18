@@ -2,9 +2,14 @@ import React from 'react';
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { colors, fonts } from '../../theme/hiraTheme';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import type {SuperAdminStackParamList} from '../../navigation/SuperAdminNavigator';
+import {Button} from '../../components/hiraDashboard';
 
 export default function SuperAdminSettingsScreen() {
   const { user, logout } = useAuth();
+  const navigation = useNavigation<NativeStackNavigationProp<SuperAdminStackParamList>>();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -31,6 +36,7 @@ export default function SuperAdminSettingsScreen() {
           </Text>
         </View>
 
+        <Button title="Academic Setup" variant="secondary" onPress={() => navigation.navigate('AcademicSetup')} />
         <View style={styles.footer}>
           <Pressable
             accessibilityRole="button"

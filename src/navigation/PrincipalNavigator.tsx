@@ -13,8 +13,10 @@ import AssignPrincipalTaskScreen from '../screens/principal/AssignPrincipalTaskS
 import PrincipalSafetyOverviewScreen from '../screens/principal/PrincipalSafetyOverviewScreen';
 import PrincipalSafetyDetailScreen from '../screens/principal/PrincipalSafetyDetailScreen';
 import PrincipalResultModerationScreen from '../screens/principal/PrincipalResultModerationScreen';
+import AcademicSetupScreen from '../screens/admin/AcademicSetupScreen';
 
 export type PrincipalStackParamList = {
+  AcademicSetup: undefined;
   AssignTeacher: {teacherId?: string} | undefined;
   PrincipalWorkspace: undefined;
   AttendanceReview: { approvalId: string };
@@ -32,7 +34,8 @@ const Stack = createNativeStackNavigator<PrincipalStackParamList>();
 
 export default function PrincipalNavigator() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator initialRouteName="PrincipalWorkspace" screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="AcademicSetup" component={AcademicSetupScreen} options={{headerShown: true, title: 'Academic Setup', headerStyle: {backgroundColor: '#fbf9f4'}, headerTintColor: '#23595a', headerShadowVisible: false}} />
       <Stack.Screen
         name="PrincipalWorkspace"
         component={PrincipalWorkspaceScreen}

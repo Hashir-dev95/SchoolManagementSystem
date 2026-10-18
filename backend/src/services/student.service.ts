@@ -5,6 +5,8 @@ import SchoolClass from '../models/schoolClass';
 import Section from '../models/section';
 import Student, {IStudent} from '../models/student';
 import {withTimetablePublication} from './teacher-timetable.service';
+import {AcademicPeriod} from '../models/academicPeriod';
+import {RequestContractError} from '../utils/request-validation';
 
 export interface CreateStudentInput {
   userId: string;
@@ -117,5 +119,16 @@ if (existingStudent) {
   // appear as an unfenced phantom between roster validation and commit.
   // A fresh document per driver transaction attempt preserves insert semantics
   // after a retry; the initially allocated ID remains stable.
-  return withTimetablePublication(branchId, undefined, session => new Student(student.toObject()).save({session}));
+  return withTimetablePublication(branchId, undefined, async session => {
+    // This transaction writes the same Branch fence as Academic Setup. Repeat
+    // reference validation after that write so deactivation cannot slip between
+    // the early form validation and enrollment commit.
+    const currentClass = await SchoolClass.findOne({isActive: true}).where('_id').equals(classId).where('branchId').equals(branchId).session(session);
+    const currentSection = await Section.exists({isActive: true}).where('_id').equals(sectionId).where('branchId').equals(branchId).where('classId').equals(classId).session(session);
+    if (!currentClass || !currentSection) throw new RequestContractError(409, 'Student Class or Section is no longer active');
+    if (currentClass.academicPeriodId && !await AcademicPeriod.exists({_id: currentClass.academicPeriodId, branchId, status: 'active'}).session(session)) {
+      throw new RequestContractError(409, 'An active Academic Period is required');
+    }
+    return new Student(student.toObject()).save({session});
+  });
 };

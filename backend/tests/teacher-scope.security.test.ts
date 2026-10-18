@@ -3,7 +3,7 @@ import {after, before, beforeEach, mock, test} from 'node:test';
 import {request as nodeRequest, type Server} from 'node:http';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
-import {MongoMemoryServer} from 'mongodb-memory-server';
+import {MongoMemoryReplSet} from 'mongodb-memory-server';
 import app from '../src/app';
 import User, {type UserRole} from '../src/models/user';
 import Branch from '../src/models/branch';
@@ -29,7 +29,7 @@ type Mutation = {assignmentId: string; isActive: boolean};
 const secret = 'isolated-teacher-security-test-secret';
 const previousSecret = process.env.JWT_SECRET;
 const permissionSnapshot = Object.fromEntries(Object.entries(ROLE_PERMISSIONS).map(([role, permissions]) => [role, [...permissions]]));
-let database: MongoMemoryServer, server: Server, base: string;
+let database: MongoMemoryReplSet, server: Server, base: string;
 let branchA: Id, branchB: Id;
 let teacherA: Actor, teacherB: Actor, foreignTeacher: Actor, principal: Actor, foreignPrincipal: Actor, admin: Actor, student: Actor;
 let class8: Id, class9: Id, class10: Id, foreignClass: Id;
@@ -41,7 +41,7 @@ const future = () => new Date(Date.now() + 86400000).toISOString();
 
 before(async () => {
   process.env.JWT_SECRET = secret;
-  database = await MongoMemoryServer.create();
+  database = await MongoMemoryReplSet.create({replSet: {count: 1}});
   await mongoose.connect(database.getUri(), {dbName: 'teacher_scope_tests', autoIndex: false});
   await Promise.all([Subject.createIndexes(), TeacherAssignment.createIndexes()]);
   server = app.listen(0, '127.0.0.1');

@@ -20,6 +20,7 @@ import { colors, fonts, typography } from '../../theme/hiraDashboard';
 import PrincipalApprovalsScreen from './PrincipalApprovalsScreen';
 import PrincipalDashboardScreen from './PrincipalDashboardScreen';
 import PrincipalInboxScreen from './PrincipalInboxScreen';
+import {hasPermission, PERMISSIONS} from '../../constants/permissions';
 
 type TabKey = 'home' | 'approvals' | 'inbox';
 type Navigation = NativeStackNavigationProp<PrincipalStackParamList>;
@@ -230,7 +231,7 @@ export default function PrincipalWorkspaceScreen() {
               style={styles.drawerList}
               keyboardShouldPersistTaps="handled"
             >
-              {visibleTabs.length === 0 ? (
+              {visibleTabs.length === 0 && !('academic setup'.includes(normalizedQuery) && hasPermission(user?.role, PERMISSIONS.ACADEMIC_CLASSES_VIEW)) ? (
                 <Text style={styles.noMatches}>
                   No pages match your search.
                 </Text>
@@ -275,6 +276,7 @@ export default function PrincipalWorkspaceScreen() {
                   </View>
                 ))
               )}
+              {'academic setup'.includes(normalizedQuery) && hasPermission(user?.role, PERMISSIONS.ACADEMIC_CLASSES_VIEW) ? <View><Text style={styles.groupTitle}>ACADEMIC ADMINISTRATION</Text><Pressable accessibilityRole="button" accessibilityLabel="Academic Setup" style={styles.drawerRow} onPress={() => {setDrawerOpen(false); setQuery(''); navigation.navigate('AcademicSetup');}}><Text style={styles.drawerIcon}>▤</Text><Text style={styles.drawerLabel}>Academic Setup</Text></Pressable></View> : null}
             </ScrollView>
 
             <View style={styles.drawerFooter}>

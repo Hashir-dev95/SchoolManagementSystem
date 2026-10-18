@@ -1,4 +1,5 @@
 import User from '../models/user';
+import type {ClientSession} from 'mongoose';
 import Branch from '../models/branch';
 import SchoolClass from '../models/schoolClass';
 import Section from '../models/section';
@@ -8,10 +9,10 @@ import type {JwtPayload} from './jwt.service';
 import {objectIdField, RequestContractError} from '../utils/request-validation';
 
 // Identity must come from authenticateToken, never from request body/query.
-export const currentAcademicActor = async (identity: JwtPayload | undefined) => {
+export const currentAcademicActor = async (identity: JwtPayload | undefined, session?: ClientSession) => {
   if (!identity) throw new RequestContractError(401, 'Authentication required');
   const id = objectIdField(identity.userId, 'authenticated user ID');
-  const actor = await User.findById(id).read('primary').select('_id role branchId isActive').lean();
+  const actor = await User.findById(id).session(session ?? null).read('primary').select('_id role branchId isActive').lean();
   if (!actor || !actor.isActive || actor.role !== identity.role) {
     throw new RequestContractError(401, 'User account is unavailable or authorization has changed');
   }

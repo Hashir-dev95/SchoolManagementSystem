@@ -2,6 +2,8 @@ import {Schema, model} from 'mongoose';
 
 export interface ISchoolClass {
   branchId: Schema.Types.ObjectId;
+  academicPeriodId?: Schema.Types.ObjectId;
+  revision?: number;
   name: string;
   code: string;
   academicYear: string;
@@ -12,6 +14,9 @@ export interface ISchoolClass {
 
 const schoolClassSchema = new Schema<ISchoolClass>(
   {
+    // Optional only for retained legacy records. New setup writes require it.
+    academicPeriodId: {type: Schema.Types.ObjectId, ref: 'AcademicPeriod', immutable: true},
+    revision: {type: Number, default: 1},
     branchId: {
       type: Schema.Types.ObjectId,
       ref: 'Branch',
@@ -56,6 +61,10 @@ schoolClassSchema.index(
   {unique: true},
 );
 
+schoolClassSchema.index({branchId: 1, academicPeriodId: 1, code: 1}, {
+  unique: true, name: 'class_period_code',
+  partialFilterExpression: {academicPeriodId: {$type: 'objectId'}},
+});
 const SchoolClass = model<ISchoolClass>(
   'SchoolClass',
   schoolClassSchema,

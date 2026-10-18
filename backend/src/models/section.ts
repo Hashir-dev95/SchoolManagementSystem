@@ -2,6 +2,7 @@ import {Schema, model} from 'mongoose';
 
 export interface ISection {
   branchId: Schema.Types.ObjectId;
+  revision?: number;
   classId: Schema.Types.ObjectId;
   name: string;
   code: string;
@@ -12,6 +13,7 @@ export interface ISection {
 
 const sectionSchema = new Schema<ISection>(
   {
+    revision: {type: Number, default: 1},
     branchId: {
       type: Schema.Types.ObjectId,
       ref: 'Branch',

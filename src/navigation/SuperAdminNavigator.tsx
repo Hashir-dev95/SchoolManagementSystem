@@ -1,4 +1,5 @@
 import React from 'react';
+import AcademicSetupScreen from '../screens/admin/AcademicSetupScreen';
 import TeacherAssignmentAdminScreen from '../screens/admin/TeacherAssignmentAdminScreen';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import SuperAdminDashboardScreen from '../screens/superAdmin/SuperAdminDashboardScreen';
@@ -7,6 +8,7 @@ import CreatePrincipalScreen from '../screens/superAdmin/CreatePrincipalScreen';
 import CreateTeacherScreen from '../screens/superAdmin/CreateTeacherScreen';
 import SuperAdminSettingsScreen from '../screens/superAdmin/SuperAdminSettingsScreen';
 export type SuperAdminStackParamList = {
+  AcademicSetup: undefined;
   AssignTeacher: {teacherId?: string} | undefined;
   SuperAdminDashboard: undefined;
   SuperAdminSettings: undefined;
@@ -20,6 +22,7 @@ const Stack = createNativeStackNavigator<SuperAdminStackParamList>();
 const SuperAdminNavigator = () => {
   return (
     <Stack.Navigator initialRouteName="SuperAdminDashboard">
+      <Stack.Screen name="AcademicSetup" component={AcademicSetupScreen} options={{title: 'Academic Setup', headerStyle: {backgroundColor: '#fbf9f4'}, headerTintColor: '#23595a', headerShadowVisible: false}} />
       <Stack.Screen name="CreateTeacher" component={CreateTeacherScreen}
         options={{title: 'Create Teacher', headerStyle: {backgroundColor: '#fbf9f4'},
           headerTintColor: '#23595a', headerShadowVisible: false}} />

@@ -1,6 +1,7 @@
 import {Schema, model, Types} from 'mongoose';
 
 export interface ISubject {
+  revision?: number;
   branchId: Types.ObjectId;
   name: string;
   isActive: boolean;
@@ -15,6 +16,7 @@ export const SUBJECT_NAME_INDEX = {
 } as const;
 
 const schema = new Schema<ISubject>({
+  revision: {type: Number, default: 1},
   branchId: {type: Schema.Types.ObjectId, ref: 'Branch', required: true, immutable: true},
   name: {
     type: String, required: true, minlength: 1, maxlength: 100,

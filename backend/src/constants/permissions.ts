@@ -1,4 +1,12 @@
 export const PERMISSIONS = {
+  ACADEMIC_PERIODS_VIEW: 'academic.periods.view',
+  ACADEMIC_PERIODS_MANAGE: 'academic.periods.manage',
+  ACADEMIC_CLASSES_VIEW: 'academic.classes.view',
+  ACADEMIC_CLASSES_MANAGE: 'academic.classes.manage',
+  ACADEMIC_SECTIONS_VIEW: 'academic.sections.view',
+  ACADEMIC_SECTIONS_MANAGE: 'academic.sections.manage',
+  ACADEMIC_SUBJECTS_VIEW: 'academic.subjects.view',
+  ACADEMIC_SUBJECTS_MANAGE: 'academic.subjects.manage',
   SYLLABUS_MANAGE: 'syllabus.manage',
   TEACHER_ACADEMIC_VIEW: 'teacher.academic.view',
   TEACHER_LESSONS_MANAGE: 'teacher.lessons.manage',

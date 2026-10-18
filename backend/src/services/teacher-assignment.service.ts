@@ -1,4 +1,6 @@
 import User from '../models/user';
+import type {ClientSession} from 'mongoose';
+import {AcademicPeriod} from '../models/academicPeriod';
 import SchoolClass from '../models/schoolClass';
 import Section from '../models/section';
 import Subject from '../models/subject';
@@ -8,9 +10,10 @@ import {ROLE_PERMISSIONS} from '../constants/rolePermissions';
 import {dateField, objectBody, objectIdField, RequestContractError} from '../utils/request-validation';
 import {currentAcademicActor, requireActiveAcademicBranch} from './teacher-scope.service';
 import type {JwtPayload} from './jwt.service';
+import {withAcademicCatalogLock} from './academic-catalog-lock.service';
 
-export const provisioningActor = async (identity: JwtPayload | undefined) => {
-  const actor = await currentAcademicActor(identity);
+export const provisioningActor = async (identity: JwtPayload | undefined, session?: ClientSession) => {
+  const actor = await currentAcademicActor(identity, session);
   if (!['principal', 'super_admin'].includes(actor.role) ||
     !ROLE_PERMISSIONS[actor.role].includes(PERMISSIONS.TEACHER_ASSIGNMENTS_MANAGE)) {
     throw new RequestContractError(403, 'Teacher assignment management is not permitted');
@@ -37,20 +40,30 @@ export const createTeacherAssignment = async (identity: JwtPayload | undefined, 
   if (!teacher) throw conceal();
   if (teacher.role !== 'teacher' || !teacher.isActive) throw new RequestContractError(403, 'Teacher is not eligible');
   const branchId = await requireActiveAcademicBranch(teacher.branchId?.toString());
-  const references = await Promise.all([
-    SchoolClass.exists({isActive: true}).where('_id').equals(classId).where('branchId').equals(branchId),
-    Section.exists({isActive: true}).where('_id').equals(sectionId).where('branchId').equals(branchId).where('classId').equals(classId),
-    Subject.exists({_id: subjectId, branchId, isActive: true}),
-  ]);
-  if (references.some(reference => !reference)) throw conceal();
+  await ensureTeacherAssignmentUniqueIndex();
+  return withAcademicCatalogLock(branchId, async session => {
+  await User.collection.updateOne({_id: actor._id}, {$inc: {__v: 1}}, {session});
+  const currentActor = await provisioningActor(identity, session);
+  await User.collection.updateOne({_id: teacher._id}, {$inc: {__v: 1}}, {session});
+  const currentTeacher = await User.findOne({_id: teacherId, role: 'teacher', isActive: true}).where('branchId').equals(branchId).session(session);
+  if (!currentTeacher || (currentActor.role === 'principal' && String(currentActor.branchId) !== branchId)) throw conceal();
+  // The MongoDB driver does not support parallel operations on one session.
+  const schoolClass = await SchoolClass.findOne({isActive: true}).where('_id').equals(classId).where('branchId').equals(branchId).session(session);
+  const section = await Section.exists({isActive: true}).where('_id').equals(sectionId).where('branchId').equals(branchId).where('classId').equals(classId).session(session);
+  const subject = await Subject.exists({_id: subjectId, branchId, isActive: true}).session(session);
+  if (!schoolClass || !section || !subject) throw conceal();
+  // Keep legacy assignments usable; period-backed Classes require the current
+  // active period. Lifecycle transitions participate in the same Branch fence.
+  if (schoolClass.academicPeriodId && !await AcademicPeriod.exists({_id: schoolClass.academicPeriodId, branchId, status: 'active'}).session(session)) {
+    throw new RequestContractError(409, 'An active Academic Period is required');
+  }
   // Fail closed even if production disables Mongoose autoIndex. No find-then-save
   // duplicate check: MongoDB arbitrates simultaneous equivalent creates.
-  await ensureTeacherAssignmentUniqueIndex();
   try {
-    const assignment = await TeacherAssignment.create({
+    const [assignment] = await TeacherAssignment.create([{
       teacherId, branchId, classId, sectionId, subjectId, validFrom, validUntil,
       createdBy: actor._id, updatedBy: actor._id,
-    });
+    }], {session});
     return {assignmentId: String(assignment._id), isActive: assignment.isActive};
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 11000) {
@@ -58,6 +71,7 @@ export const createTeacherAssignment = async (identity: JwtPayload | undefined, 
     }
     throw error;
   }
+  });
 };
 
 export const revokeTeacherAssignment = async (identity: JwtPayload | undefined, id: unknown, body: unknown) => {

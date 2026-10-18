@@ -26,6 +26,7 @@ import {studentEvidenceRouter, teacherReviewRouter} from './routes/academic-evid
 import {studentCatchUpRouter, teacherCatchUpRouter} from './routes/catch-up.routes';
 import {principalResultRouter, studentResultRouter, teacherResultRouter} from './routes/academic-result.routes';
 import teacherNotificationRoutes from './routes/teacher-notification.routes';
+import {academicSetupRouter} from './routes/academic-setup.routes';
 
 const backupRoutes = (backupRoutesModule as any).default ?? backupRoutesModule;
 
@@ -61,6 +62,7 @@ app.use('/api/backup', backupRoutes);
 app.use('/api/privileged-requests', privilegedRequestRoutes);
 app.use('/api/automation', automationRoutes);
 app.use('/api/sessions', sessionRoutes);
+app.use('/api/academic-setup', academicSetupRouter);
 app.use('/api/health', healthRoutes);
 app.use('/api/approval-requests', approvalRequestRoutes);
 app.use('/api', attendanceAmendmentRoutes);
@@ -98,6 +100,7 @@ app.use('/api/syllabuses', teacherParseError);
 app.use('/api/assigned-work', teacherParseError);
 app.use('/api/timetables', teacherParseError);
 app.use('/api/teacher-assignments', teacherParseError);
+app.use('/api/academic-setup', teacherParseError);
 
 // Credential parser errors must not echo submitted JSON or parser details.
 const teacherAccountParseError: ErrorRequestHandler = (error, _req, res, next) => {
