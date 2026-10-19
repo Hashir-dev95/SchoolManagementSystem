@@ -13,9 +13,11 @@ import AssignPrincipalTaskScreen from '../screens/principal/AssignPrincipalTaskS
 import PrincipalSafetyOverviewScreen from '../screens/principal/PrincipalSafetyOverviewScreen';
 import PrincipalSafetyDetailScreen from '../screens/principal/PrincipalSafetyDetailScreen';
 import PrincipalResultModerationScreen from '../screens/principal/PrincipalResultModerationScreen';
+import StudentEnrollmentScreen from '../screens/principal/StudentEnrollmentScreen';
 import AcademicSetupScreen from '../screens/admin/AcademicSetupScreen';
 
 export type PrincipalStackParamList = {
+  StudentsEnrollment: undefined;
   AcademicSetup: undefined;
   AssignTeacher: {teacherId?: string} | undefined;
   PrincipalWorkspace: undefined;
@@ -35,6 +37,7 @@ const Stack = createNativeStackNavigator<PrincipalStackParamList>();
 export default function PrincipalNavigator() {
   return (
     <Stack.Navigator initialRouteName="PrincipalWorkspace" screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="StudentsEnrollment" component={StudentEnrollmentScreen} options={{headerShown: true, title: 'Students & Enrollment', headerStyle: {backgroundColor: '#fbf9f4'}, headerTintColor: '#23595a', headerShadowVisible: false}} />
       <Stack.Screen name="AcademicSetup" component={AcademicSetupScreen} options={{headerShown: true, title: 'Academic Setup', headerStyle: {backgroundColor: '#fbf9f4'}, headerTintColor: '#23595a', headerShadowVisible: false}} />
       <Stack.Screen
         name="PrincipalWorkspace"

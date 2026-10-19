@@ -1,4 +1,8 @@
 import mongoose from 'mongoose';
+import {StudentEnrollment} from '../models/studentEnrollment';
+import User from '../models/user';
+import {PERMISSIONS} from '../constants/permissions';
+import {ROLE_PERMISSIONS} from '../constants/rolePermissions';
 
 import Branch from '../models/branch';
 import SchoolClass from '../models/schoolClass';
@@ -9,6 +13,7 @@ import {AcademicPeriod} from '../models/academicPeriod';
 import {RequestContractError} from '../utils/request-validation';
 
 export interface CreateStudentInput {
+  createdBy: string;
   userId: string;
   branchId: string;
   classId: string;
@@ -126,9 +131,19 @@ if (existingStudent) {
     const currentClass = await SchoolClass.findOne({isActive: true}).where('_id').equals(classId).where('branchId').equals(branchId).session(session);
     const currentSection = await Section.exists({isActive: true}).where('_id').equals(sectionId).where('branchId').equals(branchId).where('classId').equals(classId).session(session);
     if (!currentClass || !currentSection) throw new RequestContractError(409, 'Student Class or Section is no longer active');
+    if (!currentClass.academicPeriodId) throw new RequestContractError(409, 'Migrate the legacy Class to an Academic Period before new admission');
     if (currentClass.academicPeriodId && !await AcademicPeriod.exists({_id: currentClass.academicPeriodId, branchId, status: 'active'}).session(session)) {
       throw new RequestContractError(409, 'An active Academic Period is required');
     }
-    return new Student(student.toObject()).save({session});
+    if (!mongoose.isValidObjectId(data.createdBy)) throw new RequestContractError(400, 'Admission actor is required');
+    await User.collection.updateOne({_id: new mongoose.Types.ObjectId(data.createdBy)}, {$inc: {__v: 1}}, {session});
+    const admissionActor = await User.findById(data.createdBy).session(session).lean();
+    if (!admissionActor?.isActive || !['principal', 'super_admin'].includes(admissionActor.role) || !ROLE_PERMISSIONS[admissionActor.role].includes(PERMISSIONS.ENROLLMENT_MANAGE) || (admissionActor.role === 'principal' && String(admissionActor.branchId) !== branchId) || (admissionActor.role === 'super_admin' && admissionActor.branchId)) throw new RequestContractError(403, 'Admission actor is unavailable');
+    await User.collection.updateOne({_id: new mongoose.Types.ObjectId(userId)}, {$inc: {__v: 1}}, {session});
+    const identity = await User.findOne({role: 'student', isActive: true}).where('_id').equals(userId).where('branchId').equals(branchId).session(session).select('_id');
+    if (!identity) throw new RequestContractError(404, 'Student identity is unavailable');
+    const created = await new Student(student.toObject()).save({session});
+    await StudentEnrollment.create([{studentId: String(created._id), branchId, academicPeriodId: String(currentClass.academicPeriodId), classId, sectionId, effectiveFrom: new Date(), reason: 'Initial admission through student provisioning', createdBy: admissionActor._id, updatedBy: admissionActor._id}], {session});
+    return created;
   });
 };

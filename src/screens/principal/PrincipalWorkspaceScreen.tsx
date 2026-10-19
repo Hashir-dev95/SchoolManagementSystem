@@ -231,7 +231,7 @@ export default function PrincipalWorkspaceScreen() {
               style={styles.drawerList}
               keyboardShouldPersistTaps="handled"
             >
-              {visibleTabs.length === 0 && !('academic setup'.includes(normalizedQuery) && hasPermission(user?.role, PERMISSIONS.ACADEMIC_CLASSES_VIEW)) ? (
+              {visibleTabs.length === 0 && !('students enrollment'.includes(normalizedQuery) && hasPermission(user?.role, PERMISSIONS.ENROLLMENT_VIEW)) && !('academic setup'.includes(normalizedQuery) && hasPermission(user?.role, PERMISSIONS.ACADEMIC_CLASSES_VIEW)) ? (
                 <Text style={styles.noMatches}>
                   No pages match your search.
                 </Text>
@@ -276,6 +276,7 @@ export default function PrincipalWorkspaceScreen() {
                   </View>
                 ))
               )}
+              {'students enrollment'.includes(normalizedQuery) && hasPermission(user?.role, PERMISSIONS.ENROLLMENT_VIEW) ? <View><Text style={styles.groupTitle}>STUDENT ADMINISTRATION</Text><Pressable accessibilityRole="button" accessibilityLabel="Students & Enrollment" style={styles.drawerRow} onPress={() => {setDrawerOpen(false); setQuery(''); navigation.navigate('StudentsEnrollment');}}><Text style={styles.drawerIcon}>▤</Text><Text style={styles.drawerLabel}>Students & Enrollment</Text></Pressable></View> : null}
               {'academic setup'.includes(normalizedQuery) && hasPermission(user?.role, PERMISSIONS.ACADEMIC_CLASSES_VIEW) ? <View><Text style={styles.groupTitle}>ACADEMIC ADMINISTRATION</Text><Pressable accessibilityRole="button" accessibilityLabel="Academic Setup" style={styles.drawerRow} onPress={() => {setDrawerOpen(false); setQuery(''); navigation.navigate('AcademicSetup');}}><Text style={styles.drawerIcon}>▤</Text><Text style={styles.drawerLabel}>Academic Setup</Text></Pressable></View> : null}
             </ScrollView>
 

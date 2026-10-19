@@ -1,3 +1,4 @@
+import {enrollmentMembership} from './enrollment-membership.service';
 import {
   effectiveAttendance,
   stageSubmittedAbsenceIntents,
@@ -62,14 +63,7 @@ const occurrenceKey = (period: TeacherPeriodDTO, branchId: string) => ({
 });
 const roster = async (period: TeacherPeriodDTO, branchId: string) => {
   const rows = await Student.aggregate<RosterRow>([
-    {
-      $match: {
-        branchId: new mongoose.Types.ObjectId(branchId),
-        classId: new mongoose.Types.ObjectId(period.classId),
-        sectionId: new mongoose.Types.ObjectId(period.sectionId),
-        isActive: true,
-      },
-    },
+    ...enrollmentMembership(branchId, period.classId, period.sectionId, period.date),
     { $project: { _id: 1, userId: 1, admissionNumber: 1 } },
     {
       $lookup: {

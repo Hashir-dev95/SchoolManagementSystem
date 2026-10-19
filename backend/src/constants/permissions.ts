@@ -1,4 +1,9 @@
 export const PERMISSIONS = {
+  ENROLLMENT_VIEW: 'students.enrollment.view',
+  ENROLLMENT_MANAGE: 'students.enrollment.manage',
+  ENROLLMENT_PROMOTE: 'students.enrollment.promote',
+  ENROLLMENT_WITHDRAW: 'students.enrollment.withdraw',
+
   ACADEMIC_CLASS_SUBJECTS_VIEW: 'academic.classSubjects.view',
   ACADEMIC_CLASS_SUBJECTS_MANAGE: 'academic.classSubjects.manage',
   ACADEMIC_PERIODS_VIEW: 'academic.periods.view',

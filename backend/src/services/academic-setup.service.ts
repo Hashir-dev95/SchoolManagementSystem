@@ -1,5 +1,6 @@
 import mongoose, {type ClientSession} from 'mongoose';
 import {AcademicPeriod} from '../models/academicPeriod';
+import {StudentEnrollment, ensureEnrollmentIndexes} from '../models/studentEnrollment';
 import {ClassSubject} from '../models/classSubject';
 import SchoolClass from '../models/schoolClass';
 import Section from '../models/section';
@@ -114,6 +115,7 @@ export async function readSetup(identity: JwtPayload | undefined, kind: SetupKin
 // No cascade, no deletion, and no invented distinction in legacy status data.
 const dependencyCollections = ['students', 'teacherassignments', 'timetableperiods', 'attendances', 'attendancesessions', 'syllabuses', 'lessonplans', 'lessondeliveries', 'homeworks', 'quizzes', 'academicresults', 'catchupitems', 'teachernotices', 'assignedworks'];
 async function assertUnused(kind: SetupKind, row: any, session: ClientSession) {
+  if ((kind === 'classes' || kind === 'sections') && await StudentEnrollment.exists({[kind === 'classes' ? 'classId' : 'sectionId']: row._id, status: 'active'}).session(session)) throw conflict('This record has active Student Enrollments; move or withdraw Students first');
   if ((kind === 'classes' || kind === 'subjects') && await ClassSubject.exists({[kind === 'classes' ? 'classId' : 'subjectId']: row._id, isActive: true}).session(session)) throw conflict('This record has active Class Subjects; deactivate curriculum availability first');
   if (kind === 'classes' && await Section.exists({classId: row._id}).session(session)) throw conflict('This Class has Sections; retain it while dependent records exist');
   const key = kind === 'classes' ? 'classId' : kind === 'sections' ? 'sectionId' : 'subjectId';
@@ -187,5 +189,6 @@ function periodDates(input: Record<string, unknown>) {
   return {startDate: input.startDate as string, endDate: input.endDate as string};
 }
 export async function ensureAcademicSetupIndexes() {
+  await ensureEnrollmentIndexes();
   await Promise.all([AcademicPeriod.createIndexes(), SchoolClass.createIndexes(), Section.createIndexes(), Subject.createIndexes(), ClassSubject.createIndexes()]);
 }

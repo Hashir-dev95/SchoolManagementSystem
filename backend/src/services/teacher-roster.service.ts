@@ -1,3 +1,4 @@
+import {enrollmentMembership} from './enrollment-membership.service';
 import mongoose from 'mongoose';
 import Student from '../models/student';
 import User from '../models/user';
@@ -27,8 +28,7 @@ export const getTeacherRoster = async (identity: JwtPayload | undefined, request
   // A single scoped aggregate with an explicit identity projection; no guardian
   // population, full User documents, or per-learner authorization queries.
   const students = await Student.aggregate<TeacherRosterStudent>([
-    {$match: {branchId: new mongoose.Types.ObjectId(scope.branchId),
-      classId: new mongoose.Types.ObjectId(classId), sectionId: new mongoose.Types.ObjectId(sectionId), isActive: true}},
+    ...enrollmentMembership(scope.branchId, classId, sectionId),
     {$project: {_id: 1, userId: 1, admissionNumber: 1}},
     {$lookup: {from: User.collection.name, localField: 'userId', foreignField: '_id',
       pipeline: [{$match: {isActive: true, role: 'student', branchId: new mongoose.Types.ObjectId(scope.branchId)}},

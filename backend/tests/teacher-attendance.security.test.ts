@@ -669,6 +669,7 @@ test('new trusted enrollment invalidates the roster fingerprint', async () => {
   const session = (await open()).data;
   const learner = await actor('new-learner', 'student', branchA);
   await createStudent({
+    createdBy: String(principal.id),
     userId: String(learner.id),
     branchId: String(branchA),
     classId: String(class8),

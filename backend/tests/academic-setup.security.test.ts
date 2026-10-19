@@ -322,7 +322,7 @@ for (const kind of ['subjects', 'sections', 'classes'] as const) for (const winn
 }
 test('enrollment revalidates Class/Section inside the shared Branch fence', async () => {
   assert.equal((await deactivate('sections', sectionId)).status, 200);
-  await assert.rejects(createStudent({userId: teacherId, branchId: branch, classId, sectionId, admissionNumber: 'NEW'}));
+  await assert.rejects(createStudent({createdBy: teacherId, userId: teacherId, branchId: branch, classId, sectionId, admissionNumber: 'NEW'}));
 });
 for (const winner of ['enrollment', 'deactivation'] as const) {
   test(`Student enrollment vs Section deactivation: ${winner} commits first`, async () => {
@@ -339,7 +339,9 @@ for (const winner of ['enrollment', 'deactivation'] as const) {
       if (call === 1) {entered(); await gate;}
       return result;
     } as typeof original;
-    const enroll = () => createStudent({userId: teacherId, branchId: branch, classId, sectionId, admissionNumber: 'RACE'}).then(() => 201, (error: any) => error.status ?? 500);
+    const pupil = await actor('student', branch);
+    const admissionActor = await User.findOne({role: 'principal'});
+    const enroll = () => createStudent({createdBy: String(admissionActor!._id), userId: pupil.id, branchId: branch, classId, sectionId, admissionNumber: 'RACE'}).then(() => 201, (error: any) => error.status ?? 500);
     try {
       const first = winner === 'enrollment' ? enroll() : deactivate('sections', sectionId).then(r => r.status);
       await acquired;

@@ -335,6 +335,7 @@ test('Principal navigator retains one stack with unique existing screens and no 
     screen => screen.props.name,
   );
   expect(names).toEqual([
+    'StudentsEnrollment',
     'AcademicSetup',
     'PrincipalWorkspace',
     'AttendanceReview',

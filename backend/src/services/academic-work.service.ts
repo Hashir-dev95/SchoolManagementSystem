@@ -1,3 +1,4 @@
+import {enrollmentMembership} from './enrollment-membership.service';
 import { createHash } from 'node:crypto';
 import mongoose, { type ClientSession } from 'mongoose';
 import { Homework } from '../models/homework';
@@ -188,10 +189,7 @@ export const resolveAcademicWorkRecipients = async (
   admissionNumber: string;
   studentName: string;
 }>([
-  { $match: {
-    branchId: new mongoose.Types.ObjectId(branchId), classId: new mongoose.Types.ObjectId(context.classId),
-    sectionId: new mongoose.Types.ObjectId(context.sectionId), isActive: true,
-  } },
+  ...enrollmentMembership(branchId, context.classId, context.sectionId),
   { $project: { _id: 1, userId: 1, admissionNumber: 1 } },
   { $lookup: {
     from: User.collection.name, localField: 'userId', foreignField: '_id',

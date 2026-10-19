@@ -1,4 +1,5 @@
-﻿import { createHash } from 'node:crypto';
+﻿import {enrollmentMembership} from './enrollment-membership.service';
+import { createHash } from 'node:crypto';
 import mongoose, { type ClientSession } from 'mongoose';
 import {
   AttendanceCorrection,
@@ -124,13 +125,7 @@ const studentEvidence = async (
   if (!student) throw missing();
   if (
     session.state !== 'submitted' &&
-    !(await Student.exists({ isActive: true })
-      .where('_id')
-      .equals(studentId)
-      .where('classId')
-      .equals(session.classId)
-      .where('sectionId')
-      .equals(session.sectionId))
+    !(await Student.aggregate([...enrollmentMembership(branchId, String(session.classId), String(session.sectionId), session.date), {$match: {_id: new mongoose.Types.ObjectId(studentId)}}, {$limit: 1}])).length
   )
     throw missing();
   const user = await User.findOne({ role: 'student' })
