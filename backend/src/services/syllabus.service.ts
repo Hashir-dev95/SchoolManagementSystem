@@ -5,6 +5,7 @@ import Subject from '../models/subject';
 import User from '../models/user';
 import Session from '../models/session';
 import Branch from '../models/branch';
+import {requireClassSubject} from './class-subject-context.service';
 import { PERMISSIONS } from '../constants/permissions';
 import { ROLE_PERMISSIONS } from '../constants/rolePermissions';
 import {
@@ -184,12 +185,14 @@ export const manageSyllabus = async (
       const { schoolClass: currentClass, branchId: currentBranchId } =
         await assertManagedSyllabusContext(context, session);
       if (currentBranchId !== branchId) throw academicMissing();
+      const curriculum = action === 'retire' ? null : await requireClassSubject(branchId, classId, subjectId, session);
+      if (curriculum && currentClass.academicYear !== curriculum.period.code) throw new RequestContractError(409, 'Class Academic Period snapshot is inconsistent');
       if (action === 'create') {
         const row = new Syllabus({
           branchId,
           classId,
           subjectId,
-          academicYear: currentClass.academicYear,
+          academicYear: curriculum!.period.code,
           version: revisionField(input.version),
           title: textField(input.title, 'syllabus title', 200, 1),
           units: structure(input.units),

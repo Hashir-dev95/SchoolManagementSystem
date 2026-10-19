@@ -1,5 +1,6 @@
 import mongoose, {type ClientSession} from 'mongoose';
 import {AcademicPeriod} from '../models/academicPeriod';
+import {ClassSubject} from '../models/classSubject';
 import SchoolClass from '../models/schoolClass';
 import Section from '../models/section';
 import Subject from '../models/subject';
@@ -14,7 +15,8 @@ import {objectBody, objectIdField, textField, dateField, RequestContractError} f
 import type {JwtPayload} from './jwt.service';
 
 export type SetupKind = 'periods' | 'classes' | 'sections' | 'subjects';
-const grants: Record<SetupKind, {view: Permission; manage: Permission}> = {
+const grants: Record<SetupKind | 'classSubjects', {view: Permission; manage: Permission}> = {
+  classSubjects: {view: PERMISSIONS.ACADEMIC_CLASS_SUBJECTS_VIEW, manage: PERMISSIONS.ACADEMIC_CLASS_SUBJECTS_MANAGE},
   periods: {view: PERMISSIONS.ACADEMIC_PERIODS_VIEW, manage: PERMISSIONS.ACADEMIC_PERIODS_MANAGE},
   classes: {view: PERMISSIONS.ACADEMIC_CLASSES_VIEW, manage: PERMISSIONS.ACADEMIC_CLASSES_MANAGE},
   sections: {view: PERMISSIONS.ACADEMIC_SECTIONS_VIEW, manage: PERMISSIONS.ACADEMIC_SECTIONS_MANAGE},
@@ -33,7 +35,7 @@ const codeOf = (value: unknown) => {
   if (!/^[A-Z0-9][A-Z0-9_-]*$/.test(code)) throw new RequestContractError(400, 'Code must use letters, numbers, hyphens or underscores');
   return code;
 };
-async function scope(identity: JwtPayload | undefined, kind: SetupKind, manage: boolean, requested: unknown, session?: ClientSession) {
+export async function academicSetupScope(identity: JwtPayload | undefined, kind: SetupKind | 'classSubjects', manage: boolean, requested: unknown, session?: ClientSession) {
   const actor = await currentAcademicActor(identity, session);
   if (!['principal', 'super_admin'].includes(actor.role) || !ROLE_PERMISSIONS[actor.role].includes(grants[kind][manage ? 'manage' : 'view']) || (kind === 'periods' && manage && actor.role !== 'super_admin')) {
     throw new RequestContractError(403, 'Academic setup permission is required');
@@ -82,7 +84,7 @@ async function activePeriod(branchId: string, id: unknown, session?: ClientSessi
 }
 export async function readSetup(identity: JwtPayload | undefined, kind: SetupKind, query: unknown, id?: unknown) {
   const input = objectBody(query, ['branchId', ...(kind === 'classes' ? ['academicPeriodId'] : []), ...(kind === 'sections' ? ['classId'] : []), 'offset']);
-  const ctx = await scope(identity, kind, false, input.branchId);
+  const ctx = await academicSetupScope(identity, kind, false, input.branchId);
   const filter: any = {branchId: ctx.branchId};
   if (id !== undefined) filter._id = objectIdField(id, 'record ID');
   if (kind === 'classes' && input.academicPeriodId !== undefined) {
@@ -112,6 +114,7 @@ export async function readSetup(identity: JwtPayload | undefined, kind: SetupKin
 // No cascade, no deletion, and no invented distinction in legacy status data.
 const dependencyCollections = ['students', 'teacherassignments', 'timetableperiods', 'attendances', 'attendancesessions', 'syllabuses', 'lessonplans', 'lessondeliveries', 'homeworks', 'quizzes', 'academicresults', 'catchupitems', 'teachernotices', 'assignedworks'];
 async function assertUnused(kind: SetupKind, row: any, session: ClientSession) {
+  if ((kind === 'classes' || kind === 'subjects') && await ClassSubject.exists({[kind === 'classes' ? 'classId' : 'subjectId']: row._id, isActive: true}).session(session)) throw conflict('This record has active Class Subjects; deactivate curriculum availability first');
   if (kind === 'classes' && await Section.exists({classId: row._id}).session(session)) throw conflict('This Class has Sections; retain it while dependent records exist');
   const key = kind === 'classes' ? 'classId' : kind === 'sections' ? 'sectionId' : 'subjectId';
   for (const collection of dependencyCollections) {
@@ -122,7 +125,7 @@ async function assertUnused(kind: SetupKind, row: any, session: ClientSession) {
 export async function writeSetup(identity: JwtPayload | undefined, token: string, kind: SetupKind, requestedBranch: unknown, action: 'create' | 'update' | 'deactivate' | 'reactivate' | 'activate' | 'close' | 'archive', id: unknown, body: unknown) {
   const fields = action === 'create' || action === 'update' ? (kind === 'periods' ? ['name', ...(action === 'create' ? ['code'] : []), 'startDate', 'endDate'] : kind === 'classes' ? ['name', 'code', ...(action === 'create' ? ['academicPeriodId'] : [])] : kind === 'sections' ? ['name', 'code', ...(action === 'create' ? ['classId'] : [])] : ['name']) : [];
   const input = objectBody(body, [...fields, ...(action === 'create' ? [] : ['revision'])]);
-  const initial = await scope(identity, kind, true, requestedBranch);
+  const initial = await academicSetupScope(identity, kind, true, requestedBranch);
   try {
     return await withAcademicCatalogLock(initial.branchId, async session => {
       // Lock current identity and login too: branch/role/session changes cannot
@@ -130,7 +133,7 @@ export async function writeSetup(identity: JwtPayload | undefined, token: string
       await User.collection.updateOne({_id: initial.actor._id}, {$inc: {__v: 1}}, {session});
       const login = await Session.collection.updateMany({token, userId: initial.actor._id, role: initial.actor.role, isRevoked: false}, {$inc: {__v: 1}}, {session});
       if (!login.matchedCount) throw new RequestContractError(401, 'Session is unavailable');
-      const ctx = await scope(identity, kind, true, requestedBranch, session);
+      const ctx = await academicSetupScope(identity, kind, true, requestedBranch, session);
       if (ctx.branchId !== initial.branchId) throw missing();
       const Model: any = models[kind];
       const row: any = action === 'create' ? null : await Model.findOne({_id: objectIdField(id, 'record ID'), branchId: ctx.branchId}).session(session);
@@ -184,5 +187,5 @@ function periodDates(input: Record<string, unknown>) {
   return {startDate: input.startDate as string, endDate: input.endDate as string};
 }
 export async function ensureAcademicSetupIndexes() {
-  await Promise.all([AcademicPeriod.createIndexes(), SchoolClass.createIndexes(), Section.createIndexes(), Subject.createIndexes()]);
+  await Promise.all([AcademicPeriod.createIndexes(), SchoolClass.createIndexes(), Section.createIndexes(), Subject.createIndexes(), ClassSubject.createIndexes()]);
 }

@@ -1,3 +1,4 @@
+import {seedCurriculumFixtures} from './helpers/curriculum-fixtures';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import type { Server } from 'node:http';
@@ -90,6 +91,7 @@ beforeEach(async () => {
   });
   await Student.create({ userId: learner.id, branchId: branch, classId: schoolClass._id, sectionId: section._id, admissionNumber: 'A-1' });
   await Student.create({ userId: outsider.id, branchId: branch, classId: schoolClass._id, sectionId: sectionB._id, admissionNumber: 'B-1' });
+  await seedCurriculumFixtures();
   const created = await createSyllabus(); assert.equal(created.status, 200);
   const published = await http(`/syllabuses/${created.json.data.syllabusId}/publish`, admin, { revision: 1 });
   assert.equal(published.status, 200); syllabus = published.json.data;

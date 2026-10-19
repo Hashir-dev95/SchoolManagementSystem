@@ -4,6 +4,9 @@ import {
   SubstituteAssignment,
 } from '../models/timetable';
 import User from '../models/user';
+import type {ClientSession} from 'mongoose';
+import {requireClassSubject} from './class-subject-context.service';
+import {withAcademicCatalogLock} from './academic-catalog-lock.service';
 import { withTimetablePublication } from './teacher-timetable.service';
 import {
   currentAcademicActor,
@@ -95,7 +98,7 @@ type Slot = {
   endTime: string;
   room: string;
 };
-const validateResponsibilities = async (branchId: string, slots: Slot[]) => {
+const validateResponsibilities = async (branchId: string, slots: Slot[], session?: ClientSession) => {
   const teachers = [...new Set(slots.map(p => p.teacherId))];
   const scopes = new Map(
     await Promise.all(
@@ -109,6 +112,7 @@ const validateResponsibilities = async (branchId: string, slots: Slot[]) => {
     ),
   );
   for (const slot of slots) {
+    await requireClassSubject(branchId, slot.classId, slot.subjectId, session);
     const scope = scopes.get(slot.teacherId)!;
     if (
       scope.branchId !== branchId ||
@@ -196,18 +200,23 @@ export const createTimetableVersion = async (
     { unique: true },
   );
   try {
-    const version = await TimetableVersion.create({
+    return await withAcademicCatalogLock(branchId, async session => {
+    await actorFor(identity);
+    await validateResponsibilities(branchId, slots, session);
+    const [version] = await TimetableVersion.create([{
       branchId,
       versionNumber,
       effectiveFrom,
       effectiveUntil,
       periodCount: slots.length,
       createdBy: actor._id,
-    });
+    }], {session});
     await TimetablePeriod.insertMany(
       slots.map(p => ({ ...p, branchId, timetableVersionId: version._id })),
+      {session},
     );
     return { versionId: String(version._id), status: version.status };
+    });
   } catch (error) {
     return duplicate(error);
   }
@@ -246,8 +255,10 @@ export const approveTimetableVersion = async (
   const updated = await withTimetablePublication(
     String(version.branchId),
     undefined,
-    session =>
-      TimetableVersion.findOneAndUpdate(
+    async session => {
+      await actorFor(identity);
+      await validateResponsibilities(String(version.branchId), periods.map(p => ({...p, teacherId: String(p.teacherId), classId: String(p.classId), sectionId: String(p.sectionId), subjectId: String(p.subjectId)})), session);
+      return TimetableVersion.findOneAndUpdate(
         { _id: version._id, status: 'draft' },
         {
           $set: {
@@ -257,7 +268,8 @@ export const approveTimetableVersion = async (
           },
         },
         { returnDocument: 'after', session },
-      ),
+      );
+    },
   );
   if (!updated) throw new RequestContractError(409, 'Version state changed');
   return { versionId: String(updated._id), status: updated.status };
@@ -310,7 +322,9 @@ export const createSubstitute = async (
       subjectId: String(period.subjectId),
     },
   ]);
-  const substitute = await SubstituteAssignment.create({
+  return withAcademicCatalogLock(branchId, async session => {
+  await requireClassSubject(branchId, String(period.classId), String(period.subjectId), session);
+  const [substitute] = await SubstituteAssignment.create([{
     branchId,
     periodId,
     originalTeacherId: period.teacherId,
@@ -319,8 +333,9 @@ export const createSubstitute = async (
     ...clock,
     room: textField(input.room, 'room', 120, 1),
     createdBy: actor._id,
-  });
+  }], {session});
   return { substituteId: String(substitute._id), status: substitute.status };
+  });
 };
 export const approveSubstitute = async (
   identity: JwtPayload | undefined,
@@ -388,8 +403,9 @@ export const approveSubstitute = async (
     const updated = await withTimetablePublication(
       branchId,
       String(period._id),
-      session =>
-        SubstituteAssignment.findOneAndUpdate(
+      async session => {
+        await requireClassSubject(branchId, String(period.classId), String(period.subjectId), session);
+        return SubstituteAssignment.findOneAndUpdate(
           { _id: substitute._id, status: 'draft' },
           {
             $set: {
@@ -399,7 +415,8 @@ export const approveSubstitute = async (
             },
           },
           { returnDocument: 'after', session },
-        ),
+        );
+      },
     );
     if (!updated)
       throw new RequestContractError(409, 'Substitute state changed');

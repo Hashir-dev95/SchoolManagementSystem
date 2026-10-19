@@ -5,6 +5,7 @@ import {requirePermission} from '../middleware/permission.middleware';
 import {PERMISSIONS} from '../constants/permissions';
 import {RequestContractError, objectBody} from '../utils/request-validation';
 import {readSetup, writeSetup, setupBranches, type SetupKind} from '../services/academic-setup.service';
+import {readClassSubjects, writeClassSubject} from '../services/class-subject.service';
 
 const handle = (action: (request: AuthenticatedRequest) => Promise<unknown>, status = 200) => async (request: AuthenticatedRequest, response: Response) => {
   response.setHeader('Cache-Control', 'no-store');
@@ -18,6 +19,12 @@ const handle = (action: (request: AuthenticatedRequest) => Promise<unknown>, sta
 export const academicSetupRouter = Router();
 academicSetupRouter.use(authenticateToken, requireRole('principal', 'super_admin'));
 academicSetupRouter.get('/branches', requirePermission(PERMISSIONS.ACADEMIC_PERIODS_VIEW), handle(request => {objectBody(request.query, []); return setupBranches(request.user);}));
+const curriculumRead = requirePermission(PERMISSIONS.ACADEMIC_CLASS_SUBJECTS_VIEW);
+const curriculumManage = requirePermission(PERMISSIONS.ACADEMIC_CLASS_SUBJECTS_MANAGE);
+academicSetupRouter.get('/classes/:classId/subjects', curriculumRead, handle(request => readClassSubjects(request.user, request.params.classId, request.query)));
+academicSetupRouter.get('/classes/:classId/subjects/options', curriculumManage, handle(request => readClassSubjects(request.user, request.params.classId, request.query, true)));
+academicSetupRouter.post('/classes/:classId/subjects', curriculumManage, handle(request => writeClassSubject(request.user, request.headers.authorization!.slice(7), request.params.classId, request.query, 'create', undefined, request.body), 201));
+for (const action of ['deactivate', 'reactivate'] as const) academicSetupRouter.post('/classes/:classId/subjects/:mappingId/' + action, curriculumManage, handle(request => writeClassSubject(request.user, request.headers.authorization!.slice(7), request.params.classId, request.query, action, request.params.mappingId, request.body)));
 for (const kind of ['periods', 'classes', 'sections', 'subjects'] as SetupKind[]) {
   const grants = {
     periods: [PERMISSIONS.ACADEMIC_PERIODS_VIEW, PERMISSIONS.ACADEMIC_PERIODS_MANAGE],

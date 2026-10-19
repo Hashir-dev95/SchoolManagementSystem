@@ -1,3 +1,4 @@
+import {seedCurriculumFixtures} from './helpers/curriculum-fixtures';
 import assert from 'node:assert/strict';
 import {after, before, beforeEach, mock, test} from 'node:test';
 import {request as nodeRequest, type Server} from 'node:http';
@@ -118,6 +119,7 @@ beforeEach(async () => {
   math = (await Subject.create({branchId: branchA, name: 'Mathematics'}))._id;
   physics = (await Subject.create({branchId: branchA, name: 'Physics'}))._id;
   foreignSubject = (await Subject.create({branchId: branchB, name: 'Mathematics'}))._id;
+  await seedCurriculumFixtures();
   const first = await create(); assert.equal(first.status, 201); assignment8 = first.data.assignmentId;
   const second = await create({classId: String(class9), sectionId: String(section9B), subjectId: String(physics)});
   assert.equal(second.status, 201); assignment9 = second.data.assignmentId;

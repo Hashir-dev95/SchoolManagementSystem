@@ -1,3 +1,4 @@
+import {seedCurriculumFixtures} from './helpers/curriculum-fixtures';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import type { Server } from 'node:http';
@@ -174,6 +175,7 @@ beforeEach(async () => {
     (await new Subject({ branchId: foreign, name: 'Foreign subject' }).save())
       ._id,
   );
+  await seedCurriculumFixtures(false);
 });
 after(async () => {
   ROLE_PERMISSIONS.principal = grants;

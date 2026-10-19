@@ -1,3 +1,5 @@
+import {ClassSubject} from '../src/models/classSubject';
+import {seedCurriculumFixtures} from './helpers/curriculum-fixtures';
 import assert from 'node:assert/strict';
 import {after, before, beforeEach, test} from 'node:test';
 import type {Server} from 'node:http';
@@ -76,6 +78,7 @@ beforeEach(async () => {
   classId = String((await new SchoolClass({branchId: branch, academicPeriodId: periodId, academicYear: 'CURRENT', name: 'Grade 8', code: 'G8'}).save())._id);
   sectionId = String((await new Section({branchId: branch, classId, name: 'A', code: 'A'}).save())._id);
   subjectId = String((await Subject.create({branchId: branch, name: 'Mathematics'}))._id);
+  await seedCurriculumFixtures(true);
 });
 after(async () => {
   ROLE_PERMISSIONS.principal = principalGrants; ROLE_PERMISSIONS.super_admin = adminGrants;
@@ -246,6 +249,7 @@ test('Principal mutation revalidates account state, role, session and each catal
 });
 for (const collection of ['students', 'teacherassignments', 'timetableperiods', 'syllabuses', 'attendances', 'attendancesessions', 'homeworks', 'quizzes', 'catchupitems', 'academicresults']) {
   test(`deactivation retains ${collection} references and returns 409`, async () => {
+    await ClassSubject.updateMany({}, {$set: {isActive: false}});
     const key = collection === 'students' ? 'sectionId' : 'subjectId';
     const id = key === 'sectionId' ? sectionId : subjectId;
     await mongoose.connection.collection(collection).insertOne({[key]: new mongoose.Types.ObjectId(id), isActive: false});
@@ -304,7 +308,7 @@ for (const kind of ['subjects', 'sections', 'classes'] as const) for (const winn
       const second = winner === 'assignment' ? deactivate(kind, id) : assignment();
       await attempted; release();
       const [a, b] = await Promise.all([first, second]);
-      if (kind === 'classes' || winner === 'assignment') {
+      if (kind !== 'sections' || winner === 'assignment') {
         assert.equal(winner === 'assignment' ? a.status : b.status, 201);
         assert.equal(winner === 'deactivation' ? a.status : b.status, 409);
       } else {assert.equal(a.status, 200); assert.equal(b.status, 404);}
@@ -398,8 +402,8 @@ for (const kind of ['classes', 'sections', 'subjects'] as const) for (const winn
         : http('/teacher-assignments', principal, {teacherId, classId, sectionId, subjectId, validFrom: '2026-01-01T00:00:00Z'}, 'POST', workerBase);
       await contender; release();
       const [a, b] = await Promise.all([first, second]);
-      assert.deepEqual([a.status, b.status], winner === 'assignment' ? [201, 409] : kind === 'classes' ? [409, 201] : [200, 404]);
-      assert.equal(await TeacherAssignment.countDocuments(), winner === 'assignment' || kind === 'classes' ? 1 : 0);
+      assert.deepEqual([a.status, b.status], winner === 'assignment' ? [201, 409] : kind !== 'sections' ? [409, 201] : [200, 404]);
+      assert.equal(await TeacherAssignment.countDocuments(), winner === 'assignment' || kind !== 'sections' ? 1 : 0);
     } finally {release(); worker.removeListener('message', arrived); Branch.collection.updateOne = original;}
   });
 }

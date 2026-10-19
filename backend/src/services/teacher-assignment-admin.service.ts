@@ -1,6 +1,8 @@
 import User from '../models/user';
 import Branch from '../models/branch';
 import SchoolClass from '../models/schoolClass';
+import {AcademicPeriod} from '../models/academicPeriod';
+import {ClassSubject} from '../models/classSubject';
 import Section from '../models/section';
 import Subject from '../models/subject';
 import TeacherAssignment from '../models/teacherAssignment';
@@ -143,9 +145,11 @@ export const getAssignmentOptions = async (
         .equals(branchId)))
   )
     throw missing();
+  const currentPeriod = branchId ? await AcademicPeriod.findOne({branchId, status: 'active'}).select('_id').lean() : null;
+  const curriculum = classId && currentPeriod ? await ClassSubject.find({branchId, classId, academicPeriodId: currentPeriod._id, isActive: true}).select('subjectId').lean() : [];
   const [classes, sections, subjects] = await Promise.all([
-    branchId
-      ? SchoolClass.find({ isActive: true })
+    branchId && currentPeriod
+      ? SchoolClass.find({ isActive: true }).where('academicPeriodId').equals(currentPeriod._id)
           .where('branchId')
           .equals(branchId)
           .select('_id name code academicYear')
@@ -164,8 +168,8 @@ export const getAssignmentOptions = async (
           .limit(200)
           .lean()
       : [],
-    branchId
-      ? Subject.find({ isActive: true })
+    classId && currentPeriod
+      ? Subject.find({ isActive: true, _id: {$in: curriculum.map(row => row.subjectId)} })
           .where('branchId')
           .equals(branchId)
           .select('_id name')

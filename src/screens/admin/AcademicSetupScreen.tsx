@@ -9,6 +9,8 @@ import {useTeacherResource} from '../teacher/useTeacherResource';
 import {ApiError} from '../../services/api/apiClient';
 import {hasPermission, PERMISSIONS} from '../../constants/permissions';
 
+import ClassSubjectsPanel from './ClassSubjectsPanel';
+
 type Tab = 'periods' | 'classes' | 'subjects';
 type Form = {kind: SetupKind; record?: AcademicPeriod | CatalogRecord; name: string; code: string; startDate: string; endDate: string};
 type Confirmation = {kind: SetupKind; record: AcademicPeriod | CatalogRecord; action: SetupAction};
@@ -29,6 +31,7 @@ function AcademicSetupContent() {
   const [branchId, setBranchId] = useState('');
   const [tab, setTab] = useState<Tab>(governance ? 'periods' : 'classes');
   const [parent, setParent] = useState<CatalogRecord | null>(null);
+  const [classView, setClassView] = useState<'sections' | 'subjects'>('sections');
   const [offset, setOffset] = useState(0);
   const [form, setForm] = useState<Form | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
@@ -46,9 +49,9 @@ function AcademicSetupContent() {
     if (!selected) return {branches: branches.items, periods: null, records: null};
     const query = user?.role === 'super_admin' ? {branchId: selected} : {};
     const periods = await service.periods(accessToken, {...query, offset: kind === 'periods' ? offset : 0});
-    const records = kind === 'periods' ? null : await service.list(accessToken, kind, {...query, ...(parent ? {classId: parent.id} : {}), offset});
+    const records = kind === 'periods' || (parent && classView === 'subjects') ? null : await service.list(accessToken, kind, {...query, ...(parent ? {classId: parent.id} : {}), offset});
     return {branches: branches.items, periods, records};
-  }, [accessToken, branchId, user?.role, kind, parent, offset]);
+  }, [accessToken, branchId, user?.role, kind, parent, offset, classView]);
   const resource = useTeacherResource(load, 'Academic setup is unavailable in your current branch.');
   const data = resource.data, current = data?.periods?.current;
   const selectedBranch = user?.role === 'principal' ? data?.branches[0]?.id : branchId;
@@ -111,8 +114,9 @@ function AcademicSetupContent() {
           {current ? <><StatusBadge status="paid" label="Active" /><Text style={styles.copy}>{current.startDate} to {current.endDate}</Text><Text style={styles.muted}>Period code: {current.code} · {data.periods.branchName}</Text></> : <Text style={styles.copy}>A Super Admin must create and activate an Academic Period before new Classes and Sections can be added.</Text>}
           {!governance ? <Text style={styles.muted}>Academic Period governance is managed by Super Admin. Your access is read-only.</Text> : null}
         </SectionCard>
-        {parent ? <SectionCard title={`Sections · ${parent.name}`}><Text style={styles.muted}>Class code: {parent.code} · {parent.periodName}</Text><Button title="Back to Classes" variant="secondary" disabled={busy} onPress={() => {setParent(null); setOffset(0); setFeedback(null);}} /></SectionCard> : null}
-        {kind === 'subjects' ? <SectionCard title="Branch Subject catalog"><Text style={styles.copy}>Maintain the Subjects taught in this branch. Class–Subject availability will be managed in a later phase.</Text></SectionCard> : null}
+        {parent ? <SectionCard title={`${classView === 'sections' ? 'Sections' : 'Subjects'} · ${parent.name}`}><Text style={styles.muted}>Class code: {parent.code} · {parent.periodName}</Text><Button title="Back to Classes" variant="secondary" disabled={busy} onPress={() => {setParent(null); setOffset(0); setFeedback(null);}} /></SectionCard> : null}
+        {kind === 'subjects' ? <SectionCard title="Branch Subject catalog"><Text style={styles.copy}>Maintain the Subjects taught in this branch. Open a Class under Classes to manage its available Subjects.</Text></SectionCard> : null}
+        {parent && classView === 'subjects' ? <ClassSubjectsPanel key={parent.id + ':' + selectedBranch} classId={parent.id} branchId={user?.role === 'super_admin' ? selectedBranch : undefined} /> : <>
         <View style={styles.listHeader}><Text style={styles.heading}>{parent ? 'Sections' : tabs.find(item => item.key === tab)?.title}</Text><Text style={styles.muted}>{records?.total ?? 0} records</Text></View>
         {canManage && writable ? <Button title={`Create ${labels[kind]}`} disabled={busy || resource.loading} style={styles.create} onPress={() => edit()} /> : null}
         {!records?.items.length ? <Card><Text style={styles.heading}>No {kind} yet</Text><Text style={styles.muted}>{writable ? `Add the first ${labels[kind].toLowerCase()} to get started.` : 'No records are available in this context.'}</Text></Card> : records.items.map(record => {
@@ -126,13 +130,15 @@ function AcademicSetupContent() {
             {catalog?.legacy ? <Text style={styles.muted}>Legacy Class · read-only until an approved migration.</Text> : null}
             <View style={styles.actions}>
               {canManage && editable ? <Button title={`Edit ${record.name}`} variant="secondary" disabled={busy} onPress={() => edit(record)} /> : null}
-              {kind === 'classes' ? <Button title={`Sections for ${record.name}`} variant="secondary" disabled={busy} onPress={() => {setParent(record as CatalogRecord); setOffset(0); setFeedback(null);}} /> : null}
+              {kind === 'classes' && hasPermission(user?.role, PERMISSIONS.ACADEMIC_CLASS_SUBJECTS_VIEW) ? <Button title={'Subjects for ' + record.name} variant="secondary" disabled={busy} onPress={() => {setClassView('subjects'); setParent(record as CatalogRecord); setOffset(0); setFeedback(null);}} /> : null}
+              {kind === 'classes' ? <Button title={`Sections for ${record.name}`} variant="secondary" disabled={busy} onPress={() => {setClassView('sections'); setParent(record as CatalogRecord); setOffset(0); setFeedback(null);}} /> : null}
               {canManage && editable && catalog ? <Button title={`${catalog.isActive ? 'Deactivate' : 'Reactivate'} ${record.name}`} variant={catalog.isActive ? 'danger' : 'secondary'} disabled={busy} onPress={() => {setFeedback(null); setConfirmation({kind, record, action: catalog.isActive ? 'deactivate' : 'reactivate'});}} /> : null}
               {period && governance ? (period.status === 'draft' ? ['activate', 'archive'] as const : period.status === 'active' ? ['close'] as const : period.status === 'closed' ? ['archive'] as const : []).map(action => <Button key={action} title={`${action.charAt(0).toUpperCase() + action.slice(1)} ${record.name}`} variant={action === 'activate' ? 'secondary' : 'danger'} disabled={busy} onPress={() => {setFeedback(null); setConfirmation({kind, record, action});}} />) : null}
             </View>
           </Card>;
         })}
         <View style={styles.actions}>{offset > 0 ? <Button title="Previous page" variant="secondary" disabled={busy} onPress={() => setOffset(Math.max(0, offset - 50))} /> : null}{records?.nextOffset !== null && records?.nextOffset !== undefined ? <Button title="Next page" variant="secondary" disabled={busy} onPress={() => setOffset(records.nextOffset!)} /> : null}</View>
+        </>}
       </> : !resource.loading && !resource.error ? <SectionCard title="Choose a branch"><Text style={styles.copy}>Select a branch above to view its periods and academic catalog.</Text></SectionCard> : null}
       <AdminDialog visible={!!form} title={`${form?.record ? 'Edit' : 'Create'} ${form ? labels[form.kind] : ''}`} busy={busy} busyLabel="Saving academic setup" confirmTitle="Save changes" onConfirm={save} onClose={() => {if (!busy) {setForm(null); setFeedback(null);}}}>
         {form ? <>

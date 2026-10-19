@@ -1,3 +1,4 @@
+import {seedCurriculumFixtures} from './helpers/curriculum-fixtures';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import type { Server } from 'node:http';
@@ -194,6 +195,7 @@ beforeEach(async () => {
     createdBy: admin.id,
     updatedBy: admin.id,
   });
+  await seedCurriculumFixtures();
   const created = await createSyllabus();
   assert.equal(created.status, 200);
   const published = await http(

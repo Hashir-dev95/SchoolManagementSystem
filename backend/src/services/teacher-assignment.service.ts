@@ -11,6 +11,7 @@ import {dateField, objectBody, objectIdField, RequestContractError} from '../uti
 import {currentAcademicActor, requireActiveAcademicBranch} from './teacher-scope.service';
 import type {JwtPayload} from './jwt.service';
 import {withAcademicCatalogLock} from './academic-catalog-lock.service';
+import {requireClassSubject} from './class-subject-context.service';
 
 export const provisioningActor = async (identity: JwtPayload | undefined, session?: ClientSession) => {
   const actor = await currentAcademicActor(identity, session);
@@ -57,6 +58,8 @@ export const createTeacherAssignment = async (identity: JwtPayload | undefined, 
   if (schoolClass.academicPeriodId && !await AcademicPeriod.exists({_id: schoolClass.academicPeriodId, branchId, status: 'active'}).session(session)) {
     throw new RequestContractError(409, 'An active Academic Period is required');
   }
+  // NEW assignments require explicit curriculum; historical reads are unchanged.
+  await requireClassSubject(branchId, classId, subjectId, session);
   // Fail closed even if production disables Mongoose autoIndex. No find-then-save
   // duplicate check: MongoDB arbitrates simultaneous equivalent creates.
   try {

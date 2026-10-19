@@ -1,4 +1,6 @@
 export const PERMISSIONS = {
+  ACADEMIC_CLASS_SUBJECTS_VIEW: 'academic.classSubjects.view',
+  ACADEMIC_CLASS_SUBJECTS_MANAGE: 'academic.classSubjects.manage',
   ACADEMIC_PERIODS_VIEW: 'academic.periods.view',
   ACADEMIC_PERIODS_MANAGE: 'academic.periods.manage',
   ACADEMIC_CLASSES_VIEW: 'academic.classes.view',
