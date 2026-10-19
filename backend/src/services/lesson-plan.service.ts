@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import {requireClassSubject} from './class-subject-context.service';
 import { LessonPlan } from '../models/lessonPlan';
 import ApprovalRequest from '../models/approvalRequest';
 import { getTeacherPeriod } from './teacher-timetable.service';
@@ -204,6 +205,7 @@ export const writeLesson = async (
     PERMISSIONS.TEACHER_LESSONS_MANAGE,
     ctx.tuple,
     async session => {
+      await requireClassSubject(scope.branchId, ctx.tuple.classId, ctx.tuple.subjectId, session);
       // Publication shares the Branch fence, so retirement cannot race a lesson write.
       await communicationFence(session, Syllabus.collection.name, syllabusId);
       const current = await teacherAcademicContext(identity, {

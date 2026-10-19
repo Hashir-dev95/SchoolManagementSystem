@@ -1,3 +1,5 @@
+import {authorizeHistoricalAttendanceRead} from './attendance-history.service';
+import {requireClassSubject} from './class-subject-context.service';
 import {enrollmentMembership} from './enrollment-membership.service';
 import {
   effectiveAttendance,
@@ -303,6 +305,7 @@ export const openTeacherAttendance = async (
     PERMISSIONS.TEACHER_ATTENDANCE_VIEW,
     async (session, period, branchId) => {
       eligible(period);
+      await requireClassSubject(branchId, period.classId, period.subjectId, session);
       await lockLogin(session, identity, token);
       await lockRoster(session, period, branchId);
       const current = await roster(period, branchId);
@@ -342,6 +345,11 @@ export const getTeacherAttendanceSession = async (
     branchId: scope.branchId,
   }).read('primary');
   if (!attendance) throw missing();
+  if (attendance.state === 'submitted') {
+    const historical = await authorizeHistoricalAttendanceRead(scope, attendance);
+    eligible(historical);
+    return detail(historical, scope.branchId, attendance);
+  }
   const period = await getTeacherPeriod(
     identity,
     String(attendance.periodId),
@@ -442,6 +450,8 @@ export const writeTeacherAttendance = async (
           replayed: true,
         };
       }
+      // Receipt replay remains safe after closure; new marks require current curriculum.
+      await requireClassSubject(branchId, period.classId, period.subjectId, session);
       if (current.version !== body.rosterVersion)
         throw conflict('Roster changed. Reload and review before saving.');
       if (

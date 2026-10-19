@@ -1,3 +1,4 @@
+import {authorizeHistoricalAttendanceRead, hasOperationalAttendanceVersion} from './attendance-history.service';
 ﻿import {enrollmentMembership} from './enrollment-membership.service';
 import { createHash } from 'node:crypto';
 import mongoose, { type ClientSession } from 'mongoose';
@@ -166,6 +167,19 @@ const teacherContext = async (
   const student = await studentEvidence(scope.branchId, attendance, studentId);
   return { branchId: scope.branchId, attendance, period, student };
 };
+// Historical review is a read policy, never amendment mutation authority.
+const teacherHistoryContext = async (
+  identity: JwtPayload | undefined, sessionId: string, studentId: string,
+) => {
+  const scope = await getTeacherScope(identity);
+  permission('teacher', PERMISSIONS.TEACHER_ATTENDANCE_VIEW);
+  const attendance = await AttendanceSession.findOne({_id: sessionId, branchId: scope.branchId}).read('primary');
+  if (!attendance) throw missing();
+  if (attendance.state !== 'submitted') return teacherContext(identity, sessionId, studentId);
+  const period = await authorizeHistoricalAttendanceRead(scope, attendance);
+  const student = await studentEvidence(scope.branchId, attendance, studentId);
+  return {branchId: scope.branchId, attendance, period, student};
+};
 const principal = async (
   identity: JwtPayload | undefined,
   type: ApprovalType,
@@ -224,12 +238,13 @@ export const getTeacherAttendanceReview = async (
 ) => {
   const sessionId = objectIdField(sessionValue, 'session ID'),
     studentId = objectIdField(studentValue, 'student ID');
-  const ctx = await teacherContext(identity, sessionId, studentId);
+  const ctx = await teacherHistoryContext(identity, sessionId, studentId);
   const effective =
     ctx.attendance.state === 'submitted'
       ? (await effectiveAttendance(ctx.branchId, sessionId)).get(studentId) ??
         null
       : null;
+  const operational = await hasOperationalAttendanceVersion(ctx.branchId, ctx.period);
   const query = {
     branchId: ctx.branchId,
     attendanceSessionId: sessionId,
@@ -273,11 +288,11 @@ export const getTeacherAttendanceReview = async (
     submittedRevision: ctx.attendance.revision,
     effective,
     canRequestCorrection:
-      ctx.attendance.state === 'submitted' &&
+      operational && ctx.attendance.state === 'submitted' &&
       !!effective &&
       !pending &&
       ROLE_PERMISSIONS.teacher.includes(PERMISSIONS.TEACHER_ATTENDANCE_MANAGE),
-    canRequestLeave: ROLE_PERMISSIONS.teacher.includes(
+    canRequestLeave: operational && ROLE_PERMISSIONS.teacher.includes(
       PERMISSIONS.TEACHER_ATTENDANCE_MANAGE,
     ),
     approvedLeaveId: approvedLeave ? String(approvedLeave._id) : null,
@@ -603,7 +618,7 @@ const reviewContext = async (
     userId: String(record.requestedBy),
     role: 'teacher' as const,
   };
-  const context = await teacherContext(
+  const context = await (manage ? teacherContext : teacherHistoryContext)(
     requester,
     String(record.attendanceSessionId),
     String(record.studentId),
@@ -639,7 +654,7 @@ export const getPrincipalAttendanceReview = async (
     effective,
     request: entry,
     canReview:
-      ctx.record.state === 'pending' &&
+      await hasOperationalAttendanceVersion(ctx.branchId, ctx.period) && ctx.record.state === 'pending' &&
       ROLE_PERMISSIONS.principal.includes(
         PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE,
       ),

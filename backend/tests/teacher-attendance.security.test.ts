@@ -1054,7 +1054,10 @@ test('real concurrent timetable retirement waits for fenced attendance commit', 
   );
   assert.equal((await write(session)).status, 200);
   await retirement;
-  assert.equal((await sessionDetail(session.sessionId)).status, 404);
+  const history = await sessionDetail(session.sessionId);
+  assert.equal(history.status, 200);
+  assert.equal(history.data.state, 'submitted');
+  assert.equal((await write(session, bodyFor(session, {clientOperationId: 'retired_attendance_write_001'}))).status, 404);
   assert.equal(await AttendanceOperation.countDocuments(), 1);
 });
 test('three explicit draft marks out of thirty never turn the other twenty-seven into absences', async () => {
@@ -1126,4 +1129,39 @@ test('Principal cannot reach Teacher attendance even with mistakenly granted ope
   );
   assert.equal((await open(principal)).status, 403);
   assert.equal(await AttendanceSession.countDocuments(), 0);
+});
+test('submitted history pins the old version after an approved replacement; draft history stays operational', async () => {
+  const submitted = (await open()).data;
+  assert.equal((await write(submitted)).status, 200);
+  const snapshot = await AttendanceSession.findById(submitted.sessionId).lean();
+  const next = await version({versionNumber: 2}); assert.equal(next.status, 201);
+  assert.equal((await approve(next.data.versionId)).status, 200);
+  const history = await sessionDetail(submitted.sessionId); assert.equal(history.status, 200);
+  assert.equal(history.data.period.approvedVersion.versionId, versionId);
+  assert.equal(history.data.period.periodId, periodId);
+  assert.equal(history.data.canSave, false);
+  assert.deepEqual(await AttendanceSession.findById(submitted.sessionId).lean(), snapshot);
+  assert.equal((await write(submitted, bodyFor(submitted, {clientOperationId: 'replaced_attendance_write_001'}))).status, 404);
+  const replacementPeriod = await TimetablePeriod.findOne({timetableVersionId: next.data.versionId});
+  const current = (await open(teacherA, String(replacementPeriod!._id))).data;
+  assert.equal(current.period.approvedVersion.versionId, next.data.versionId);
+  assert.equal((await http(`/timetables/versions/${next.data.versionId}/retire`, principal, 'POST', {})).status, 200);
+  assert.equal((await sessionDetail(current.sessionId)).status, 404);
+  assert.equal((await sessionDetail(submitted.sessionId)).status, 200);
+});
+test('historical substitute read is record-specific and explicit substitute revocation still denies it', async () => {
+  await TeacherAssignment.updateMany({teacherId: teacherB.id}, {$set: {isActive: false}});
+  const substituteId = await replacement();
+  const attendance = (await open(teacherB)).data;
+  assert.equal((await write(attendance, bodyFor(attendance), 'submit', teacherB)).status, 200);
+  const snapshot = await AttendanceSession.findById(attendance.sessionId).lean();
+  assert.equal((await http(`/timetables/versions/${versionId}/retire`, principal, 'POST', {})).status, 200);
+  const history = await sessionDetail(attendance.sessionId, teacherB); assert.equal(history.status, 200);
+  assert.equal(history.data.period.isSubstitute, true); assert.equal(history.data.period.substituteId, substituteId);
+  assert.equal(history.data.period.room, 'Approved revised room'); assert.equal(history.data.period.canAcknowledgeSubstitute, false);
+  assert.equal((await sessionDetail(attendance.sessionId, teacherA)).status, 404);
+  assert.equal((await open(teacherB)).status, 404);
+  assert.equal((await http(`/timetables/substitutes/${substituteId}/retire`, principal, 'POST', {})).status, 200);
+  assert.equal((await sessionDetail(attendance.sessionId, teacherB)).status, 404);
+  assert.deepEqual(await AttendanceSession.findById(attendance.sessionId).lean(), snapshot);
 });

@@ -1,3 +1,4 @@
+import {seedCurriculumFixtures} from './helpers/curriculum-fixtures';
 import Student from '../src/models/student';
 import ApprovalRequest from '../src/models/approvalRequest';
 import {
@@ -231,6 +232,8 @@ beforeEach(async () => {
     sectionId,
     admissionNumber: 'ST-002',
   }).save();
+  // These tests create NEW attendance before exercising historical amendments.
+  await seedCurriculumFixtures();
   const opened = await http(
     `/teacher/attendance/occurrences/${period._id}?date=2026-10-14`,
     teacher,

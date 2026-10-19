@@ -1,3 +1,4 @@
+import {requireClassSubject} from './class-subject-context.service';
 import {enrollmentMembership} from './enrollment-membership.service';
 import { createHash } from 'node:crypto';
 import mongoose, { type ClientSession } from 'mongoose';
@@ -310,6 +311,12 @@ const runMutation = async <T>(
   authority: Awaited<ReturnType<typeof planAuthority>>,
   write: (session: ClientSession, branchId: string) => Promise<T>,
 ) => {
+  // Recheck only new task mutations, under the shared persisted Branch fence.
+  // Historical entitlement/submission/review readers keep their pinned context.
+  const guardedWrite = async (session: ClientSession, branchId: string) => {
+    await requireClassSubject(branchId, String(authority.plan.classId), String(authority.plan.subjectId), session);
+    return write(session, branchId);
+  };
   if (authority.period) return mutateOccurrence(
     identity, authority.period.periodId, authority.period.date,
     PERMISSIONS.TEACHER_ASSESSMENTS_MANAGE,
@@ -323,12 +330,12 @@ const runMutation = async <T>(
       if (!login.matchedCount) throw new RequestContractError(401, 'Session is unavailable');
       if (period.classId !== String(authority.plan.classId) || period.sectionId !== String(authority.plan.sectionId) ||
         period.subjectId !== String(authority.plan.subjectId)) throw missing();
-      return write(session, branchId);
+      return guardedWrite(session, branchId);
     },
   );
   return withTeacherCommunication(
     identity, token, PERMISSIONS.TEACHER_ASSESSMENTS_MANAGE, authority.tuple,
-    session => write(session, authority.scope.branchId),
+    session => guardedWrite(session, authority.scope.branchId),
   );
 };
 
