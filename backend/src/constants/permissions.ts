@@ -1,4 +1,8 @@
 export const PERMISSIONS = {
+  LIVE_LESSON_VIEW: 'liveLesson.view',
+  LIVE_LESSON_START: 'liveLesson.start',
+  LIVE_LESSON_JOIN: 'liveLesson.join',
+  LIVE_LESSON_END: 'liveLesson.end',
   STAFF_SELF_SERVICE_VIEW: 'staff.selfService.view',
   STAFF_LEAVE_REQUEST: 'staff.leave.request',
   STAFF_PAYSLIP_VIEW_OWN: 'staff.payslip.viewOwn',

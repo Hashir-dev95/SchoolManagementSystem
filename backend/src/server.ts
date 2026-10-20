@@ -1,4 +1,5 @@
 import {ensureStaffSelfServiceIndexes} from './models/staffSelfService';
+import {ensureLiveLessonIndexes} from './models/liveLessonSession';
 import {ensureAttendanceAmendmentIndexes} from './models/attendanceAmendment';
 import 'dotenv/config';
 import {Syllabus} from './models/syllabus';
@@ -31,6 +32,7 @@ const startServer = async (): Promise<void> => {
   await connectDatabase();
   await ensureAcademicSetupIndexes();
   await ensureStaffSelfServiceIndexes();
+  await ensureLiveLessonIndexes();
   await ensureTeacherAccountIndex();
   await ensureAttendanceAmendmentIndexes();
   await ensureAssignmentAdminIndexes();

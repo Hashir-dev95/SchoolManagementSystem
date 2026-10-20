@@ -1,6 +1,7 @@
 import staffSelfServiceRoutes from './routes/staff-self-service.routes';
 import attendanceAmendmentRoutes from './routes/attendance-amendment.routes';
 import {academicAdminRouter, teacherAcademicRouter, principalAcademicRouter} from './routes/academic.routes';
+import {liveLessonRouter} from './routes/live-lesson.routes';
 import express, {ErrorRequestHandler} from 'express';
 import cors from 'cors';
 import branchRoutes from './routes/branch.routes';
@@ -85,6 +86,7 @@ app.use('/api/principal/results', principalResultRouter);
 app.use('/api/student/results', studentResultRouter);
 app.use('/api/principal/academic-review', principalAcademicRouter);
 app.use('/api/teacher/timetable', teacherTimetableRouter);
+app.use('/api/live-lessons', liveLessonRouter);
 app.use('/api/teacher/attendance', teacherAttendanceRoutes);
 app.use('/api/timetables', timetableAdminRouter);
 app.use('/api/teacher', teacherCommunicationRouter);

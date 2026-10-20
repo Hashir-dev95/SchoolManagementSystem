@@ -1,0 +1,75 @@
+import { Router, type Response } from 'express';
+import {
+  authenticateToken,
+  type AuthenticatedRequest,
+} from '../middleware/auth.middleware';
+import { requireRole } from '../middleware/rbac.middleware';
+import { requirePermission } from '../middleware/permission.middleware';
+import { PERMISSIONS } from '../constants/permissions';
+import { objectBody, RequestContractError } from '../utils/request-validation';
+import { liveLessonService } from '../services/live-lesson.service';
+export const liveLessonRouter = Router();
+liveLessonRouter.use((_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
+liveLessonRouter.use(authenticateToken, requireRole('teacher', 'student'));
+const token = (req: AuthenticatedRequest) =>
+  req.headers.authorization!.slice(7);
+const handle =
+  (action: (req: AuthenticatedRequest) => Promise<unknown>) =>
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      if (Object.keys(req.query).length)
+        throw new RequestContractError(400, 'Unsupported live lesson query');
+      res.json({ success: true, data: await action(req) });
+    } catch (error) {
+      res
+        .status(error instanceof RequestContractError ? error.status : 500)
+        .json({
+          success: false,
+          message:
+            error instanceof RequestContractError
+              ? error.message
+              : 'Live lesson operation failed',
+        });
+    }
+  };
+liveLessonRouter.post(
+  '/from-timetable/:periodId/start',
+  requirePermission(PERMISSIONS.LIVE_LESSON_START),
+  handle(req => {
+    const body = objectBody(req.body, ['date']);
+    return liveLessonService.start(
+      req.user,
+      token(req),
+      req.params.periodId,
+      body.date,
+    );
+  }),
+);
+liveLessonRouter.post(
+  '/:id/join-token',
+  requirePermission(PERMISSIONS.LIVE_LESSON_JOIN),
+  handle(req => {
+    objectBody(req.body, []);
+    return liveLessonService.join(req.user, token(req), req.params.id);
+  }),
+);
+liveLessonRouter.post(
+  '/:id/end',
+  requirePermission(PERMISSIONS.LIVE_LESSON_END),
+  handle(req => {
+    objectBody(req.body, []);
+    return liveLessonService.end(req.user, token(req), req.params.id);
+  }),
+);
+liveLessonRouter.get(
+  '/:id',
+  requirePermission(PERMISSIONS.LIVE_LESSON_VIEW),
+  handle(req => {
+    if (req.body !== undefined)
+      throw new RequestContractError(400, 'Unsupported live lesson body');
+    return liveLessonService.read(req.user, req.params.id);
+  }),
+);
