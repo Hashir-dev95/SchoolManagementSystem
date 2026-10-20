@@ -23,7 +23,10 @@ const requesterRecord = async (requestId: string, actorId: string, branchId: str
 export const serializeResubmission = (request: HydratedDocument<IApprovalRequest>) => ({
   _id: request._id.toString(), status: request.status, reason: request.reason,
   revision: request.__v ?? 0, canResubmit: request.status === 'changes_requested' && request.entityType !== 'lesson_plan',
-  changeReason: [...request.history].reverse().find(entry => entry.action === 'changes_requested')?.reason,
+  // Staff leave reviewer notes are HR-private on every requester-facing path.
+  ...(request.entityType === 'staff_leave' ? {} : {
+    changeReason: [...request.history].reverse().find(entry => entry.action === 'changes_requested')?.reason,
+  }),
 });
 
 export const getRequesterResubmission = async (requestId: string, actorId: string, branchId: string) =>

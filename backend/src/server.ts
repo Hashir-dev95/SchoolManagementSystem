@@ -1,3 +1,4 @@
+import {ensureStaffSelfServiceIndexes} from './models/staffSelfService';
 import {ensureAttendanceAmendmentIndexes} from './models/attendanceAmendment';
 import 'dotenv/config';
 import {Syllabus} from './models/syllabus';
@@ -29,6 +30,7 @@ const PORT = process.env.PORT || 5000;
 const startServer = async (): Promise<void> => {
   await connectDatabase();
   await ensureAcademicSetupIndexes();
+  await ensureStaffSelfServiceIndexes();
   await ensureTeacherAccountIndex();
   await ensureAttendanceAmendmentIndexes();
   await ensureAssignmentAdminIndexes();

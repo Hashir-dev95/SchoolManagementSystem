@@ -10,6 +10,7 @@ import {planAcademicContext} from './academic-plan-context.service';
 import {RequestContractError} from '../utils/request-validation';
 import {teacherAcademicContext} from './syllabus.service';
 import {AcademicResult} from '../models/academicResult';
+import {StaffLeave} from '../models/staffSelfService';
 
 export const validateApprovalId = (value: string, field: string): void => {
   if (typeof value !== 'string' || !Types.ObjectId.isValid(value)) {
@@ -52,6 +53,8 @@ export const assertApprovalReferences = async (request: IApprovalRequest): Promi
       (['submitted_for_moderation','resubmitted_for_moderation'].includes(result.status) && result.currentRevision === request.resultRevision));
   } else if (request.entityType === 'attendance_correction' && request.approvalType === 'attendance_correction') {
     scoped = await AttendanceCorrection.exists({}).where('_id').equals(request.entityId).where('branchId').equals(branchId).where('approvalRequestId').equals((request as unknown as {_id:unknown})._id);
+  } else if (request.entityType === 'staff_leave' && request.approvalType === 'leave') {
+    scoped = await StaffLeave.exists({_id: request.entityId, branchId, teacherId: request.requesterId, approvalRequestId: String((request as unknown as {_id: unknown})._id)});
   } else if (request.entityType === 'student_leave' && request.approvalType === 'leave') {
     scoped = await StudentLeave.exists({}).where('_id').equals(request.entityId).where('branchId').equals(branchId).where('approvalRequestId').equals((request as unknown as {_id:unknown})._id);
   } else if (request.entityType === 'student' && ['leave', 'certificate'].includes(request.approvalType)) {
@@ -68,6 +71,7 @@ export const assertApprovalReferences = async (request: IApprovalRequest): Promi
 };
 
 export const serializeApproval = async (request: HydratedDocument<IApprovalRequest>) => {
+  const leave = request.entityType === 'staff_leave' ? await StaffLeave.findOne({_id: request.entityId, branchId: request.branchId, teacherId: request.requesterId, approvalRequestId: request._id}).read('primary').lean() : null;
   const ids = [request.requesterId, request.reviewedBy, request.delegatedTo, request.delegatedBy,
     ...request.history.flatMap(entry => [entry.performedBy, entry.delegatedBy])].filter(Boolean);
   const users = await User.find().where('_id').in(ids).where('branchId').equals(request.branchId)
@@ -81,6 +85,7 @@ export const serializeApproval = async (request: HydratedDocument<IApprovalReque
   // Whitelisted DTO: mixed before/after payloads and raw supportingFileUrl are
   // intentionally withheld until typed payload/authorized file delivery exists.
   return {
+    ...(leave ? {staffLeave: {leaveType: leave.leaveType, startDate: leave.startDate, endDate: leave.endDate, days: leave.days}} : {}),
     _id: request._id.toString(), requesterId: safeUser(request.requesterId),
     entityType: request.entityType, entityId: request.entityId?.toString(),
     approvalType: request.approvalType, amount: request.amount, reason: request.reason,

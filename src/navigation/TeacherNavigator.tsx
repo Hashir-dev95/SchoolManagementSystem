@@ -1,3 +1,4 @@
+import TeacherSelfServiceScreen from '../screens/teacher/TeacherSelfServiceScreen';
 import TeacherAttendanceReviewScreen from '../screens/teacher/TeacherAttendanceReviewScreen';
 import TeacherAcademicScreen from '../screens/teacher/TeacherAcademicScreen';
 import TeacherLessonScreen from '../screens/teacher/TeacherLessonScreen';
@@ -26,6 +27,7 @@ import TeacherMarksScreen from '../screens/teacher/TeacherMarksScreen';
 import TeacherNotificationsScreen from '../screens/teacher/TeacherNotificationsScreen';
 
 export type TeacherStackParamList = {
+  TeacherSelfService: undefined;
   TeacherAcademic: TeacherTupleIds;
   TeacherDelivery: {lessonPlanId: string};
   TeacherOccurrenceLessons: {periodId: string; date: string};
@@ -110,6 +112,7 @@ export default function TeacherNavigator() {
       <Stack.Screen name="TeacherCatchUp" component={TeacherCatchUpScreen} options={{title: 'Catch-up detail'}} />
       <Stack.Screen name="TeacherMarks" component={TeacherMarksScreen} options={{title: 'Assessments & marks'}} />
       <Stack.Screen name="TeacherNotifications" component={TeacherNotificationsScreen} options={{title: 'Notifications & preferences'}} />
+      <Stack.Screen name="TeacherSelfService" component={TeacherSelfServiceScreen} options={{title: 'Staff Self-Service'}} />
     </Stack.Navigator>
   );
 }

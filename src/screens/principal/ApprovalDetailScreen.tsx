@@ -201,6 +201,11 @@ function GenericApprovalDetail({ route, navigation }: Props) {
           />
         ) : null}
         <InfoRow label="Reason" value={request.reason} />
+        {request.staffLeave ? <>
+          <InfoRow label="Leave type" value={request.staffLeave.leaveType} />
+          <InfoRow label="Leave dates" value={`${request.staffLeave.startDate} to ${request.staffLeave.endDate}`} />
+          <InfoRow label="Calendar days requested" value={String(request.staffLeave.days)} />
+        </> : null}
       </SectionCard>
       <SectionCard title="Review status">
         <InfoRow label="Status" value={prettyValue(request.status)} />

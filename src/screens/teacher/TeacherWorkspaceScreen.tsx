@@ -102,6 +102,7 @@ export default function TeacherWorkspaceScreen({
           <Text style={styles.muted}>Teacher</Text>
           <Text style={styles.body}>{user?.email}</Text>
           <TeacherButton title="Notifications & Preferences" onPress={()=>navigation.navigate('TeacherNotifications')} />
+          {hasPermission(user?.role, PERMISSIONS.STAFF_SELF_SERVICE_VIEW) ? <TeacherButton title="Staff Self-Service" onPress={() => navigation.navigate('TeacherSelfService')} /> : null}
           <TeacherButton title="Log out" onPress={()=>setConfirmLogout(true)} />
           <AdminDialog visible={confirmLogout} title="Log out of this device?" confirmTitle="Log out" danger onClose={()=>setConfirmLogout(false)} onConfirm={()=>{setConfirmLogout(false);logout().catch(()=>undefined);}}><Text style={styles.body}>Protected screens are cleared immediately. Server revocation is requested, but may remain unconfirmed if this device is offline.</Text></AdminDialog>
         </ScrollView>

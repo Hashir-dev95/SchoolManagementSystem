@@ -465,6 +465,7 @@ test('Principal dangerous permissions are removed, supporting reads and Super Ad
   // Role-specific safety/class reads must not broaden Super Admin; trusted
   // Teacher assignment management is an intentional administrative grant.
   assert.deepEqual(ROLE_PERMISSIONS.super_admin, Object.values(PERMISSIONS).filter(permission =>
+    !permission.startsWith('staff.') &&
     !permission.startsWith('teacher.academic.') && !permission.startsWith('teacher.lessons.') &&
     !permission.startsWith('teacher.assessments.') &&
     !permission.startsWith('teacher.notices.') && !permission.startsWith('teacher.work.') &&

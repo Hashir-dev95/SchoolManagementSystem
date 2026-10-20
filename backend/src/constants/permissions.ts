@@ -1,4 +1,10 @@
 export const PERMISSIONS = {
+  STAFF_SELF_SERVICE_VIEW: 'staff.selfService.view',
+  STAFF_LEAVE_REQUEST: 'staff.leave.request',
+  STAFF_PAYSLIP_VIEW_OWN: 'staff.payslip.viewOwn',
+  STAFF_DOCUMENTS_VIEW_OWN: 'staff.documents.viewOwn',
+  STAFF_APPOINTMENTS_VIEW: 'staff.appointments.view',
+  STAFF_APPOINTMENTS_MANAGE_OWN: 'staff.appointments.manageOwn',
   ENROLLMENT_VIEW: 'students.enrollment.view',
   ENROLLMENT_MANAGE: 'students.enrollment.manage',
   ENROLLMENT_PROMOTE: 'students.enrollment.promote',

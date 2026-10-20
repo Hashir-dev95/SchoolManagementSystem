@@ -452,3 +452,11 @@ test('roster search does not conflate filtered results with enrollment emptiness
   expect(contents(tree)).toContain('No matching students');
   expect(contents(tree)).not.toContain('No active students');
 });
+
+test('Staff Self-Service opens from Me without adding Teacher Home cards', async () => {
+  const tree = await mount(workspace());
+  expect(contents(tree)).not.toContain('Staff Self-Service');
+  await tab(tree, 'Me');
+  await act(async () => tree.root.findAllByType(TeacherButton).find(n => n.props.title === 'Staff Self-Service')!.props.onPress());
+  expect(navigation.navigate).toHaveBeenCalledWith('TeacherSelfService');
+});

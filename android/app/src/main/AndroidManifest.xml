@@ -11,6 +11,13 @@
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
+      <provider
+        android:name="androidx.core.content.FileProvider"
+        android:authorities="${applicationId}.stafffiles"
+        android:exported="false"
+        android:grantUriPermissions="true">
+        <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/staff_file_paths" />
+      </provider>
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"

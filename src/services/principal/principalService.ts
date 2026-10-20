@@ -31,6 +31,7 @@ export interface ApprovalHistoryEntry {
 }
 
 export interface ApprovalRequest {
+  staffLeave?: {leaveType: string; startDate: string; endDate: string; days: number};
   _id: string;
   requesterId: PrincipalRequester | string;
   entityType: string;

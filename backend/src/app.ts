@@ -1,3 +1,4 @@
+import staffSelfServiceRoutes from './routes/staff-self-service.routes';
 import attendanceAmendmentRoutes from './routes/attendance-amendment.routes';
 import {academicAdminRouter, teacherAcademicRouter, principalAcademicRouter} from './routes/academic.routes';
 import express, {ErrorRequestHandler} from 'express';
@@ -68,6 +69,7 @@ app.use('/api/academic-setup', academicSetupRouter);
 app.use('/api/health', healthRoutes);
 app.use('/api/approval-requests', approvalRequestRoutes);
 app.use('/api', attendanceAmendmentRoutes);
+app.use('/api/teacher/self-service', staffSelfServiceRoutes);
 app.use('/api/teacher/home', teacherHomeRoutes);
 app.use('/api/syllabuses', academicAdminRouter);
 app.use('/api/teacher/academic', teacherAcademicRouter);
