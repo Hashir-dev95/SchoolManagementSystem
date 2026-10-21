@@ -1,6 +1,14 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- The RTC dependency declares screen sharing; this phase does not use it. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
 
     <application
       android:name=".MainApplication"
@@ -11,6 +19,8 @@
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
+      <service android:name="im.zego.internal.screencapture.ZegoScreenCaptureService" tools:node="remove" />
+      <activity android:name="im.zego.internal.screencapture.ZegoScreenCaptureManager$ZegoScreenCaptureAssistantActivity" tools:node="remove" />
       <provider
         android:name="androidx.core.content.FileProvider"
         android:authorities="${applicationId}.stafffiles"

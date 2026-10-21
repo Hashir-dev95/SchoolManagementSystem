@@ -69,6 +69,7 @@ let teacher: JwtPayload,
 let date: string, startTime: string, endTime: string;
 let calls: RtcCredentialRequest[] = [];
 const fake: RtcProvider = {
+  publicConfig: () => ({ provider: 'fake', appId: 123 }),
   name: 'fake',
   roomId: id => 'room_' + id,
   issueCredential(input) {
@@ -269,6 +270,39 @@ test('scheduled host, enrolled student, opaque adapter boundary and bounded wind
     '__v',
   ])
     assert.ok(!raw.includes(field));
+});
+test('preview metadata is scoped to the current host occurrence and creates no session or credential', async () => {
+  assert.deepEqual(await service.previewConfig(teacher, String(period), date), {
+    provider: 'fake',
+    appId: 123,
+  });
+  assert.equal(await LiveLessonSession.countDocuments(), 0);
+  assert.equal(calls.length, 0);
+  await assert.rejects(service.previewConfig(other, String(period), date));
+  await assert.rejects(service.previewConfig(student, String(period), date));
+  await ClassSubject.updateMany({}, { isActive: false });
+  await assert.rejects(service.previewConfig(teacher, String(period), date));
+});
+test('available sessions require managed enrollment and expose only scoped lesson summaries', async () => {
+  const opened = await start();
+  // available() uses real current Date, not the operational fixture clock.
+  await LiveLessonSession.collection.updateOne(
+    { _id: new mongoose.Types.ObjectId(opened.session.id) },
+    {
+      $set: {
+        scheduledStart: new Date(new Date().getTime() - 10000),
+        scheduledEnd: new Date(new Date().getTime() + 3600000),
+      },
+    },
+  );
+  const visible = await service.available(student);
+  assert.equal(visible.sessions.length, 1);
+  assert.ok(visible.sessions[0].subjectName);
+  assert.ok(!JSON.stringify(visible).includes('providerRoomId'));
+  assert.ok(!JSON.stringify(visible).includes('token'));
+  await StudentEnrollment.deleteMany({});
+  assert.deepEqual(await service.available(student), { sessions: [] });
+  await assert.rejects(service.available(teacher));
 });
 test('wrong teacher, unauthenticated identity, student start and principal host denied', async () => {
   await deny(start(other, otherToken));

@@ -20,6 +20,7 @@ async function main() {
     return original.apply(this, args);
   } as typeof original;
   const provider: RtcProvider = {
+    publicConfig: () => ({ provider: 'fake', appId: 123 }),
     name: 'fake',
     roomId: id => 'room_' + id,
     issueCredential(input) {

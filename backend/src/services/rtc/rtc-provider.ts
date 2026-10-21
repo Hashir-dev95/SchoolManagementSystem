@@ -19,6 +19,7 @@ export interface RtcCredential {
 // can retry. Never create external rooms or make network calls here.
 export interface RtcProvider {
   readonly name: string;
+  publicConfig(): { provider: string; appId: number };
   roomId(sessionId: string): string;
   issueCredential(request: RtcCredentialRequest): RtcCredential;
 }

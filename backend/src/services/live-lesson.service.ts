@@ -2,6 +2,10 @@ import mongoose, { type ClientSession } from 'mongoose';
 import User from '../models/user';
 import Session from '../models/session';
 import Student from '../models/student';
+import SchoolClass from '../models/schoolClass';
+import Section from '../models/section';
+import Subject from '../models/subject';
+import { currentEnrollment } from './student-enrollment.service';
 import { AcademicPeriod } from '../models/academicPeriod';
 import { ClassSubject } from '../models/classSubject';
 import { TimetablePeriod } from '../models/timetable';
@@ -16,7 +20,10 @@ import {
   objectIdField,
   RequestContractError,
 } from '../utils/request-validation';
-import { currentAcademicActor } from './teacher-scope.service';
+import {
+  currentAcademicActor,
+  requireActiveAcademicBranch,
+} from './teacher-scope.service';
 import {
   mutateOccurrence,
   type TeacherPeriodDTO,
@@ -279,6 +286,75 @@ export function createLiveLessonService(
     }
   };
   return {
+    async previewConfig(
+      identity: JwtPayload | undefined,
+      periodId: unknown,
+      date: unknown,
+    ) {
+      const actor = await actorFor(identity, PERMISSIONS.LIVE_LESSON_START);
+      if (actor.role !== 'teacher') throw missing();
+      return mutateOccurrence(
+        identity,
+        periodId,
+        date,
+        PERMISSIONS.LIVE_LESSON_START,
+        async (session, period, branchId) => {
+          await catalog(session, period, branchId);
+          return providerFactory().publicConfig();
+        },
+      );
+    },
+    async available(identity: JwtPayload | undefined) {
+      const actor = await actorFor(identity, PERMISSIONS.LIVE_LESSON_JOIN);
+      if (actor.role !== 'student' || !actor.branchId) throw missing();
+      await requireActiveAcademicBranch(String(actor.branchId));
+      const profile = await Student.findOne({ isActive: true })
+        .where('userId')
+        .equals(String(actor._id))
+        .where('branchId')
+        .equals(String(actor.branchId))
+        .read('primary');
+      if (!profile) throw missing();
+      const enrollment = await currentEnrollment(profile._id, actor.branchId);
+      if (!enrollment) return { sessions: [] };
+      const now = new Date();
+      const rows = await LiveLessonSession.find({
+        branchId: String(actor.branchId),
+        academicPeriodId: String(enrollment.academicPeriodId),
+        classId: String(enrollment.classId),
+        sectionId: String(enrollment.sectionId),
+        status: 'live',
+        scheduledEnd: { $gt: now },
+        scheduledStart: { $lte: new Date(now.getTime() + START_EARLY_MS) },
+      })
+        .read('primary')
+        .sort({ scheduledStart: -1 })
+        .limit(20);
+      const sessions = [];
+      for (const row of rows) {
+        try {
+          await studentAccess(identity, row);
+        } catch (error) {
+          if (error instanceof RequestContractError && error.status === 404)
+            continue;
+          throw error;
+        }
+        const [cls, section, subject] = await Promise.all([
+          SchoolClass.findById(String(row.classId)).select('name').lean(),
+          Section.findById(String(row.sectionId)).select('name').lean(),
+          Subject.findById(String(row.subjectId)).select('name').lean(),
+        ]);
+        sessions.push({
+          ...dto(row),
+          className: cls?.name ?? 'Class',
+          sectionName: section?.name ?? '',
+          subjectName: subject?.name ?? 'Lesson',
+        });
+      }
+      // Discovery is a hint, never a credential. Join revalidates all current
+      // operational authority under the original T-PR15A transaction fences.
+      return { sessions };
+    },
     async start(
       identity: JwtPayload | undefined,
       token: string,

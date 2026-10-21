@@ -2,6 +2,7 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import AppNavigator from '../src/navigation/AppNavigator';
 import TeacherNavigator from '../src/navigation/TeacherNavigator';
+import StudentNavigator from '../src/navigation/StudentNavigator';
 import { USER_ROLES, UserRole } from '../src/constants/roles';
 
 let mockRole: UserRole | null = null;
@@ -68,6 +69,7 @@ test('authenticated Teacher enters the Teacher stack with no duplicate route own
       .findAll(node => String(node.type) === 'StackScreen')
       .map(node => node.props.name),
   ).toEqual([
+    'TeacherLiveLesson',
     'TeacherDelivery',
     'TeacherOccurrenceLessons',
     'TeacherHomework',
@@ -91,4 +93,10 @@ test('authenticated Teacher enters the Teacher stack with no duplicate route own
     'TeacherNotifications',
     'TeacherSelfService',
   ]);
+});
+test('authenticated Student enters only the Student live lesson stack', async () => {
+  mockRole = USER_ROLES.STUDENT;
+  const tree = await render(<AppNavigator />);
+  expect(tree.root.findAllByType(StudentNavigator)).toHaveLength(1);
+  expect(tree.root.findAllByType(TeacherNavigator)).toHaveLength(0);
 });

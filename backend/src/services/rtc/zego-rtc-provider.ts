@@ -37,6 +37,9 @@ export class ZegoRtcProvider implements RtcProvider {
     )
       throw unavailable();
   }
+  publicConfig() {
+    return { provider: this.name, appId: this.appId };
+  }
   roomId(sessionId: string) {
     return (
       'll_' +

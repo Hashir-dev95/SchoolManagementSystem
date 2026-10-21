@@ -35,6 +35,27 @@ const handle =
         });
     }
   };
+liveLessonRouter.get(
+  '/available',
+  requirePermission(PERMISSIONS.LIVE_LESSON_JOIN),
+  handle(req => {
+    if (req.body !== undefined)
+      throw new RequestContractError(400, 'Unsupported live lesson body');
+    return liveLessonService.available(req.user);
+  }),
+);
+liveLessonRouter.post(
+  '/from-timetable/:periodId/preview-config',
+  requirePermission(PERMISSIONS.LIVE_LESSON_START),
+  handle(req => {
+    const body = objectBody(req.body, ['date']);
+    return liveLessonService.previewConfig(
+      req.user,
+      req.params.periodId,
+      body.date,
+    );
+  }),
+);
 liveLessonRouter.post(
   '/from-timetable/:periodId/start',
   requirePermission(PERMISSIONS.LIVE_LESSON_START),
