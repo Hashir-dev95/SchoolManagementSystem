@@ -22,6 +22,8 @@ export class ZegoLiveLessonClient implements LiveLessonClient {
   private tail: Promise<unknown> = Promise.resolve();
   private disposal?: Promise<void>;
   private expiry?: () => void;
+  private reconnect?: (phase: 'reconnecting' | 'recovered') => void;
+  private reconnectDeadline?: ReturnType<typeof setTimeout>;
   private listeners = new Set<(state: RtcState) => void>();
   private state: RtcState = { ...initialRtcState, participants: [] };
   private removers: (() => void)[] = [];
@@ -37,7 +39,12 @@ export class ZegoLiveLessonClient implements LiveLessonClient {
     };
   }
   private update(patch: Partial<RtcState>) {
-    if (this.closed && patch.connection !== 'disconnected') return;
+    if (
+      this.closed &&
+      patch.connection !== 'disconnected' &&
+      patch.connection !== 'removed'
+    )
+      return;
     this.state = { ...this.state, ...patch };
     this.listeners.forEach(listener => listener(this.state));
   }
@@ -57,6 +64,26 @@ export class ZegoLiveLessonClient implements LiveLessonClient {
     this.removers.push(() => this.engine?.off(event, handler));
   }
   private bind() {
+    this.listen('networkQuality', (userId, upstream, downstream) => {
+      if (userId && userId !== this.identity) return;
+      const level = Math.max(Number(upstream), Number(downstream));
+      const quality =
+        level <= 1
+          ? 'good'
+          : level === 2
+          ? 'fair'
+          : level <= 4
+          ? 'poor'
+          : 'unavailable';
+      this.update({
+        quality,
+        ...(this.state.connection === 'connected' ||
+        this.state.connection === 'degraded' ||
+        this.state.connection === 'recovered'
+          ? { connection: quality === 'poor' ? 'degraded' : 'connected' }
+          : {}),
+      });
+    });
     this.listen('localDeviceExceptionOccurred', () => {
       this.update({
         error:
@@ -76,15 +103,26 @@ export class ZegoLiveLessonClient implements LiveLessonClient {
         reason === r.LoginFailed
       ) {
         this.update({
-          connection: 'error',
+          connection: reason === r.KickOut ? 'removed' : 'error',
           error:
             'Media connection ended. Leave and join again through the school app.',
         });
         void this.dispose();
       } else if (reason === r.Reconnecting) {
-        this.update({ connection: 'connecting' });
+        this.update({ connection: 'reconnecting', quality: 'unavailable' });
+        this.reconnect?.('reconnecting');
+        if (!this.reconnectDeadline)
+          this.reconnectDeadline = setTimeout(() => {
+            this.update({
+              error: 'Media could not recover. Leave and request access again.',
+            });
+            void this.dispose();
+          }, 30000);
       } else if (reason === r.Reconnected) {
-        this.update({ connection: 'connected' });
+        clearTimeout(this.reconnectDeadline);
+        this.reconnectDeadline = undefined;
+        this.update({ connection: 'recovered' });
+        this.reconnect?.('recovered');
       }
     });
     this.listen('roomTokenWillExpire', room => {
@@ -359,6 +397,9 @@ export class ZegoLiveLessonClient implements LiveLessonClient {
   onTokenExpiring(handler: () => void) {
     this.expiry = handler;
   }
+  onReconnect(handler: (phase: 'reconnecting' | 'recovered') => void) {
+    this.reconnect = handler;
+  }
   renew(input: LiveCredential) {
     return this.run(async () => {
       if (
@@ -379,9 +420,12 @@ export class ZegoLiveLessonClient implements LiveLessonClient {
   }
   dispose(): Promise<void> {
     if (this.disposal) return this.disposal;
+    const removed = this.state.connection === 'removed';
     this.update({ connection: 'disconnecting' });
     this.closed = true;
     this.expiry = undefined;
+    this.reconnect = undefined;
+    clearTimeout(this.reconnectDeadline);
     this.disposal = this.tail
       .catch(() => undefined)
       .then(async () => {
@@ -422,7 +466,7 @@ export class ZegoLiveLessonClient implements LiveLessonClient {
         this.role = undefined;
         this.update({
           ...initialRtcState,
-          connection: 'disconnected',
+          connection: removed ? 'removed' : 'disconnected',
           participants: [],
           error: failed
             ? 'Media cleanup encountered a problem. Check your device camera and microphone indicators.'

@@ -163,3 +163,44 @@ test('mic/camera state changes only after successful SDK completion and relayout
   await client.preview(6);
   expect(states.at(-1)?.cameraEnabled).toBe(false);
 });
+
+test('network quality, reconnect recovery and server removal are normalized with bounded cleanup', async () => {
+  jest.useFakeTimers();
+  const { client, events, engine, sdk } = make();
+  const states: RtcState[] = [];
+  const reauthorize = jest.fn();
+  client.subscribe(s => states.push(s));
+  client.onReconnect(reauthorize);
+  await client.prepare(123);
+  await client.connect(credential('participant'));
+  events.networkQuality('', 3, 3);
+  expect(states.at(-1)).toMatchObject({
+    connection: 'degraded',
+    quality: 'poor',
+  });
+  events.roomStateChanged('opaque-room', 3, 0);
+  expect(states.at(-1)?.connection).toBe('reconnecting');
+  events.roomStateChanged('opaque-room', 4, 0);
+  expect(states.at(-1)?.connection).toBe('recovered');
+  expect(reauthorize).toHaveBeenCalledTimes(2);
+  events.roomStateChanged('opaque-room', 6, 1002055);
+  await client.dispose();
+  expect(states.at(-1)?.connection).toBe('removed');
+  expect(sdk.default.destroyEngine).toHaveBeenCalledTimes(1);
+  expect(engine.startPublishingStream).not.toHaveBeenCalled();
+  jest.useRealTimers();
+});
+
+test('reconnect deadline tears down capture without creating a second engine/login', async () => {
+  jest.useFakeTimers();
+  const { client, events, engine, sdk } = make();
+  await client.prepare(123);
+  await client.connect(credential());
+  events.roomStateChanged('opaque-room', 3, 0);
+  await jest.advanceTimersByTimeAsync(30000);
+  await client.dispose();
+  expect(engine.loginRoom).toHaveBeenCalledTimes(1);
+  expect(engine.stopPublishingStream).toHaveBeenCalledTimes(1);
+  expect(sdk.default.destroyEngine).toHaveBeenCalledTimes(1);
+  jest.useRealTimers();
+});

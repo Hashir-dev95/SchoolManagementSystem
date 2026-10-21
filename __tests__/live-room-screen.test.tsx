@@ -43,6 +43,10 @@ jest.mock('../src/services/liveLessons/liveLessonService', () => ({
     startLesson: jest.fn(),
     getJoinToken: jest.fn(),
     endLesson: jest.fn(),
+    requestAdmission: jest.fn(),
+    classroom: jest.fn(),
+    moderate: jest.fn(),
+    hand: jest.fn(),
   },
 }));
 jest.mock('../src/services/liveLessons/mediaPermissions', () => ({
@@ -118,6 +122,36 @@ function response(student = false): AuthorizedRoom {
 }
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(liveLessonService.requestAdmission).mockResolvedValue({
+    session: response(true).session,
+    participant: {
+      id: 'student',
+      displayName: 'You',
+      role: 'participant',
+      admission: 'admitted',
+      connectionState: 'disconnected',
+      handRaised: false,
+      reconnectCount: 0,
+      enforcement: 'none',
+    },
+  });
+  jest.mocked(liveLessonService.classroom).mockResolvedValue({
+    session: response().session,
+    participant: {
+      id: 'own',
+      displayName: 'You',
+      role: 'host',
+      admission: 'admitted',
+      connectionState: 'connected',
+      handRaised: false,
+      reconnectCount: 0,
+      enforcement: 'none',
+    },
+    participants: [],
+  });
+  jest.mocked(liveLessonService.moderate).mockResolvedValue({});
+  jest.mocked(liveLessonService.hand).mockResolvedValue({});
+
   mockRole = 'teacher';
   state = { ...initialRtcState, participants: [] };
   jest.mocked(createLiveLessonClient).mockReturnValue(client);
@@ -182,6 +216,7 @@ afterEach(async () => {
     tree = undefined;
   }
   jest.restoreAllMocks();
+  jest.useRealTimers();
 });
 const text = () => JSON.stringify(tree!.toJSON());
 const button = (title: string) =>
@@ -220,8 +255,128 @@ test('teacher preview has trusted period metadata and starts only after preview'
     'auth',
     'period',
     '2026-10-20',
+    expect.any(String),
   );
   expect(client.connect).toHaveBeenCalled();
+});
+
+test('Student waiting state withholds RTC and capture, then admission renders hand controls', async () => {
+  jest.useFakeTimers();
+  const participant = {
+    id: 'student',
+    displayName: 'You',
+    role: 'participant' as const,
+    admission: 'waiting' as const,
+    connectionState: 'disconnected' as const,
+    handRaised: false,
+    reconnectCount: 0,
+    enforcement: 'none' as const,
+  };
+  jest
+    .mocked(liveLessonService.requestAdmission)
+    .mockResolvedValue({ session: response(true).session, participant });
+  await render(true);
+  await tap('Join Lesson');
+  expect(text()).toContain('Waiting for teacher admission');
+  expect(client.connect).not.toHaveBeenCalled();
+  expect(mediaPermissions.request).not.toHaveBeenCalled();
+  jest.mocked(liveLessonService.classroom).mockResolvedValue({
+    session: response(true).session,
+    participant: { ...participant, admission: 'admitted' },
+  });
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(5000);
+  });
+  expect(client.connect).toHaveBeenCalledTimes(1);
+  expect(button('Raise hand')).toBeDefined();
+  await tap('Raise hand');
+  expect(liveLessonService.hand).toHaveBeenCalledWith(
+    'auth',
+    'lesson',
+    expect.any(String),
+    true,
+  );
+  jest.mocked(liveLessonService.classroom).mockResolvedValue({
+    session: response(true).session,
+    participant: { ...participant, admission: 'removed' },
+  });
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(5000);
+  });
+  expect(text()).toContain('teacher removed');
+  expect(client.dispose).toHaveBeenCalled();
+});
+
+test('Teacher waiting panel has named actions, hand status and confirmed destructive remove flow', async () => {
+  jest.useFakeTimers();
+  const waiting = {
+    id: 'student',
+    displayName: 'A learner',
+    role: 'participant' as const,
+    admission: 'waiting' as const,
+    connectionState: 'disconnected' as const,
+    handRaised: false,
+    reconnectCount: 0,
+    enforcement: 'none' as const,
+  };
+  jest.mocked(liveLessonService.classroom).mockResolvedValue({
+    session: response().session,
+    participant: {
+      ...waiting,
+      id: 'host',
+      role: 'host',
+      admission: 'admitted',
+    },
+    participants: [waiting],
+  });
+  await preview();
+  await tap('Start Lesson');
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(5000);
+  });
+  expect(text()).toContain('Waiting:');
+  expect(button('Admit A learner')).toBeDefined();
+  await tap('Admit A learner');
+  expect(liveLessonService.moderate).toHaveBeenCalledWith(
+    'auth',
+    'lesson',
+    'student',
+    'admit',
+  );
+  await tap('Reject A learner');
+  expect(liveLessonService.moderate).toHaveBeenCalledWith(
+    'auth',
+    'lesson',
+    'student',
+    'reject',
+  );
+  jest.mocked(liveLessonService.classroom).mockResolvedValue({
+    session: response().session,
+    participant: {
+      ...waiting,
+      id: 'host',
+      role: 'host',
+      admission: 'admitted',
+    },
+    participants: [{ ...waiting, admission: 'admitted', handRaised: true }],
+  });
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(5000);
+  });
+  expect(text()).toContain('Hand raised');
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  await tap('Remove A learner');
+  expect(alert).toHaveBeenCalledWith(
+    'Remove participant?',
+    expect.any(String),
+    expect.any(Array),
+  );
+  expect(liveLessonService.moderate).not.toHaveBeenCalledWith(
+    'auth',
+    'lesson',
+    'student',
+    'remove',
+  );
 });
 test('Start disabled while backend request is pending', async () => {
   await preview();

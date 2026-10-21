@@ -1,5 +1,6 @@
 import {ensureStaffSelfServiceIndexes} from './models/staffSelfService';
 import {ensureLiveLessonIndexes} from './models/liveLessonSession';
+import {liveLessonService} from './services/live-lesson.service';
 import {ensureAttendanceAmendmentIndexes} from './models/attendanceAmendment';
 import 'dotenv/config';
 import {Syllabus} from './models/syllabus';
@@ -33,6 +34,15 @@ const startServer = async (): Promise<void> => {
   await ensureAcademicSetupIndexes();
   await ensureStaffSelfServiceIndexes();
   await ensureLiveLessonIndexes();
+  let classroomMaintenance = false;
+  const classroomTimer = setInterval(() => {
+    if (classroomMaintenance) return;
+    classroomMaintenance = true;
+    liveLessonService.maintainClassrooms().catch(() => {
+      console.warn(JSON.stringify({operation: 'live.classroom.maintenance', category: 'unavailable'}));
+    }).finally(() => { classroomMaintenance = false; });
+  }, 10000);
+  classroomTimer.unref();
   await ensureTeacherAccountIndex();
   await ensureAttendanceAmendmentIndexes();
   await ensureAssignmentAdminIndexes();

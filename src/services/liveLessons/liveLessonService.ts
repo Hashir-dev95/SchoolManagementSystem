@@ -32,6 +32,21 @@ export interface AuthorizedRoom {
   session: LiveLesson;
   connection: LiveCredential;
 }
+export interface ClassroomParticipant {
+  id: string;
+  displayName: string;
+  role: 'host' | 'participant';
+  admission: 'waiting' | 'admitted' | 'rejected' | 'removed' | 'left';
+  connectionState: 'connected' | 'reconnecting' | 'disconnected';
+  handRaised: boolean;
+  reconnectCount: number;
+  enforcement: 'none' | 'pending' | 'confirmed' | 'failed' | 'expired';
+}
+export interface ClassroomState {
+  session: LiveLesson;
+  participant: ClassroomParticipant;
+  participants?: ClassroomParticipant[];
+}
 type Envelope<T> = { success: boolean; data: T };
 const root = '/live-lessons';
 const idPath = (id: string) => `${root}/${encodeURIComponent(id)}`;
@@ -54,16 +69,45 @@ export const liveLessonService = {
       token,
       { date },
     ),
-  startLesson: (token: string, periodId: string, date: string) =>
+  startLesson: (
+    token: string,
+    periodId: string,
+    date: string,
+    connectionId?: string,
+  ) =>
     request<AuthorizedRoom>(
       `${root}/from-timetable/${encodeURIComponent(periodId)}/start`,
       token,
-      { date },
+      { date, connectionId },
     ),
   getLiveLesson: (token: string, id: string) =>
     request<LiveLesson>(idPath(id), token),
-  getJoinToken: (token: string, id: string) =>
-    request<AuthorizedRoom>(`${idPath(id)}/join-token`, token, {}),
+  getJoinToken: (token: string, id: string, connectionId?: string) =>
+    request<AuthorizedRoom>(`${idPath(id)}/join-token`, token, {
+      connectionId,
+    }),
+  requestAdmission: (token: string, id: string, connectionId: string) =>
+    request<ClassroomState>(`${idPath(id)}/admission`, token, { connectionId }),
+  classroom: (token: string, id: string, connectionId: string, state: string) =>
+    request<ClassroomState>(`${idPath(id)}/classroom`, token, {
+      connectionId,
+      state,
+    }),
+  moderate: (
+    token: string,
+    id: string,
+    participantId: string,
+    action: string,
+  ) =>
+    request(
+      `${idPath(id)}/participants/${encodeURIComponent(
+        participantId,
+      )}/moderate`,
+      token,
+      { action },
+    ),
+  hand: (token: string, id: string, connectionId: string, raised: boolean) =>
+    request(`${idPath(id)}/hand`, token, { connectionId, raised }),
   endLesson: (token: string, id: string) =>
     request<LiveLesson>(`${idPath(id)}/end`, token, {}),
   available: (token: string) =>
@@ -79,7 +123,9 @@ export function liveLessonError(error: unknown): string {
       case 404:
         return 'This lesson is unavailable for your current assignment or enrollment.';
       case 409:
-        return 'This lesson is outside its live window or has ended.';
+        return 'This lesson is unavailable, has ended, or is already open on another connection. Close the other screen and wait for its access lease to expire.';
+      case 429:
+        return 'Too many classroom actions. Please wait a moment and try again.';
       case 503:
         return 'Live lesson media is not configured or is temporarily unavailable.';
     }

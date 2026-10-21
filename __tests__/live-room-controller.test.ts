@@ -14,7 +14,12 @@ jest.mock('../src/services/liveLessons/liveLessonService', () => ({
   liveLessonService: {
     startLesson: jest.fn(),
     getJoinToken: jest.fn(),
+    getLiveLesson: jest.fn(),
     endLesson: jest.fn(),
+    requestAdmission: jest.fn(),
+    classroom: jest.fn(),
+    moderate: jest.fn(),
+    hand: jest.fn(),
   },
 }));
 const response = (role: 'host' | 'participant' = 'host'): AuthorizedRoom => ({
@@ -57,12 +62,42 @@ function rtc(): jest.Mocked<LiveLessonClient> {
     enableCamera: jest.fn().mockResolvedValue(undefined),
     renew: jest.fn().mockResolvedValue(undefined),
     onTokenExpiring: jest.fn(),
+    onReconnect: jest.fn(),
     dispose: jest.fn().mockResolvedValue(undefined),
   };
 }
 let controllers: LiveRoomController[] = [];
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(liveLessonService.requestAdmission).mockResolvedValue({
+    session: response('participant').session,
+    participant: {
+      id: 'student',
+      displayName: 'You',
+      role: 'participant',
+      admission: 'admitted',
+      connectionState: 'disconnected',
+      handRaised: false,
+      reconnectCount: 0,
+      enforcement: 'none',
+    },
+  });
+  jest.mocked(liveLessonService.classroom).mockResolvedValue({
+    session: response().session,
+    participant: {
+      id: 'own',
+      displayName: 'You',
+      role: 'host',
+      admission: 'admitted',
+      connectionState: 'connected',
+      handRaised: false,
+      reconnectCount: 0,
+      enforcement: 'none',
+    },
+    participants: [],
+  });
+  jest.mocked(liveLessonService.moderate).mockResolvedValue({});
+  jest.mocked(liveLessonService.hand).mockResolvedValue({});
 });
 afterEach(async () => {
   await Promise.all(controllers.map(c => c.close()));
@@ -81,6 +116,212 @@ function make(student = false) {
   controllers.push(room);
   return { room, client };
 }
+
+test('waiting never requests a media credential; admission poll connects once', async () => {
+  const participant = {
+    id: 'student',
+    displayName: 'You',
+    role: 'participant' as const,
+    admission: 'waiting' as const,
+    connectionState: 'disconnected' as const,
+    handRaised: false,
+    reconnectCount: 0,
+    enforcement: 'none' as const,
+  };
+  jest
+    .mocked(liveLessonService.requestAdmission)
+    .mockResolvedValue({ session: response().session, participant });
+  const { room, client } = make(true);
+  await room.enter();
+  expect(client.prepare).not.toHaveBeenCalled();
+  expect(liveLessonService.getJoinToken).not.toHaveBeenCalled();
+  jest.mocked(liveLessonService.classroom).mockResolvedValue({
+    session: response().session,
+    participant: { ...participant, admission: 'admitted' },
+  });
+  jest
+    .mocked(liveLessonService.getJoinToken)
+    .mockResolvedValue(response('participant'));
+  await Promise.all([room.refreshClassroom(), room.refreshClassroom()]);
+  await room.refreshClassroom();
+  expect(client.connect).toHaveBeenCalledTimes(1);
+});
+
+test.each(['rejected', 'removed'] as const)(
+  '%s status closes media and cannot reconnect',
+  async admission => {
+    const { room, client } = make(true);
+    jest
+      .mocked(liveLessonService.getJoinToken)
+      .mockResolvedValue(response('participant'));
+    await room.enter();
+    const states: string[] = [];
+    room.subscribe(s => states.push(s.reliability ?? ''));
+    jest.mocked(liveLessonService.classroom).mockResolvedValue({
+      session: response().session,
+      participant: {
+        id: 'student',
+        displayName: 'You',
+        role: 'participant',
+        admission,
+        connectionState: 'disconnected',
+        handRaised: false,
+        reconnectCount: 0,
+        enforcement: 'none',
+      },
+    });
+    await room.refreshClassroom();
+    expect(states).toContain(admission);
+    expect(client.dispose).toHaveBeenCalled();
+    await room.enter();
+    expect(client.connect).toHaveBeenCalledTimes(1);
+  },
+);
+
+test('late admission poll after disposal cannot prepare or login', async () => {
+  jest.mocked(liveLessonService.requestAdmission).mockResolvedValue({
+    session: response().session,
+    participant: {
+      id: 'student',
+      displayName: 'You',
+      role: 'participant',
+      admission: 'waiting',
+      connectionState: 'disconnected',
+      handRaised: false,
+      reconnectCount: 0,
+      enforcement: 'none',
+    },
+  });
+  const { room, client } = make(true);
+  await room.enter();
+  let resolve!: (
+    r: Awaited<ReturnType<typeof liveLessonService.classroom>>,
+  ) => void;
+  jest.mocked(liveLessonService.classroom).mockReturnValueOnce(
+    new Promise(r => {
+      resolve = r;
+    }),
+  );
+  const poll = room.refreshClassroom();
+  await room.close();
+  resolve({
+    session: response().session,
+    participant: {
+      id: 'student',
+      displayName: 'You',
+      role: 'participant',
+      admission: 'admitted',
+      connectionState: 'connected',
+      handRaised: false,
+      reconnectCount: 0,
+      enforcement: 'none',
+    },
+  });
+  await poll;
+  expect(client.prepare).not.toHaveBeenCalled();
+  expect(client.connect).not.toHaveBeenCalled();
+});
+
+test('moderation and hand actions delegate only school session and participant identities', async () => {
+  jest.mocked(liveLessonService.startLesson).mockResolvedValue(response());
+  const host = make();
+  await host.room.enter();
+  await host.room.moderate('student', 'admit');
+  expect(liveLessonService.moderate).toHaveBeenCalledWith(
+    'auth',
+    'lesson',
+    'student',
+    'admit',
+  );
+  jest
+    .mocked(liveLessonService.getJoinToken)
+    .mockResolvedValue(response('participant'));
+  const learner = make(true);
+  await learner.room.enter();
+  await learner.room.hand(true);
+  expect(liveLessonService.hand).toHaveBeenCalledWith(
+    'auth',
+    'lesson',
+    expect.any(String),
+    true,
+  );
+  await learner.room.moderate('student', 'remove');
+  expect(liveLessonService.moderate).toHaveBeenCalledTimes(1);
+});
+
+test('school authorization loss and ended responses close the room; transient failures have a bounded budget', async () => {
+  jest.mocked(liveLessonService.startLesson).mockResolvedValue(response());
+  const { room, client } = make();
+  await room.enter();
+  jest
+    .mocked(liveLessonService.classroom)
+    .mockRejectedValue(new ApiError(403, 'private'));
+  const states: string[] = [];
+  room.subscribe(s => states.push(s.reliability ?? ''));
+  await room.refreshClassroom();
+  expect(states).toContain('authorization_lost');
+  expect(client.dispose).toHaveBeenCalled();
+  const other = make();
+  await other.room.enter();
+  jest
+    .mocked(liveLessonService.classroom)
+    .mockRejectedValue(new Error('network'));
+  await other.room.refreshClassroom();
+  await other.room.refreshClassroom();
+  expect(other.client.dispose).not.toHaveBeenCalled();
+  await other.room.refreshClassroom();
+  expect(other.client.dispose).toHaveBeenCalled();
+});
+
+test('SDK reconnect revalidates school admission and credentials before reporting recovered', async () => {
+  jest.mocked(liveLessonService.startLesson).mockResolvedValue(response());
+  const { room, client } = make();
+  await room.enter();
+  const reconnect = jest.mocked(client.onReconnect!).mock.calls[0][0];
+  const states: string[] = [];
+  room.subscribe(s => states.push(s.reliability ?? ''));
+  reconnect('reconnecting');
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  expect(liveLessonService.classroom).toHaveBeenCalledWith(
+    'auth',
+    'lesson',
+    expect.any(String),
+    'reconnecting',
+  );
+  expect(client.renew).toHaveBeenCalledTimes(1);
+  reconnect('recovered');
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  expect(states).toContain('recovered');
+  jest
+    .mocked(liveLessonService.classroom)
+    .mockRejectedValue(new ApiError(403, 'private'));
+  reconnect('recovered');
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  expect(client.dispose).toHaveBeenCalled();
+  expect(states).toContain('authorization_lost');
+});
+
+test('an ended school session is refreshed separately from the disposed media state', async () => {
+  jest.mocked(liveLessonService.startLesson).mockResolvedValue(response());
+  const { room, client } = make();
+  await room.enter();
+  jest
+    .mocked(liveLessonService.classroom)
+    .mockRejectedValue(new ApiError(409, 'closed'));
+  jest
+    .mocked(liveLessonService.getLiveLesson)
+    .mockResolvedValue({ ...response().session, status: 'ended' });
+  let final:
+    | { session: { status: string } | null; reliability?: string }
+    | undefined;
+  room.subscribe(s => {
+    final = s;
+  });
+  await room.refreshClassroom();
+  expect(final?.session?.status).toBe('ended');
+  expect(final?.reliability).toBe('ended');
+  expect(client.dispose).toHaveBeenCalled();
+});
 test('double start obtains one backend credential and uses exact returned room', async () => {
   let resolve!: (value: AuthorizedRoom) => void;
   jest.mocked(liveLessonService.startLesson).mockReturnValue(

@@ -13,6 +13,11 @@ export type ConnectionState =
   | 'preparing'
   | 'connecting'
   | 'connected'
+  | 'degraded'
+  | 'reconnecting'
+  | 'recovered'
+  | 'removed'
+  | 'authorization_lost'
   | 'disconnecting'
   | 'disconnected'
   | 'error';
@@ -32,6 +37,7 @@ export interface RtcState {
   publishing: boolean;
   participants: LiveParticipant[];
   error: string | null;
+  quality: 'good' | 'fair' | 'poor' | 'unavailable';
 }
 export const initialRtcState: RtcState = {
   connection: 'idle',
@@ -40,6 +46,7 @@ export const initialRtcState: RtcState = {
   publishing: false,
   participants: [],
   error: null,
+  quality: 'unavailable',
 };
 export interface LiveLessonClient {
   subscribe(listener: (state: RtcState) => void): () => void;
@@ -51,5 +58,6 @@ export interface LiveLessonClient {
   enableCamera(enabled: boolean): Promise<void>;
   renew(credential: LiveCredential): Promise<void>;
   onTokenExpiring(handler: () => void): void;
+  onReconnect?(handler: (phase: 'reconnecting' | 'recovered') => void): void;
   dispose(): Promise<void>;
 }

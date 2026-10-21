@@ -92,6 +92,7 @@ export default function LiveLessonRoomScreen({
   useEffect(() => {
     let alive = true;
     let mediaOwned = false;
+    let classroomOwned = false;
     setRoom(initialRoom);
     setRtc(initialRtcState);
     setPeriod(null);
@@ -102,6 +103,7 @@ export default function LiveLessonRoomScreen({
     setMetadataLoading(teacher);
     setError(null);
     const offRoom = controller.subscribe(value => {
+      classroomOwned = !!value.session;
       if (alive) setRoom(value);
     });
     const offRtc = controller.rtc.subscribe(value => {
@@ -122,7 +124,7 @@ export default function LiveLessonRoomScreen({
       }
     });
     const background = AppState.addEventListener('change', state => {
-      if (state === 'background' && mediaOwned)
+      if (state === 'background' && (mediaOwned || classroomOwned))
         void controller.close(
           'Media was closed when the app moved to the background. Leave and open the lesson again.',
         );
@@ -286,8 +288,28 @@ export default function LiveLessonRoomScreen({
           Media: {rtc.connection}
         </Text>
         <Text style={styles.muted}>
-          School session: {room.session?.status ?? 'not started'}
+          School session (last verified):{' '}
+          {room.session?.status ?? 'not started'}
         </Text>
+        {room.reliability ? (
+          <Text accessibilityLiveRegion="polite" style={styles.body}>
+            Classroom:{' '}
+            {room.reliability === 'waiting'
+              ? 'Waiting for teacher admission'
+              : room.reliability.replace(/_/g, ' ')}
+          </Text>
+        ) : null}
+        <Text accessibilityLiveRegion="polite" style={styles.muted}>
+          Connection quality: {rtc.quality}
+        </Text>
+        {rtc.quality === 'poor' ? (
+          <Text style={styles.body}>
+            Connection unstable.{' '}
+            {teacher
+              ? 'Turn off your camera to continue with audio only.'
+              : 'Audio may recover before video. Stay in this lesson while reconnecting.'}
+          </Text>
+        ) : null}
         {teacher && rtc.connection === 'connected' ? (
           <Text style={styles.muted}>
             {rtc.publishing
@@ -311,6 +333,122 @@ export default function LiveLessonRoomScreen({
           </Text>
         ) : null}
       </Card>
+      {room.classroom && !room.closed ? (
+        <Card>
+          {teacher ? (
+            <>
+              <Text style={styles.heading}>Classroom participants</Text>
+              <Text style={styles.body}>
+                Waiting:{' '}
+                {room.classroom.participants?.filter(
+                  p => p.admission === 'waiting',
+                ).length ?? 0}
+              </Text>
+              <Text style={styles.muted}>
+                Learners watch and listen; learner microphones and cameras
+                cannot publish.
+              </Text>
+              {room.classroom.participants
+                ?.filter(p => p.role === 'participant')
+                .map(participant => (
+                  <View key={participant.id}>
+                    <Text style={styles.body}>
+                      {participant.displayName} · {participant.admission} ·{' '}
+                      {participant.connectionState}
+                      {participant.handRaised ? ' · Hand raised' : ''}
+                    </Text>
+                    {participant.admission === 'waiting' ? (
+                      <>
+                        <Button
+                          title={`Admit ${participant.displayName}`}
+                          disabled={busy}
+                          onPress={() => {
+                            void controller.moderate(participant.id, 'admit');
+                          }}
+                        />
+                        <Button
+                          title={`Reject ${participant.displayName}`}
+                          disabled={busy}
+                          variant="secondary"
+                          onPress={() => {
+                            void controller.moderate(participant.id, 'reject');
+                          }}
+                        />
+                      </>
+                    ) : null}
+                    {participant.admission === 'admitted' ? (
+                      <Button
+                        title={`Remove ${participant.displayName}`}
+                        disabled={busy}
+                        variant="danger"
+                        onPress={() =>
+                          Alert.alert(
+                            'Remove participant?',
+                            'This blocks rejoining this lesson. Provider disconnect may take time if the service is unavailable.',
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Remove',
+                                style: 'destructive',
+                                onPress: () => {
+                                  void controller.moderate(
+                                    participant.id,
+                                    'remove',
+                                  );
+                                },
+                              },
+                            ],
+                          )
+                        }
+                      />
+                    ) : null}
+                    {participant.handRaised ? (
+                      <Button
+                        title={`Acknowledge ${participant.displayName}'s hand`}
+                        disabled={busy}
+                        variant="secondary"
+                        onPress={() => {
+                          void controller.moderate(
+                            participant.id,
+                            'lower-hand',
+                          );
+                        }}
+                      />
+                    ) : null}
+                    {participant.admission === 'removed' ? (
+                      <Text style={styles.muted}>
+                        School access removed. Media disconnect:{' '}
+                        {participant.enforcement === 'confirmed'
+                          ? 'provider confirmed'
+                          : participant.enforcement === 'expired'
+                          ? 'credential expired'
+                          : 'pending confirmation'}
+                        .
+                      </Text>
+                    ) : null}
+                  </View>
+                ))}
+            </>
+          ) : room.classroom.participant.admission === 'admitted' ? (
+            <Button
+              title={
+                room.classroom.participant.handRaised
+                  ? 'Hand raised · Lower hand'
+                  : 'Raise hand'
+              }
+              disabled={busy}
+              onPress={() => {
+                void controller.hand(!room.classroom!.participant.handRaised);
+              }}
+            />
+          ) : (
+            <Text accessibilityLiveRegion="polite" style={styles.body}>
+              Your request is {room.classroom.participant.admission}. Camera and
+              microphone remain off.
+            </Text>
+          )}
+        </Card>
+      ) : null}
       {teacher && !room.closed ? (
         <Card>
           <Text style={styles.heading}>Your camera preview</Text>

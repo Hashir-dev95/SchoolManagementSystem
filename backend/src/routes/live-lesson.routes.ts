@@ -8,6 +8,7 @@ import { requirePermission } from '../middleware/permission.middleware';
 import { PERMISSIONS } from '../constants/permissions';
 import { objectBody, RequestContractError } from '../utils/request-validation';
 import { liveLessonService } from '../services/live-lesson.service';
+import { connectionKey } from '../services/live-classroom-state';
 export const liveLessonRouter = Router();
 liveLessonRouter.use((_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -60,12 +61,13 @@ liveLessonRouter.post(
   '/from-timetable/:periodId/start',
   requirePermission(PERMISSIONS.LIVE_LESSON_START),
   handle(req => {
-    const body = objectBody(req.body, ['date']);
+    const body = objectBody(req.body, ['date', 'connectionId']);
     return liveLessonService.start(
       req.user,
       token(req),
       req.params.periodId,
       body.date,
+      connectionKey(body.connectionId),
     );
   }),
 );
@@ -73,8 +75,68 @@ liveLessonRouter.post(
   '/:id/join-token',
   requirePermission(PERMISSIONS.LIVE_LESSON_JOIN),
   handle(req => {
-    objectBody(req.body, []);
-    return liveLessonService.join(req.user, token(req), req.params.id);
+    const body = objectBody(req.body, ['connectionId']);
+    return liveLessonService.join(
+      req.user,
+      token(req),
+      req.params.id,
+      connectionKey(body.connectionId),
+    );
+  }),
+);
+liveLessonRouter.post(
+  '/:id/admission',
+  requirePermission(PERMISSIONS.LIVE_LESSON_JOIN),
+  handle(req => {
+    const body = objectBody(req.body, ['connectionId']);
+    return liveLessonService.requestAdmission(
+      req.user,
+      token(req),
+      req.params.id,
+      body.connectionId,
+    );
+  }),
+);
+liveLessonRouter.post(
+  '/:id/classroom',
+  requirePermission(PERMISSIONS.LIVE_LESSON_VIEW),
+  handle(req => {
+    const body = objectBody(req.body, ['connectionId', 'state']);
+    return liveLessonService.classroom(
+      req.user,
+      token(req),
+      req.params.id,
+      body.connectionId,
+      body.state,
+    );
+  }),
+);
+liveLessonRouter.post(
+  '/:id/participants/:participantId/moderate',
+  requirePermission(PERMISSIONS.LIVE_LESSON_START),
+  handle(req => {
+    const body = objectBody(req.body, ['action']);
+    return liveLessonService.moderate(
+      req.user,
+      token(req),
+      req.params.id,
+      req.params.participantId,
+      body.action,
+    );
+  }),
+);
+liveLessonRouter.post(
+  '/:id/hand',
+  requirePermission(PERMISSIONS.LIVE_LESSON_JOIN),
+  handle(req => {
+    const body = objectBody(req.body, ['connectionId', 'raised']);
+    return liveLessonService.hand(
+      req.user,
+      token(req),
+      req.params.id,
+      body.connectionId,
+      body.raised,
+    );
   }),
 );
 liveLessonRouter.post(

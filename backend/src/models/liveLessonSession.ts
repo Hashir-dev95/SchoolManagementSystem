@@ -1,4 +1,5 @@
 import { Schema, model } from 'mongoose';
+import { ensureLivePresenceIndexes } from './liveLessonPresence';
 const ref = (name: string) => ({
   type: Schema.Types.ObjectId,
   ref: name,
@@ -61,4 +62,5 @@ schema.index({
   scheduledStart: -1,
 });
 export const LiveLessonSession = model('LiveLessonSession', schema);
-export const ensureLiveLessonIndexes = () => LiveLessonSession.createIndexes();
+export const ensureLiveLessonIndexes = () =>
+  Promise.all([LiveLessonSession.createIndexes(), ensureLivePresenceIndexes()]);

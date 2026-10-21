@@ -36,15 +36,29 @@ async function main() {
       };
     },
   };
-  const service = createLiveLessonService(() => provider);
+  const service = createLiveLessonService(
+    () => provider,
+    async () => {
+      process.send?.({ type: 'kick' });
+    },
+  );
   process.on(
     'message',
     async (message: {
-      action: 'start' | 'join' | 'shutdown';
+      action:
+        | 'start'
+        | 'join'
+        | 'admission'
+        | 'moderate'
+        | 'enforce'
+        | 'shutdown';
       identity: JwtPayload;
       token: string;
       id: string;
       date: string;
+      connectionId?: string;
+      participantId?: string;
+      operation?: string;
     }) => {
       if (message.action === 'shutdown') {
         await mongoose.disconnect();
@@ -52,6 +66,11 @@ async function main() {
         return;
       }
       try {
+        if (message.action === 'enforce') {
+          await service.enforceRemoval(message.id);
+          process.send?.({ type: 'result', ok: true });
+          return;
+        }
         const result =
           message.action === 'start'
             ? await service.start(
@@ -59,9 +78,34 @@ async function main() {
                 message.token,
                 message.id,
                 message.date,
+                message.connectionId,
               )
-            : await service.join(message.identity, message.token, message.id);
-        process.send?.({ type: 'result', ok: true, id: result.session.id });
+            : message.action === 'admission'
+            ? await service.requestAdmission(
+                message.identity,
+                message.token,
+                message.id,
+                message.connectionId,
+              )
+            : message.action === 'moderate'
+            ? await service.moderate(
+                message.identity,
+                message.token,
+                message.id,
+                message.participantId,
+                message.operation,
+              )
+            : await service.join(
+                message.identity,
+                message.token,
+                message.id,
+                message.connectionId,
+              );
+        process.send?.({
+          type: 'result',
+          ok: true,
+          id: 'session' in result ? result.session.id : result.participant.id,
+        });
       } catch {
         process.send?.({ type: 'result', ok: false });
       }
