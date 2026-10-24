@@ -1,3 +1,4 @@
+import Room from '../src/models/room';
 import {AttendanceSession, PeriodAttendanceRecord, AttendanceOperation} from '../src/models/periodAttendance';
 import {AttendanceCorrection, StudentLeave, ensureAttendanceAmendmentIndexes} from '../src/models/attendanceAmendment';
 import ApprovalRequest from '../src/models/approvalRequest';
@@ -82,6 +83,7 @@ beforeEach(async () => {
   classId = String((await new SchoolClass({branchId: branch, academicPeriodId: periodId, academicYear: 'CURRENT', name: 'Grade 8', code: 'G8'}).save())._id);
   sectionId = String((await new Section({branchId: branch, classId, name: 'A', code: 'A'}).save())._id);
   subjectId = String((await Subject.create({branchId: branch, name: 'Mathematics'}))._id);
+  fixtureRoomId = String((await Room.create({branchId:branch,name:'101',code:'101',category:'classroom',createdBy:teacherId,updatedBy:teacherId}))._id);
 });
 after(async () => {
   ROLE_PERMISSIONS.principal = principalGrants; ROLE_PERMISSIONS.super_admin = adminGrants;
@@ -98,7 +100,8 @@ const curriculum = (suffix = '', token = principal, body?: unknown, method?: str
 const mapSubject = (id = subjectId) => curriculum('', principal, {subjectId: id});
 const syllabusInput = () => ({classId, subjectId, version: 1, title: 'Mapped syllabus', units: [{title: 'Unit', topics: [{title: 'Topic'}]}]});
 const day = () => schoolToday();
-const scheduleInput = () => ({branchId: branch, versionNumber: 1, effectiveFrom: day(), effectiveUntil: addScheduleDays(day(), 30), periods: [{teacherId, classId, sectionId, subjectId, dayOfWeek: scheduleWeekday(day()), startTime: '08:00', endTime: '09:00', room: '101'}]});
+let fixtureRoomId: string;
+const scheduleInput = () => ({branchId: branch, versionNumber: 1, effectiveFrom: day(), effectiveUntil: addScheduleDays(day(), 30), periods: [{teacherId, classId, sectionId, subjectId, dayOfWeek: scheduleWeekday(day()), startTime: '08:00', endTime: '09:00', roomId: fixtureRoomId, room: '101'}]});
 
 async function prepared() {
   const mapping = (await mapSubject()).json.data;

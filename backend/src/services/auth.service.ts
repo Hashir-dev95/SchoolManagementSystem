@@ -1,7 +1,7 @@
 import User, { IUser, UserRole } from '../models/user';
 import { comparePassword, hashPassword } from '../utils/password';
 import Branch from '../models/branch';
-import type {ClientSession} from 'mongoose';
+import type { ClientSession } from 'mongoose';
 
 interface CreateUserInput {
   fullName: string;
@@ -14,7 +14,7 @@ interface CreateUserInput {
 
 export const createUser = async (
   data: CreateUserInput,
-  options: {bootstrap?: true; session?: ClientSession} = {},
+  options: { bootstrap?: true; session?: ClientSession } = {},
 ): Promise<IUser> => {
   if (options.bootstrap && data.role !== 'super_admin') {
     throw new Error('Bootstrap requires the Super Admin role');
@@ -33,7 +33,9 @@ export const createUser = async (
     throw new Error('User with this email already exists');
   }
   if (data.role !== 'super_admin') {
-    const branch = await Branch.findById(data.branchId).session(options.session ?? null);
+    const branch = await Branch.findById(data.branchId).session(
+      options.session ?? null,
+    );
 
     if (!branch) {
       throw new Error('Assigned branch not found');
@@ -53,10 +55,10 @@ export const createUser = async (
     password: hashedPassword,
     role: data.role,
     branchId: data.branchId,
-    ...(options.bootstrap ? {bootstrapKey: 'super-admin'} : {}),
+    ...(options.bootstrap ? { bootstrapKey: 'super-admin' } : {}),
   });
 
-  await user.save(options.session ? {session: options.session} : {});
+  await user.save(options.session ? { session: options.session } : {});
 
   return user;
 };

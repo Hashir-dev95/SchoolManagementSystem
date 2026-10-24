@@ -1,3 +1,4 @@
+import Room, {ROOM_CATEGORIES} from '../models/room';
 import mongoose, {type ClientSession} from 'mongoose';
 import {AcademicPeriod} from '../models/academicPeriod';
 import {StudentEnrollment, ensureEnrollmentIndexes} from '../models/studentEnrollment';
@@ -15,15 +16,16 @@ import {withAcademicCatalogLock} from './academic-catalog-lock.service';
 import {objectBody, objectIdField, textField, dateField, RequestContractError} from '../utils/request-validation';
 import type {JwtPayload} from './jwt.service';
 
-export type SetupKind = 'periods' | 'classes' | 'sections' | 'subjects';
+export type SetupKind = 'periods' | 'classes' | 'sections' | 'subjects' | 'rooms';
 const grants: Record<SetupKind | 'classSubjects', {view: Permission; manage: Permission}> = {
+  rooms: {view: PERMISSIONS.ACADEMIC_ROOMS_VIEW, manage: PERMISSIONS.ACADEMIC_ROOMS_MANAGE},
   classSubjects: {view: PERMISSIONS.ACADEMIC_CLASS_SUBJECTS_VIEW, manage: PERMISSIONS.ACADEMIC_CLASS_SUBJECTS_MANAGE},
   periods: {view: PERMISSIONS.ACADEMIC_PERIODS_VIEW, manage: PERMISSIONS.ACADEMIC_PERIODS_MANAGE},
   classes: {view: PERMISSIONS.ACADEMIC_CLASSES_VIEW, manage: PERMISSIONS.ACADEMIC_CLASSES_MANAGE},
   sections: {view: PERMISSIONS.ACADEMIC_SECTIONS_VIEW, manage: PERMISSIONS.ACADEMIC_SECTIONS_MANAGE},
   subjects: {view: PERMISSIONS.ACADEMIC_SUBJECTS_VIEW, manage: PERMISSIONS.ACADEMIC_SUBJECTS_MANAGE},
 };
-const models = {periods: AcademicPeriod, classes: SchoolClass, sections: Section, subjects: Subject};
+const models = {rooms: Room, periods: AcademicPeriod, classes: SchoolClass, sections: Section, subjects: Subject};
 const missing = () => new RequestContractError(404, 'Academic setup record is unavailable');
 const conflict = (message: string) => new RequestContractError(409, message);
 const revisionOf = (value: unknown) => {
@@ -56,7 +58,7 @@ export async function academicSetupScope(identity: JwtPayload | undefined, kind:
 }
 export async function setupBranches(identity: JwtPayload | undefined) {
   const actor = await currentAcademicActor(identity);
-  if (!['principal', 'super_admin'].includes(actor.role) || !ROLE_PERMISSIONS[actor.role].includes(PERMISSIONS.ACADEMIC_PERIODS_VIEW)) throw new RequestContractError(403, 'Academic setup permission is required');
+  if (!['principal', 'super_admin'].includes(actor.role) || !([PERMISSIONS.ACADEMIC_PERIODS_VIEW, PERMISSIONS.ACADEMIC_ROOMS_VIEW].some(grant => ROLE_PERMISSIONS[actor.role].includes(grant)))) throw new RequestContractError(403, 'Academic setup permission is required');
   if (actor.role === 'super_admin' && actor.branchId) throw new RequestContractError(403, 'Global Super Admin authority is required');
   if (actor.role === 'principal' && !actor.branchId) throw new RequestContractError(403, 'Principal branch is required');
   const rows = await Branch.find({isActive: true, ...(actor.role === 'principal' ? {_id: String(actor.branchId)} : {})}).select('_id name code').sort({name: 1}).lean();
@@ -65,6 +67,7 @@ export async function setupBranches(identity: JwtPayload | undefined) {
 const periodDTO = (row: any) => ({id: String(row._id), name: row.name, code: row.code, startDate: row.startDate, endDate: row.endDate, status: row.status, revision: row.revision});
 const catalogDTO = (row: any, period?: any) => ({id: String(row._id), name: row.name, ...(row.code ? {code: row.code} : {}), isActive: row.isActive, revision: row.revision ?? 1,
   ...(row.academicYear ? {academicYear: row.academicYear, academicPeriodId: row.academicPeriodId ? String(row.academicPeriodId) : null, periodName: period?.name ?? row.academicYear, periodStatus: period?.status ?? 'legacy', legacy: !row.academicPeriodId} : {}),
+  ...(row.category ? {category: row.category} : {}),
   ...(row.classId ? {classId: String(row.classId)} : {}),
 });
 async function parentClass(branchId: string, id: unknown, session?: ClientSession, writable = false) {
@@ -84,9 +87,14 @@ async function activePeriod(branchId: string, id: unknown, session?: ClientSessi
   return period;
 }
 export async function readSetup(identity: JwtPayload | undefined, kind: SetupKind, query: unknown, id?: unknown) {
-  const input = objectBody(query, ['branchId', ...(kind === 'classes' ? ['academicPeriodId'] : []), ...(kind === 'sections' ? ['classId'] : []), 'offset']);
+  const input = objectBody(query, ['branchId', ...(kind === 'rooms' ? ['q'] : []), ...(kind === 'classes' ? ['academicPeriodId'] : []), ...(kind === 'sections' ? ['classId'] : []), 'offset']);
   const ctx = await academicSetupScope(identity, kind, false, input.branchId);
   const filter: any = {branchId: ctx.branchId};
+  if (kind === 'rooms' && input.q !== undefined) {
+    if (typeof input.q !== 'string' || input.q.length > 100) throw new RequestContractError(400, 'Invalid Room search');
+    const literal = input.q.trim().replace(/[.*+?^$\u007b\u007d()|[\]\\]/g, '\\$&');
+    if (literal) filter.$or = [{name: {$regex: literal, $options: 'i'}}, {code: {$regex: literal, $options: 'i'}}];
+  }
   if (id !== undefined) filter._id = objectIdField(id, 'record ID');
   if (kind === 'classes' && input.academicPeriodId !== undefined) {
     const periodId = objectIdField(input.academicPeriodId, 'academic period ID');
@@ -115,6 +123,12 @@ export async function readSetup(identity: JwtPayload | undefined, kind: SetupKin
 // No cascade, no deletion, and no invented distinction in legacy status data.
 const dependencyCollections = ['students', 'teacherassignments', 'timetableperiods', 'attendances', 'attendancesessions', 'syllabuses', 'lessonplans', 'lessondeliveries', 'homeworks', 'quizzes', 'academicresults', 'catchupitems', 'teachernotices', 'assignedworks'];
 async function assertUnused(kind: SetupKind, row: any, session: ClientSession) {
+  if (kind === 'rooms') {
+    for (const name of ['timetableperiods', 'substituteassignments'])
+      if (await mongoose.connection.collection(name).findOne({roomId: row._id}, {session, projection: {_id: 1}}))
+        throw conflict('This Room is referenced by a timetable or substitution; retain it to protect schedules and history');
+    return;
+  }
   if ((kind === 'classes' || kind === 'sections') && await StudentEnrollment.exists({[kind === 'classes' ? 'classId' : 'sectionId']: row._id, status: 'active'}).session(session)) throw conflict('This record has active Student Enrollments; move or withdraw Students first');
   if ((kind === 'classes' || kind === 'subjects') && await ClassSubject.exists({[kind === 'classes' ? 'classId' : 'subjectId']: row._id, isActive: true}).session(session)) throw conflict('This record has active Class Subjects; deactivate curriculum availability first');
   if (kind === 'classes' && await Section.exists({classId: row._id}).session(session)) throw conflict('This Class has Sections; retain it while dependent records exist');
@@ -125,7 +139,7 @@ async function assertUnused(kind: SetupKind, row: any, session: ClientSession) {
   }
 }
 export async function writeSetup(identity: JwtPayload | undefined, token: string, kind: SetupKind, requestedBranch: unknown, action: 'create' | 'update' | 'deactivate' | 'reactivate' | 'activate' | 'close' | 'archive', id: unknown, body: unknown) {
-  const fields = action === 'create' || action === 'update' ? (kind === 'periods' ? ['name', ...(action === 'create' ? ['code'] : []), 'startDate', 'endDate'] : kind === 'classes' ? ['name', 'code', ...(action === 'create' ? ['academicPeriodId'] : [])] : kind === 'sections' ? ['name', 'code', ...(action === 'create' ? ['classId'] : [])] : ['name']) : [];
+  const fields = action === 'create' || action === 'update' ? (kind === 'rooms' ? ['name', 'code', 'category'] : kind === 'periods' ? ['name', ...(action === 'create' ? ['code'] : []), 'startDate', 'endDate'] : kind === 'classes' ? ['name', 'code', ...(action === 'create' ? ['academicPeriodId'] : [])] : kind === 'sections' ? ['name', 'code', ...(action === 'create' ? ['classId'] : [])] : ['name']) : [];
   const input = objectBody(body, [...fields, ...(action === 'create' ? [] : ['revision'])]);
   const initial = await academicSetupScope(identity, kind, true, requestedBranch);
   try {
@@ -148,8 +162,11 @@ export async function writeSetup(identity: JwtPayload | undefined, token: string
       }
       if (kind === 'sections') await parentClass(ctx.branchId, row ? String(row.classId) : input.classId, session, true);
       if (kind === 'periods' && row && action === 'update' && row.status !== 'draft') throw conflict('Only a draft Academic Period can be edited');
+      const category = kind === 'rooms' && (action === 'create' || action === 'update') ? input.category : undefined;
+      if (kind === 'rooms' && (action === 'create' || action === 'update') && !ROOM_CATEGORIES.includes(category as typeof ROOM_CATEGORIES[number])) throw new RequestContractError(400, 'Select a valid Room category');
       if (action === 'create') {
-        let values: any = {branchId: ctx.branchId, name: nameOf(input.name, kind === 'periods' || kind === 'subjects' ? 100 : 50), revision: 1};
+        let values: any = {branchId: ctx.branchId, name: nameOf(input.name, kind === 'rooms' ? 80 : kind === 'periods' || kind === 'subjects' ? 100 : 50), revision: 1};
+        if (kind === 'rooms') Object.assign(values, {category, createdBy: ctx.actor._id, updatedBy: ctx.actor._id});
         if (kind !== 'subjects') values.code = codeOf(input.code);
         if (kind === 'periods') values = {...values, ...periodDates(input), createdBy: ctx.actor._id, updatedBy: ctx.actor._id};
         if (kind === 'classes') values = {...values, academicPeriodId: period._id, academicYear: period.code};
@@ -158,8 +175,9 @@ export async function writeSetup(identity: JwtPayload | undefined, token: string
         return kind === 'periods' ? periodDTO(created[0]) : catalogDTO(created[0], period);
       }
       if (action === 'update') {
-        row.name = nameOf(input.name, kind === 'periods' || kind === 'subjects' ? 100 : 50);
+        row.name = nameOf(input.name, kind === 'rooms' ? 80 : kind === 'periods' || kind === 'subjects' ? 100 : 50);
         if (kind !== 'subjects' && kind !== 'periods') row.code = codeOf(input.code);
+        if (kind === 'rooms') row.category = category;
         if (kind === 'periods') Object.assign(row, periodDates(input));
       } else if (kind === 'periods') {
         const target = action === 'activate' ? 'active' : action === 'close' ? 'closed' : action === 'archive' ? 'archived' : '';
@@ -173,7 +191,7 @@ export async function writeSetup(identity: JwtPayload | undefined, token: string
         row.isActive = action === 'reactivate';
       }
       row.revision = (row.revision ?? 1) + 1;
-      if (kind === 'periods') row.updatedBy = ctx.actor._id;
+      if (kind === 'periods' || kind === 'rooms') row.updatedBy = ctx.actor._id;
       await row.save({session});
       return kind === 'periods' ? periodDTO(row) : catalogDTO(row, period);
     });
@@ -190,5 +208,5 @@ function periodDates(input: Record<string, unknown>) {
 }
 export async function ensureAcademicSetupIndexes() {
   await ensureEnrollmentIndexes();
-  await Promise.all([AcademicPeriod.createIndexes(), SchoolClass.createIndexes(), Section.createIndexes(), Subject.createIndexes(), ClassSubject.createIndexes()]);
+  await Promise.all([Room.createIndexes(), AcademicPeriod.createIndexes(), SchoolClass.createIndexes(), Section.createIndexes(), Subject.createIndexes(), ClassSubject.createIndexes()]);
 }

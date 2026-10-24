@@ -1,4 +1,4 @@
-import {Schema, model, Document} from 'mongoose';
+import { Schema, model, Document } from 'mongoose';
 
 export const PRINCIPAL_TASK_STATUSES = {
   PENDING: 'pending',
@@ -30,7 +30,11 @@ export interface IPrincipalTask extends Document {
   createdBy: Schema.Types.ObjectId;
   dueDate?: Date;
   completedAt?: Date | null;
-  history: Array<{action: 'start' | 'complete' | 'cancel'; performedBy: Schema.Types.ObjectId; createdAt: Date}>;
+  history: Array<{
+    action: 'start' | 'complete' | 'cancel';
+    performedBy: Schema.Types.ObjectId;
+    createdAt: Date;
+  }>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -91,11 +95,21 @@ const principalTaskSchema = new Schema<IPrincipalTask>(
       type: Date,
     },
     history: {
-      type: [{
-        action: {type: String, enum: ['start', 'complete', 'cancel'], required: true},
-        performedBy: {type: Schema.Types.ObjectId, ref: 'User', required: true},
-        createdAt: {type: Date, required: true},
-      }],
+      type: [
+        {
+          action: {
+            type: String,
+            enum: ['start', 'complete', 'cancel'],
+            required: true,
+          },
+          performedBy: {
+            type: Schema.Types.ObjectId,
+            ref: 'User',
+            required: true,
+          },
+          createdAt: { type: Date, required: true },
+        },
+      ],
       default: [],
     },
   },

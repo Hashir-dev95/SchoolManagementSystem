@@ -1,3 +1,4 @@
+import RoomsScreen from '../screens/admin/RoomsScreen';
 import PrincipalAttendanceReviewScreen from '../screens/principal/PrincipalAttendanceReviewScreen';
 import React from 'react';
 import TeacherAssignmentAdminScreen from '../screens/admin/TeacherAssignmentAdminScreen';
@@ -15,8 +16,11 @@ import PrincipalSafetyDetailScreen from '../screens/principal/PrincipalSafetyDet
 import PrincipalResultModerationScreen from '../screens/principal/PrincipalResultModerationScreen';
 import StudentEnrollmentScreen from '../screens/principal/StudentEnrollmentScreen';
 import AcademicSetupScreen from '../screens/admin/AcademicSetupScreen';
+import TimetableAdminScreen from '../screens/admin/TimetableAdminScreen';
 
 export type PrincipalStackParamList = {
+  Rooms: undefined;
+  TimetableAdmin: undefined;
   StudentsEnrollment: undefined;
   AcademicSetup: undefined;
   AssignTeacher: {teacherId?: string} | undefined;
@@ -37,6 +41,8 @@ const Stack = createNativeStackNavigator<PrincipalStackParamList>();
 export default function PrincipalNavigator() {
   return (
     <Stack.Navigator initialRouteName="PrincipalWorkspace" screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Rooms" component={RoomsScreen} options={{headerShown: true, title: 'Rooms', headerStyle: {backgroundColor: '#fbf9f4'}, headerTintColor: '#23595a', headerShadowVisible: false}} />
+      <Stack.Screen name="TimetableAdmin" component={TimetableAdminScreen} options={{headerShown: true, title: 'Timetable Scheduling'}} />
       <Stack.Screen name="StudentsEnrollment" component={StudentEnrollmentScreen} options={{headerShown: true, title: 'Students & Enrollment', headerStyle: {backgroundColor: '#fbf9f4'}, headerTintColor: '#23595a', headerShadowVisible: false}} />
       <Stack.Screen name="AcademicSetup" component={AcademicSetupScreen} options={{headerShown: true, title: 'Academic Setup', headerStyle: {backgroundColor: '#fbf9f4'}, headerTintColor: '#23595a', headerShadowVisible: false}} />
       <Stack.Screen

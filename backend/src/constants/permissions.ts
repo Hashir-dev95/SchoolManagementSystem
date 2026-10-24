@@ -1,4 +1,6 @@
 export const PERMISSIONS = {
+  ACADEMIC_ROOMS_VIEW: 'academic.rooms.view',
+  ACADEMIC_ROOMS_MANAGE: 'academic.rooms.manage',
   LIVE_LESSON_VIEW: 'liveLesson.view',
   LIVE_LESSON_START: 'liveLesson.start',
   LIVE_LESSON_JOIN: 'liveLesson.join',

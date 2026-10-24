@@ -28,7 +28,9 @@ export interface CreateStudentInput {
 
 export const createStudent = async (
   data: CreateStudentInput,
+  options?: {session: mongoose.ClientSession; authorityFencedExternally: true},
 ): Promise<IStudent> => {
+  if (options && !options.session.inTransaction()) throw new RequestContractError(503, 'Student admission requires a transaction');
   const userId = data.userId.trim();
   const branchId = data.branchId.trim();
   const classId = data.classId.trim();
@@ -60,7 +62,7 @@ export const createStudent = async (
   const classObjectId = new mongoose.Types.ObjectId(classId);
   const sectionObjectId = new mongoose.Types.ObjectId(sectionId);
 
-  const branch = await Branch.findById(branchObjectId).select('_id isActive');
+  const branch = await Branch.findById(branchObjectId).select('_id isActive').session(options?.session ?? null);
 
   if (!branch || !branch.isActive) {
     throw new Error('Assigned branch not found or inactive');
@@ -68,7 +70,7 @@ export const createStudent = async (
 
   const schoolClass = await SchoolClass.findById(classObjectId).select(
     '_id branchId isActive',
-  );
+  ).session(options?.session ?? null);
 
   if (!schoolClass || !schoolClass.isActive) {
     throw new Error('Assigned class not found or inactive');
@@ -80,7 +82,7 @@ export const createStudent = async (
 
   const section = await Section.findById(sectionObjectId).select(
     '_id branchId classId isActive',
-  );
+  ).session(options?.session ?? null);
 
   if (!section || !section.isActive) {
     throw new Error('Assigned section not found or inactive');
@@ -98,7 +100,7 @@ export const createStudent = async (
   const existingStudent = await Student.collection.findOne({
   branchId: branchObjectId,
   admissionNumber,
-});
+}, options ? {session: options.session} : {});
 
 if (existingStudent) {
   throw new Error(
@@ -124,7 +126,7 @@ if (existingStudent) {
   // appear as an unfenced phantom between roster validation and commit.
   // A fresh document per driver transaction attempt preserves insert semantics
   // after a retry; the initially allocated ID remains stable.
-  return withTimetablePublication(branchId, undefined, async session => {
+  const write = async (session: mongoose.ClientSession) => {
     // This transaction writes the same Branch fence as Academic Setup. Repeat
     // reference validation after that write so deactivation cannot slip between
     // the early form validation and enrollment commit.
@@ -136,7 +138,7 @@ if (existingStudent) {
       throw new RequestContractError(409, 'An active Academic Period is required');
     }
     if (!mongoose.isValidObjectId(data.createdBy)) throw new RequestContractError(400, 'Admission actor is required');
-    await User.collection.updateOne({_id: new mongoose.Types.ObjectId(data.createdBy)}, {$inc: {__v: 1}}, {session});
+    if (!options) await User.collection.updateOne({_id: new mongoose.Types.ObjectId(data.createdBy)}, {$inc: {__v: 1}}, {session});
     const admissionActor = await User.findById(data.createdBy).session(session).lean();
     if (!admissionActor?.isActive || !['principal', 'super_admin'].includes(admissionActor.role) || !ROLE_PERMISSIONS[admissionActor.role].includes(PERMISSIONS.ENROLLMENT_MANAGE) || (admissionActor.role === 'principal' && String(admissionActor.branchId) !== branchId) || (admissionActor.role === 'super_admin' && admissionActor.branchId)) throw new RequestContractError(403, 'Admission actor is unavailable');
     await User.collection.updateOne({_id: new mongoose.Types.ObjectId(userId)}, {$inc: {__v: 1}}, {session});
@@ -145,5 +147,9 @@ if (existingStudent) {
     const created = await new Student(student.toObject()).save({session});
     await StudentEnrollment.create([{studentId: String(created._id), branchId, academicPeriodId: String(currentClass.academicPeriodId), classId, sectionId, effectiveFrom: new Date(), reason: 'Initial admission through student provisioning', createdBy: admissionActor._id, updatedBy: admissionActor._id}], {session});
     return created;
-  });
+  };
+  // Admission owns the complete User + Student + Enrollment transaction and
+  // fences its authenticated actor before commit. Legacy internal callers keep
+  // the existing publication transaction and actor checks.
+  return options ? write(options.session) : withTimetablePublication(branchId, undefined, write);
 };

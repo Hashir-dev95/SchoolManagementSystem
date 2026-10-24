@@ -1,3 +1,4 @@
+import Room from '../src/models/room';
 import {seedCurriculumFixtures} from './helpers/curriculum-fixtures';
 import assert from 'node:assert/strict';
 import { after, afterEach, before, beforeEach, mock, test } from 'node:test';
@@ -19,7 +20,9 @@ import { registerSession } from '../src/services/session.service';
 import { ROLE_PERMISSIONS } from '../src/constants/rolePermissions';
 import { PERMISSIONS } from '../src/constants/permissions';
 import type { TeacherAssignmentTuple } from '../src/services/teacher-scope.service';
-import { createTimetableVersion } from '../src/services/timetable-admin.service';
+import { createTimetableVersion, timetableOptions, listTimetableVersions } from '../src/services/timetable-admin.service';
+import {getTeacherHome} from '../src/services/teacher-home.service';
+import {createLiveLessonService, lessonInstant} from '../src/services/live-lesson.service';
 import {
   getTeacherTimetable,
   type TeacherPeriodDTO,
@@ -52,6 +55,8 @@ const permissionSnapshot = Object.fromEntries(
 );
 let database: MongoMemoryReplSet, server: Server, base: string;
 let branchA: Id, branchB: Id;
+let roomIds: Map<string,string>;
+const roomNames = ['Room 8','Approved revised room','Revised 2','Wednesday','Another room','Room'];
 let teacherA: Actor, teacherB: Actor, foreignTeacher: Actor, principal: Actor;
 let class8: Id, class9: Id, class10: Id, foreignClass: Id;
 let section8A: Id,
@@ -179,6 +184,7 @@ beforeEach(async () => {
   for (const role of Object.keys(ROLE_PERMISSIONS) as UserRole[])
     ROLE_PERMISSIONS[role] = [...permissionSnapshot[role]];
   for (const model of [
+    Room,
     TimetableIssue,
     SubstituteAssignment,
     TimetablePeriod,
@@ -213,6 +219,7 @@ beforeEach(async () => {
   teacherB = await actor('teacher-b', 'teacher', branchA);
   foreignTeacher = await actor('foreign-teacher', 'teacher', branchB);
   principal = await actor('principal', 'principal', branchA);
+  roomIds = new Map((await Room.insertMany(roomNames.map((name,i) => ({branchId:branchA,name,code:'R'+i,category:'classroom',createdBy:principal.id,updatedBy:principal.id})))).map(row=>[row.name,String(row._id)]));
   const schoolClass = async (name: string, code: string, branchId = branchA) =>
     (
       await new SchoolClass({
@@ -283,6 +290,7 @@ const slot = (extra: Record<string, unknown> = {}) => ({
   dayOfWeek: 2,
   startTime: '09:00',
   endTime: '09:40',
+  roomId: roomIds.get(String(extra.room ?? 'Room 8')),
   room: 'Room 8',
   ...extra,
 });
@@ -351,6 +359,7 @@ const replacement = async (
       date: nowDate,
       startTime: '10:00',
       endTime: '10:45',
+      roomId: roomIds.get(String(extra.room ?? 'Approved revised room')),
       room: 'Approved revised room',
       ...extra,
     },
@@ -370,6 +379,433 @@ const replacement = async (
     );
   return created.data.substituteId;
 };
+
+test('eligible Teachers follow exact Class Section Subject assignment and current active catalog', async () => {
+  const path = `/timetables/options?classId=${class9}&sectionId=${section9B}&subjectId=${physics}`;
+  const result = await http<Awaited<ReturnType<typeof timetableOptions>>>(
+    path,
+    principal
+  );
+  assert.equal(result.status, 200, result.raw);
+  assert.deepEqual(
+    result.data.teachers.map((t) => t.id),
+    [String(teacherA.id)]
+  );
+  assert.equal(
+    (
+      await http(
+        `/timetables/options?classId=${class9}&sectionId=${section8A}&subjectId=${physics}`,
+        principal
+      )
+    ).status,
+    404
+  );
+  assert.equal(
+    (await http(path + `&branchId=${branchB}`, principal)).status,
+    403
+  );
+  assert.equal(
+    (await http(`/timetables/options?classId=${class9}`, principal)).status,
+    400
+  );
+  await Section.updateOne()
+    .where('_id')
+    .equals(section9B)
+    .set({ isActive: false });
+  assert.equal((await http(path, principal)).status, 404);
+});
+
+test('a branch-bound Super Admin cannot bypass canonical global administration scope', async () => {
+  const admin = await actor('scoped-admin', 'super_admin', branchA);
+  assert.equal(
+    (await http(`/timetables/options?branchId=${branchB}`, admin)).status,
+    403
+  );
+  assert.equal(
+    (await version({ branchId: String(branchA), versionNumber: 2 }, admin))
+      .status,
+    403
+  );
+});
+
+test('approval cannot publish an assignment revoked between initial validation and the transaction fence', async () => {
+  const draft = await version({ versionNumber: 2 });
+  assert.equal(draft.status, 201);
+  const original = TeacherAssignment.collection.updateOne.bind(
+    TeacherAssignment.collection
+  );
+  let changed = false;
+  mock.method(
+    TeacherAssignment.collection,
+    'updateOne',
+    async (...args: Parameters<typeof original>) => {
+      if (!changed && args[2]?.session) {
+        changed = true;
+        await original({ _id: args[0]._id }, { $set: { isActive: false } });
+      }
+      return original(...args);
+    }
+  );
+  assert.equal((await approve(draft.data.versionId)).status, 404);
+  assert.equal(
+    (await TimetableVersion.findById(draft.data.versionId))?.status,
+    'draft'
+  );
+});
+
+test('approval rejects an imported draft with an invalid clock window', async () => {
+  const draft = await version({ versionNumber: 2 });
+  assert.equal(draft.status, 201);
+  await TimetablePeriod.collection.updateMany(
+    { timetableVersionId: new mongoose.Types.ObjectId(draft.data.versionId) },
+    { $set: { endTime: '01:00' } }
+  );
+  assert.equal((await approve(draft.data.versionId)).status, 400);
+  assert.equal(
+    (await TimetableVersion.findById(draft.data.versionId))?.status,
+    'draft'
+  );
+});
+
+test('Teacher eligibility distinguishes valid curriculum with no assignment from revoked and future responsibility', async () => {
+  const path = `/timetables/options?classId=${class9}&sectionId=${section9B}&subjectId=${math}`;
+  const result = await http<Awaited<ReturnType<typeof timetableOptions>>>(
+    path,
+    principal
+  );
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.teachers, []);
+  await TeacherAssignment.collection.updateMany(
+    { teacherId: teacherA.id },
+    { $set: { validFrom: new Date('2027-01-01T00:00:00Z') } }
+  );
+  const future = await http<Awaited<ReturnType<typeof timetableOptions>>>(
+    `/timetables/options?classId=${class9}&sectionId=${section9B}&subjectId=${physics}`,
+    principal
+  );
+  assert.equal(future.status, 200);
+  assert.deepEqual(future.data.teachers, []);
+});
+
+for (const action of ['create', 'approve', 'retire', 'substitute'] as const)
+  test(`Principal Branch reassignment during ${action} cannot mutate the old Branch`, async () => {
+    let draftId = '';
+    if (action === 'approve') {
+      const draft = await version({ versionNumber: 2 });
+      assert.equal(draft.status, 201);
+      draftId = draft.data.versionId;
+    }
+    const original = User.collection.updateOne.bind(User.collection);
+    let changed = false;
+    mock.method(
+      User.collection,
+      'updateOne',
+      async (...args: Parameters<typeof original>) => {
+        if (
+          !changed &&
+          String(args[0]._id) === String(principal.id) &&
+          args[2]?.session
+        ) {
+          changed = true;
+          await original(
+            { _id: principal.id },
+            { $set: { branchId: branchB } }
+          );
+        }
+        return original(...args);
+      }
+    );
+    const result =
+      action === 'create'
+        ? await version({ versionNumber: 2 })
+        : action === 'approve'
+        ? await approve(draftId)
+        : action === 'retire'
+        ? await http(
+            `/timetables/versions/${versionId}/retire`,
+            principal,
+            'POST',
+            {}
+          )
+        : await http('/timetables/substitutes', principal, 'POST', {
+            periodId,
+            substituteTeacherId: String(teacherB.id),
+            date: nowDate,
+            startTime: '11:00',
+            endTime: '11:40',
+            room: 'Room',
+          });
+    assert.equal(result.status, 403, result.raw);
+    assert.equal(
+      await TimetableVersion.countDocuments({
+        versionNumber: 2,
+        status: 'approved',
+      }),
+      0
+    );
+    assert.equal(
+      (await TimetableVersion.findById(versionId))?.status,
+      'approved'
+    );
+  });
+
+test('timetable Class catalog uses existing scoped Academic Setup DTO independently of Teacher assignments', async () => {
+  const result = await http<{
+    items: {
+      id: string;
+      name: string;
+      code: string;
+      isActive: boolean;
+      periodStatus: string;
+      legacy: boolean;
+    }[];
+  }>('/academic-setup/classes', principal);
+  assert.equal(result.status, 200, result.raw);
+  const row = result.data.items.find((c) => c.id === String(class8));
+  assert.ok(row);
+  assert.equal(row.name, 'Class 8');
+  assert.equal(row.code, '8');
+  assert.equal(row.isActive, true);
+  assert.equal(row.legacy, false);
+  assert.equal(row.periodStatus, 'active');
+  assert.ok(result.data.items.some((c) => c.id === String(class10))); // No tuple needed to browse a Class.
+  assert.ok(!result.data.items.some((c) => c.id === String(foreignClass)));
+  assert.equal(
+    (await http(`/academic-setup/classes?branchId=${branchB}`, principal))
+      .status,
+    404
+  );
+  assert.equal((await http('/academic-setup/classes', undefined)).status, 401);
+  assert.equal((await http('/academic-setup/classes', teacherA)).status, 403);
+});
+
+test('Super Admin Class catalog requires explicit valid Branch and returns only selected Branch Classes', async () => {
+  const admin = await actor('class-browser', 'super_admin');
+  const result = await http<{ items: { id: string }[] }>(
+    `/academic-setup/classes?branchId=${branchB}`,
+    admin
+  );
+  assert.equal(result.status, 200, result.raw);
+  assert.deepEqual(
+    result.data.items.map((c) => c.id),
+    [String(foreignClass)]
+  );
+  assert.equal((await http('/academic-setup/classes', admin)).status, 400);
+  await Branch.updateOne({ _id: branchB }, { $set: { isActive: false } });
+  assert.equal(
+    (await http(`/academic-setup/classes?branchId=${branchB}`, admin)).status,
+    404
+  );
+});
+
+test('Class catalog retains inactive and legacy metadata so timetable eligibility cannot masquerade as no Classes', async () => {
+  await SchoolClass.updateOne()
+    .where('_id')
+    .equals(class9)
+    .set({ isActive: false });
+  await SchoolClass.collection.updateOne(
+    { _id: class10 },
+    { $unset: { academicPeriodId: '' } }
+  );
+  const result = await http<{
+    items: {
+      id: string;
+      isActive: boolean;
+      legacy: boolean;
+      periodStatus: string;
+    }[];
+  }>('/academic-setup/classes', principal);
+  assert.equal(result.status, 200);
+  assert.equal(
+    result.data.items.find((c) => c.id === String(class9))?.isActive,
+    false
+  );
+  assert.equal(
+    result.data.items.find((c) => c.id === String(class10))?.legacy,
+    true
+  );
+  assert.equal(
+    result.data.items.find((c) => c.id === String(class10))?.periodStatus,
+    'legacy'
+  );
+});
+
+test('admin read context derives Principal branch and eligible exact assignment tuples', async () => {
+  const result = await http<Awaited<ReturnType<typeof timetableOptions>>>(
+    `/timetables/options?teacherId=${teacherA.id}`,
+    principal
+  );
+  assert.equal(result.status, 200);
+  assert.equal(result.cache, 'no-store');
+  assert.equal(result.data.branchFixed, true);
+  assert.equal(result.data.branchId, String(branchA));
+  assert.deepEqual(
+    result.data.branches.map((b) => b.id),
+    [String(branchA)]
+  );
+  assert.equal(result.data.timezone, 'Asia/Karachi');
+  assert.ok(
+    result.data.tuples.some(
+      (t) =>
+        t.classId === String(class8) &&
+        t.sectionId === String(section8A) &&
+        t.subjectId === String(math) &&
+        t.academicPeriodId
+    )
+  );
+  assert.equal(
+    (await http(`/timetables/options?branchId=${branchB}`, principal)).status,
+    403
+  );
+  assert.equal(
+    (
+      await http(
+        `/timetables/options?teacherId=${foreignTeacher.id}`,
+        principal
+      )
+    ).status,
+    404
+  );
+  assert.equal((await http('/timetables/options', teacherA)).status, 403);
+  assert.equal((await http('/timetables/options', undefined)).status, 401);
+  assert.equal(
+    (await http('/timetables/options?role=super_admin', principal)).status,
+    400
+  );
+});
+
+test('admin schedule browser returns immutable complete versions, safe labels and next revision', async () => {
+  const result = await http<Awaited<ReturnType<typeof listTimetableVersions>>>(
+    '/timetables/versions',
+    principal
+  );
+  assert.equal(result.status, 200);
+  assert.equal(result.data.nextVersionNumber, 2);
+  assert.equal(result.data.currentVersion?.versionId, versionId);
+  assert.equal(result.data.items[0]?.versionId, versionId);
+  assert.equal(result.data.items[0]?.periods[0]?.periodId, periodId);
+  assert.equal(result.data.items[0]?.periods[0]?.teacherName, 'teacher-a');
+  assert.ok(!result.raw.includes('private-password'));
+  assert.equal(
+    (await http(`/timetables/versions?branchId=${branchB}`, principal)).status,
+    403
+  );
+  assert.equal(
+    (await http('/timetables/versions?offset=-1', principal)).status,
+    400
+  );
+  assert.equal((await http('/timetables/versions', teacherA)).status, 403);
+});
+
+test('Super Admin creates and approves a scoped schedule with exact day and 24-hour clocks', async () => {
+  const admin = await actor('global-scheduler', 'super_admin');
+  const created = await version(
+    {
+      branchId: String(branchA),
+      versionNumber: 2,
+      periods: [slot({ dayOfWeek: 0, startTime: '13:05', endTime: '14:00' })],
+    },
+    admin
+  );
+  assert.equal(created.status, 201, created.raw);
+  const persisted = await TimetablePeriod.findOne({
+    timetableVersionId: created.data.versionId,
+  }).lean();
+  assert.ok(persisted);
+  assert.equal(persisted.dayOfWeek, 0);
+  assert.equal(persisted.startTime, '13:05');
+  assert.equal(persisted.endTime, '14:00');
+  assert.equal((await approve(created.data.versionId, admin)).status, 200);
+});
+
+test('new admin draft publishes an upcoming occurrence to Teacher Home and authorized preview without room creation', async () => {
+  const created = await version({
+    versionNumber: 2,
+    periods: [slot({ startTime: '11:10', endTime: '11:50' })],
+  });
+  assert.equal(created.status, 201, created.raw);
+  assert.equal(
+    (await getTeacherHome({ userId: String(teacherA.id), role: 'teacher' }))
+      .hero.currentOrNextPeriod,
+    null
+  );
+  assert.equal((await approve(created.data.versionId)).status, 200);
+  const queue = await todayQueue();
+  assert.equal(queue.data.periods.length, 1);
+  const occurrence = queue.data.periods[0]!;
+  assert.equal(occurrence.startTime, '11:10');
+  assert.equal(occurrence.endTime, '11:50');
+  assert.equal(occurrence.date, nowDate);
+  const home = await http<Awaited<ReturnType<typeof getTeacherHome>>>(
+    '/teacher/home',
+    teacherA
+  );
+  assert.equal(home.status, 200, home.raw);
+  assert.equal(home.data.hero.state, 'next');
+  assert.equal(
+    home.data.hero.currentOrNextPeriod?.periodId,
+    occurrence.periodId
+  );
+  assert.equal(
+    lessonInstant(nowDate, '11:10').toISOString(),
+    '2026-10-13T06:10:00.000Z'
+  );
+  const preview = createLiveLessonService(() => ({
+    name: 'preview-test',
+    publicConfig: () => ({ provider: 'preview-test', appId: 1 }),
+    roomId: () => {
+      throw new Error('No room creation during preview');
+    },
+    issueCredential: () => {
+      throw new Error('No credentials during preview');
+    },
+  }));
+  assert.deepEqual(
+    await preview.previewConfig(
+      { userId: String(teacherA.id), role: 'teacher' },
+      occurrence.periodId,
+      nowDate
+    ),
+    { provider: 'preview-test', appId: 1 }
+  );
+  mock.timers.setTime(new Date('2026-10-13T06:20:00Z').getTime());
+  assert.equal(
+    (await getTeacherHome({ userId: String(teacherA.id), role: 'teacher' }))
+      .hero.state,
+    'current'
+  );
+});
+
+test('schedule creation rejects overnight, malformed AM/PM, mismatched assignment and overlaps', async () => {
+  for (const changes of [
+    { startTime: '23:00', endTime: '01:00' },
+    { startTime: '1:00 PM', endTime: '14:00' },
+    { startTime: '11:00', endTime: '11:00' },
+  ]) {
+    assert.equal(
+      (await version({ versionNumber: 2, periods: [slot(changes)] })).status,
+      400
+    );
+  }
+  assert.equal(
+    (
+      await version({
+        versionNumber: 2,
+        periods: [slot({ sectionId: String(section8B) })],
+      })
+    ).status,
+    404
+  );
+  assert.equal(
+    (
+      await version({
+        versionNumber: 2,
+        periods: [slot(), slot({ startTime: '09:30', endTime: '10:00' })],
+      })
+    ).status,
+    409
+  );
+});
 
 test('Teacher operational queue returns only own current approved responsibility, with exact DTO', async () => {
   const own = await todayQueue();
@@ -556,7 +992,7 @@ test('foreign branch denied and Principal cannot provision another active branch
         ],
       })
     ).status,
-    404,
+    403,
   );
 });
 
@@ -989,6 +1425,7 @@ test('timetable queries batch references without per-period assignment or identi
 });
 
 test('timetable indexes exist with automatic index creation disabled', async () => {
+  assert.ok((await TeacherAssignment.collection.indexes()).some(i => i.name === 'timetable_eligible_teacher_tuple'));
   const replacements = await SubstituteAssignment.collection
     .listIndexes()
     .toArray();
@@ -1315,4 +1752,385 @@ test('index reconciliation fails closed on an unexpected restrictive unique inde
   } finally {
     await TimetableIssue.collection.dropIndex(name);
   }
+});
+
+for (const [state, reason] of [
+  ['missing', 'no_exact_assignment'],
+  ['revoked', 'inactive_assignment'],
+  ['future', 'future_assignment'],
+  ['expired', 'expired_assignment'],
+  ['inactive_teacher', 'teacher_unavailable'],
+  ['wrong_role', 'teacher_unavailable'],
+  ['foreign_teacher', 'teacher_unavailable'],
+] as const)
+  test(
+    'empty Teacher selector explains exact assignment state: ' + state,
+    async () => {
+      const filter = {
+        teacherId: teacherA.id,
+        classId: class9,
+        sectionId: section9B,
+        subjectId: physics,
+      };
+      if (state === 'missing')
+        await TeacherAssignment.collection.deleteMany(filter);
+      if (state === 'revoked')
+        await TeacherAssignment.collection.updateMany(filter, {
+          $set: { isActive: false },
+        });
+      if (state === 'future')
+        await TeacherAssignment.collection.updateMany(filter, {
+          $set: { validFrom: new Date('2027-01-01') },
+        });
+      if (state === 'expired')
+        await TeacherAssignment.collection.updateMany(filter, {
+          $set: { validUntil: new Date('2026-10-13T06:00:00Z') },
+        });
+      if (state === 'inactive_teacher')
+        await User.collection.updateOne(
+          { _id: teacherA.id },
+          { $set: { isActive: false } }
+        );
+      if (state === 'wrong_role')
+        await User.collection.updateOne(
+          { _id: teacherA.id },
+          { $set: { role: 'principal' } }
+        );
+      if (state === 'foreign_teacher')
+        await User.collection.updateOne(
+          { _id: teacherA.id },
+          { $set: { branchId: branchB } }
+        );
+      const result = await http<Awaited<ReturnType<typeof timetableOptions>>>(
+        '/timetables/options?classId=' +
+          class9 +
+          '&sectionId=' +
+          section9B +
+          '&subjectId=' +
+          physics,
+        principal
+      );
+      assert.equal(result.status, 200, result.raw);
+      assert.deepEqual(result.data.teachers, []);
+      assert.deepEqual(result.data.teacherEligibility?.reasons, [reason]);
+      assert.equal(
+        result.data.teacherEligibility?.asOf,
+        '2026-10-13T06:00:00.000Z'
+      );
+      assert.equal(
+        (
+          await version({
+            versionNumber: 2,
+            periods: [
+              slot({
+                classId: String(class9),
+                sectionId: String(section9B),
+                subjectId: String(physics),
+              }),
+            ],
+          })
+        ).status,
+        state === 'inactive_teacher' || state === 'wrong_role' ? 401 : 404
+      );
+    }
+  );
+
+test('exact eligible Teacher can be scheduled, approved and read in Teacher timetable', async () => {
+  const options = await http<Awaited<ReturnType<typeof timetableOptions>>>(
+    '/timetables/options?classId=' +
+      class9 +
+      '&sectionId=' +
+      section9B +
+      '&subjectId=' +
+      physics,
+    principal
+  );
+  assert.equal(options.status, 200);
+  assert.deepEqual(
+    options.data.teachers.map((t) => t.id),
+    [String(teacherA.id)]
+  );
+  assert.deepEqual(options.data.teacherEligibility?.reasons, []);
+  const draft = await version({
+    versionNumber: 2,
+    periods: [
+      slot({
+        teacherId: options.data.teachers[0]!.id,
+        classId: String(class9),
+        sectionId: String(section9B),
+        subjectId: String(physics),
+      }),
+    ],
+  });
+  assert.equal(draft.status, 201, draft.raw);
+  assert.equal((await approve(draft.data.versionId)).status, 200);
+  const timetable = await todayQueue();
+  assert.equal(timetable.status, 200);
+  assert.equal(timetable.data.periods.length, 1);
+  const row = timetable.data.periods[0]!;
+  assert.equal(row.classId, String(class9));
+  assert.equal(row.sectionId, String(section9B));
+  assert.equal(row.subjectId, String(physics));
+  assert.equal(row.startTime, '09:00');
+  assert.equal(row.endTime, '09:40');
+  assert.equal(row.approvedVersion.versionNumber, 2);
+});
+for (const mismatch of ['class', 'section', 'subject'] as const)
+  test(
+    'exact Teacher eligibility excludes ' + mismatch + ' mismatch',
+    async () => {
+      const selectedClass = mismatch === 'class' ? class10 : class9;
+      const selectedSection = mismatch === 'class' ? section10A : section9B;
+      if (mismatch === 'section')
+        await TeacherAssignment.collection.updateMany(
+          { teacherId: teacherA.id, classId: class9 },
+          { $set: { sectionId: section8B } }
+        );
+      const selectedSubject = mismatch === 'subject' ? math : physics;
+      const result = await http<Awaited<ReturnType<typeof timetableOptions>>>(
+        '/timetables/options?classId=' +
+          selectedClass +
+          '&sectionId=' +
+          selectedSection +
+          '&subjectId=' +
+          selectedSubject,
+        principal
+      );
+      assert.equal(result.status, 200, result.raw);
+      assert.deepEqual(result.data.teachers, []);
+      assert.deepEqual(result.data.teacherEligibility?.reasons, [
+        'no_exact_assignment',
+      ]);
+    }
+  );
+
+for (const state of ['foreign', 'missing', 'inactive'] as const)
+  test('Room scheduling rejects ' + state + ' canonical Room', async () => {
+    let id = String(new mongoose.Types.ObjectId());
+    if (state === 'foreign')
+      id = String(
+        (
+          await Room.create({
+            branchId: branchB,
+            name: 'Foreign',
+            code: 'F',
+            createdBy: principal.id,
+            updatedBy: principal.id,
+          })
+        )._id
+      );
+    if (state === 'inactive') {
+      id = roomIds.get('Another room')!;
+      await Room.collection.updateOne(
+        { _id: new mongoose.Types.ObjectId(id) },
+        { $set: { isActive: false } }
+      );
+    }
+    assert.equal(
+      (await version({ versionNumber: 2, periods: [slot({ roomId: id })] }))
+        .status,
+      404
+    );
+  });
+test('Room conflicts use canonical identity, with different Teachers and Sections; different Rooms are allowed', async () => {
+  const a = slot({
+    classId: String(class9),
+    sectionId: String(section9B),
+    subjectId: String(physics),
+  });
+  const b = slot({
+    teacherId: String(teacherB.id),
+    classId: String(class10),
+    sectionId: String(section10A),
+    startTime: '09:20',
+    endTime: '10:00',
+  });
+  const conflict = await version({ versionNumber: 2, periods: [a, b] });
+  assert.equal(conflict.status, 409);
+  assert.match(conflict.message, /Room/);
+  const valid = await version({
+    versionNumber: 2,
+    periods: [a, { ...b, roomId: roomIds.get('Another room') }],
+  });
+  assert.equal(valid.status, 201, valid.raw);
+  assert.equal((await approve(valid.data.versionId)).status, 200);
+});
+test('Room snapshot is server-derived and historical display survives catalog rename and legacy records', async () => {
+  const r = roomIds.get('Room 8')!;
+  const draft = await version({
+    versionNumber: 2,
+    periods: [slot({ roomId: r, room: 'forged display' })],
+  });
+  assert.equal(draft.status, 201);
+  assert.equal(
+    (
+      await TimetablePeriod.findOne({
+        timetableVersionId: draft.data.versionId,
+      })
+    )?.room,
+    'Room 8'
+  );
+  await Room.collection.updateOne(
+    { _id: new mongoose.Types.ObjectId(r) },
+    { $set: { name: 'Renamed Room' } }
+  );
+  assert.equal((await todayQueue()).data.periods[0].room, 'Room 8');
+  await TimetablePeriod.collection.updateOne(
+    { _id: new mongoose.Types.ObjectId(periodId) },
+    { $unset: { roomId: '' }, $set: { room: 'Legacy hall' } }
+  );
+  assert.equal((await todayQueue()).data.periods[0].room, 'Legacy hall');
+});
+test('Room approval rejects inactive Room and imported text-only draft; new text-only writes cannot bypass identity', async () => {
+  const id = roomIds.get('Another room')!;
+  const draft = await version({
+    versionNumber: 2,
+    periods: [slot({ roomId: id })],
+  });
+  assert.equal(draft.status, 201);
+  await Room.collection.updateOne(
+    { _id: new mongoose.Types.ObjectId(id) },
+    { $set: { isActive: false } }
+  );
+  assert.equal((await approve(draft.data.versionId)).status, 404);
+  await Room.collection.updateOne(
+    { _id: new mongoose.Types.ObjectId(id) },
+    { $set: { isActive: true } }
+  );
+  await TimetablePeriod.collection.updateMany(
+    { timetableVersionId: new mongoose.Types.ObjectId(draft.data.versionId) },
+    { $unset: { roomId: '' } }
+  );
+  assert.equal((await approve(draft.data.versionId)).status, 409);
+  assert.equal(
+    (
+      await version({
+        versionNumber: 3,
+        periods: [slot({ roomId: undefined })],
+      })
+    ).status,
+    400
+  );
+});
+test('Room deactivation and timetable create serialize on Branch; only a safe outcome commits', async () => {
+  const id = roomIds.get('Another room')!;
+  const [draft, deactivation] = await Promise.all([
+    version({ versionNumber: 2, periods: [slot({ roomId: id })] }),
+    http('/academic-setup/rooms/' + id + '/deactivate', principal, 'POST', {
+      revision: 1,
+    }),
+  ]);
+  assert.ok(
+    (draft.status === 201 && deactivation.status === 409) ||
+      (draft.status === 404 && deactivation.status === 200),
+    JSON.stringify([draft.status, deactivation.status])
+  );
+});
+test('Room substitution conflicts with another effective scheduled period', async () => {
+  await TimetablePeriod.create({
+    ...slot({
+      teacherId: teacherB.id,
+      classId: class10,
+      sectionId: section10A,
+      roomId: roomIds.get('Another room'),
+      startTime: '10:00',
+      endTime: '11:00',
+    }),
+    branchId: branchA,
+    timetableVersionId: versionId,
+  });
+  const result = await http('/timetables/substitutes', principal, 'POST', {
+    periodId,
+    substituteTeacherId: String(teacherB.id),
+    date: nowDate,
+    startTime: '10:15',
+    endTime: '10:45',
+    roomId: roomIds.get('Another room'),
+  });
+  assert.equal(result.status, 409);
+  assert.match(result.message, /Room conflict/);
+});
+
+test('Room collision imported into immutable draft cannot pass concurrent approvals', async () => {
+  const a = slot({
+    classId: String(class9),
+    sectionId: String(section9B),
+    subjectId: String(physics),
+  });
+  const b = slot({
+    teacherId: String(teacherB.id),
+    classId: String(class10),
+    sectionId: String(section10A),
+    roomId: roomIds.get('Another room'),
+  });
+  const draft = await version({ versionNumber: 2, periods: [a, b] });
+  assert.equal(draft.status, 201);
+  await TimetablePeriod.collection.updateMany(
+    { timetableVersionId: new mongoose.Types.ObjectId(draft.data.versionId) },
+    { $set: { roomId: new mongoose.Types.ObjectId(roomIds.get('Room 8')) } }
+  );
+  const results = await Promise.all([
+    approve(draft.data.versionId),
+    approve(draft.data.versionId),
+  ]);
+  assert.deepEqual(
+    results.map((r) => r.status),
+    [409, 409]
+  );
+  assert.equal(
+    (await TimetableVersion.findById(draft.data.versionId))?.status,
+    'draft'
+  );
+});
+
+test('Room concurrent substitute approvals cannot reserve the same physical Room twice', async () => {
+  const other = await TimetablePeriod.create({
+    ...slot({
+      teacherId: teacherB.id,
+      classId: class10,
+      sectionId: section10A,
+      roomId: roomIds.get('Wednesday'),
+    }),
+    branchId: branchA,
+    timetableVersionId: versionId,
+  });
+  const drafts = await Promise.all(
+    [
+      [periodId, teacherB.id],
+      [String(other._id), teacherA.id],
+    ].map(([id, teacher]) =>
+      http<{ substituteId: string }>(
+        '/timetables/substitutes',
+        principal,
+        'POST',
+        {
+          periodId: String(id),
+          substituteTeacherId: String(teacher),
+          date: nowDate,
+          startTime: '10:00',
+          endTime: '10:45',
+          roomId: roomIds.get('Another room'),
+        }
+      )
+    )
+  );
+  drafts.forEach((r) => assert.equal(r.status, 201, r.raw));
+  const approvals = await Promise.all(
+    drafts.map((r) =>
+      http(
+        '/timetables/substitutes/' + r.data.substituteId + '/approve',
+        principal,
+        'POST',
+        {}
+      )
+    )
+  );
+  assert.deepEqual(approvals.map((r) => r.status).sort(), [200, 409]);
+  assert.equal(
+    await SubstituteAssignment.countDocuments({
+      status: 'approved',
+      roomId: roomIds.get('Another room'),
+    }),
+    1
+  );
 });

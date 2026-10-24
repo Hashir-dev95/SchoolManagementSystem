@@ -1,6 +1,6 @@
 import {Types} from 'mongoose';
 import PrincipalTask, {IPrincipalTask, PRINCIPAL_TASK_PRIORITIES, PRINCIPAL_TASK_STATUSES} from '../models/principalTask';
-import {principalWriteActor, principalWriteAssignee, PRINCIPAL_WRITE_ASSIGNEE_ROLES} from './principal-write-access.service';
+import {principalWriteActor, principalWriteAssignee, PRINCIPAL_WRITE_ASSIGNEE_ROLES, withPrincipalWriteAuthority, fencePrincipalWriteUser} from './principal-write-access.service';
 import {enumField, validDate, objectIdField, RequestContractError, textField} from '../utils/request-validation';
 import User from '../models/user';
 import {PERMISSIONS} from '../constants/permissions';
@@ -86,7 +86,7 @@ export const getPrincipalTaskById = async (taskId: string, branchId: string): Pr
 };
 
 export interface CreatePrincipalTaskInput {
-  branchId: string; actorId: string; title: string; description?: string;
+  branchId: string; actorId: string; token?: string; title: string; description?: string;
   priority?: string; assignedTo: string; dueDate?: Date;
 }
 
@@ -98,15 +98,15 @@ export const createPrincipalTask = async (data: CreatePrincipalTaskInput): Promi
   const actor = await principalWriteActor(data.actorId, data.branchId);
   const assignee = await principalWriteAssignee(data.assignedTo, data.branchId);
   // Explicit fields only: model validation/defaults/timestamps now run on save.
-  return new PrincipalTask({
+  return withPrincipalWriteAuthority(data, PERMISSIONS.PRINCIPAL_TASKS_MANAGE, async session => new PrincipalTask({
     branchId: new Types.ObjectId(data.branchId), createdBy: actor._id,
     assignedTo: assignee._id, title, description, priority, dueDate,
-  }).save();
+  }).save({session}), session => fencePrincipalWriteUser(String(assignee._id), data.branchId, PRINCIPAL_WRITE_ASSIGNEE_ROLES, session));
 };
 
 export type PrincipalTaskAction = 'start' | 'complete' | 'cancel';
 export interface PrincipalTaskActionInput {
-  taskId: string; actorId: string; branchId: string; action: PrincipalTaskAction;
+  taskId: string; actorId: string; branchId: string; token?: string; action: PrincipalTaskAction;
 }
 
 export const processPrincipalTaskAction = async (data: PrincipalTaskActionInput): Promise<IPrincipalTask> => {
@@ -124,15 +124,17 @@ export const processPrincipalTaskAction = async (data: PrincipalTaskActionInput)
   }
   const now = new Date();
   const status = action === 'start' ? 'in_progress' : action === 'complete' ? 'completed' : 'cancelled';
-  const updated = await PrincipalTask.findOneAndUpdate({
-    _id: task._id, branchId: task.branchId, status: task.status,
-    assignedTo: task.assignedTo, createdBy: task.createdBy, updatedAt: task.updatedAt,
-    __v: task.__v ?? {$exists: false},
-  }, {
-    $set: {status, ...(action === 'complete' ? {completedAt: now} : action === 'cancel' ? {completedAt: null} : {})},
-    $push: {history: {action, performedBy: actor._id, createdAt: now}},
-    $inc: {__v: 1},
-  }, {returnDocument: 'after', runValidators: true});
-  if (!updated) throw new RequestContractError(409, 'Principal task changed or was already processed');
-  return updated;
+  return withPrincipalWriteAuthority(data, PERMISSIONS.PRINCIPAL_TASKS_MANAGE, async session => {
+    const updated = await PrincipalTask.findOneAndUpdate({
+      _id: task._id, branchId: task.branchId, status: task.status,
+      assignedTo: task.assignedTo, createdBy: task.createdBy, updatedAt: task.updatedAt,
+      __v: task.__v ?? {$exists: false},
+    }, {
+      $set: {status, ...(action === 'complete' ? {completedAt: now} : action === 'cancel' ? {completedAt: null} : {})},
+      $push: {history: {action, performedBy: actor._id, createdAt: now}},
+      $inc: {__v: 1},
+    }, {returnDocument: 'after', runValidators: true, session});
+    if (!updated) throw new RequestContractError(409, 'Principal task changed or was already processed');
+    return updated;
+  });
 };

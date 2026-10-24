@@ -51,7 +51,7 @@ export async function enrollmentTarget(branchId: string, periodId: unknown, clas
 // Only this exact active enrollment is current. Legacy projections never win
 // over managed history, including when every managed record has been closed.
 export const currentEnrollment = (studentId: unknown, branchId: unknown, session?: ClientSession) => StudentEnrollment.findOne(activeEnrollmentFilter()).where('effectiveTo').equals(null).where('studentId').equals(String(studentId)).where('branchId').equals(String(branchId)).session(session ?? null).lean();
-async function enrollmentDTO(row: any, session?: ClientSession) {
+export async function enrollmentDTO(row: any, session?: ClientSession) {
   const period = await AcademicPeriod.findOne({_id: row.academicPeriodId, branchId: row.branchId}).session(session ?? null).select('name code status').lean();
   const schoolClass = await SchoolClass.findOne().where('_id').equals(row.classId).where('branchId').equals(row.branchId).session(session ?? null).select('name code').lean();
   const section = await Section.findOne().where('_id').equals(row.sectionId).where('branchId').equals(row.branchId).where('classId').equals(row.classId).session(session ?? null).select('name code').lean();

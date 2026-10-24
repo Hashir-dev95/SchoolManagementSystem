@@ -43,8 +43,7 @@ export const processSafetyAlertActionController = async (req: BranchScopedReques
     const actor = writeScope(req);
     const input = safetyActionBody(req.body);
     const alertId = objectIdField(req.params.alertId, 'alert ID');
-    const updated = await processSafetyAlertAction({...actor, ...input, alertId});
-    const alert = (await serializeSafetyAlerts([updated], true))[0];
+    const alert = await processSafetyAlertAction({...actor, ...input, alertId});
     // Preserve data:null for existing callers. Confirmed state is additive.
     res.status(200).json({success: true, message: 'Safety alert action completed successfully', data: null, alert});
   } catch (error) {writeFailure(res, error);}

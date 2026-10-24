@@ -1,4 +1,4 @@
-import {Types} from 'mongoose';
+import { Types } from 'mongoose';
 
 import Attendance from '../models/attendance';
 
@@ -11,10 +11,7 @@ export interface AttendanceSummary {
   attendancePercentage: number;
 }
 
-const validateObjectId = (
-  value: string,
-  fieldName: string,
-): void => {
+const validateObjectId = (value: string, fieldName: string): void => {
   if (!Types.ObjectId.isValid(value)) {
     throw new Error(`Invalid ${fieldName}`);
   }
@@ -55,7 +52,7 @@ export const getBranchAttendanceSummary = async (
     {
       $group: {
         _id: '$status',
-        count: {$sum: 1},
+        count: { $sum: 1 },
       },
     },
   ]);
@@ -68,35 +65,25 @@ export const getBranchAttendanceSummary = async (
   };
 
   for (const item of summary) {
-  const status = item._id as
-    | 'present'
-    | 'absent'
-    | 'late'
-    | 'leave';
+    const status = item._id as 'present' | 'absent' | 'late' | 'leave';
 
-  if (
-    status === 'present' ||
-    status === 'absent' ||
-    status === 'late' ||
-    status === 'leave'
-  ) {
-    counts[status] = item.count;
+    if (
+      status === 'present' ||
+      status === 'absent' ||
+      status === 'late' ||
+      status === 'leave'
+    ) {
+      counts[status] = item.count;
+    }
   }
-}
 
   const totalMarked =
-    counts.present +
-    counts.absent +
-    counts.late +
-    counts.leave;
+    counts.present + counts.absent + counts.late + counts.leave;
 
   const attendancePercentage =
     totalMarked > 0
       ? Number(
-          (
-            ((counts.present + counts.late) / totalMarked) *
-            100
-          ).toFixed(2),
+          (((counts.present + counts.late) / totalMarked) * 100).toFixed(2),
         )
       : 0;
 

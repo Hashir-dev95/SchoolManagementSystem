@@ -6,6 +6,7 @@ import Workspace from '../src/screens/principal/PrincipalWorkspaceScreen';
 import {Button} from '../src/components/hiraDashboard';
 import {AdminDialog, AdminSelect} from '../src/components/hiraDashboard/AdminForm';
 import {enrollmentService as service} from '../src/services/admin/enrollmentService';
+import {studentAdminService} from '../src/services/admin/studentAdminService';
 import {ApiError} from '../src/services/api/apiClient';
 const mockNavigate = jest.fn();
 jest.mock('../src/context/AuthContext', () => ({useAuth: () => ({user: {role: 'principal'}, accessToken: 'token', logout: jest.fn()})}));
@@ -15,6 +16,7 @@ jest.mock('../src/screens/principal/PrincipalDashboardScreen', () => () => 'Prin
 jest.mock('../src/screens/principal/PrincipalApprovalsScreen', () => () => 'Approvals');
 jest.mock('../src/screens/principal/PrincipalInboxScreen', () => () => 'Inbox');
 jest.mock('../src/services/admin/enrollmentService', () => ({enrollmentService: {list: jest.fn(), detail: jest.fn(), options: jest.fn(), mutate: jest.fn()}}));
+jest.mock('../src/services/admin/studentAdminService', () => ({studentAdminService: {admit: jest.fn(), profile: jest.fn().mockResolvedValue({student: {id: 'student-private', fullName: 'Ayesha Ahmed', admissionNumber: 'A-100', email: 'ayesha@fixture.invalid', phone: '', dateOfBirth: '', gender: '', guardianName: '', guardianPhone: '', address: '', isActive: true, revision: 0}, capabilities: {editProfile: false}})}}));
 const api = jest.mocked(service), trees: Renderer.ReactTestRenderer[] = [];
 const enrollment = {id: 'enrollment-private', period: {id: 'period-private', name: 'Academic Year 2026', code: 'AY26', status: 'active'}, class: {id: 'class-private', name: 'Grade 8', code: 'G8'}, section: {id: 'section-private', name: 'Section A', code: 'A'}, status: 'active', revision: 1, effectiveFrom: '2026-09-01T00:00:00Z', effectiveTo: null, reason: 'Initial enrollment', closedReason: null};
 const detail = {student: {id: 'student-private', fullName: 'Ayesha Ahmed', admissionNumber: 'A-100', isActive: true}, current: enrollment, legacy: false, history: [enrollment], nextOffset: null, actions: {enroll: false, transfer: true, promote: true, withdraw: true}};
@@ -35,6 +37,18 @@ test('Principal drawer opens dedicated Students & Enrollment without changing Ho
 test('Student list/search and detail show named current enrollment and history without raw IDs', async () => {
   const tree = await render(); expect(text(tree)).toContain('Ayesha Ahmed'); await act(async () => tree.root.findAllByType(TextInput).find(n => n.props.accessibilityLabel === 'Search Students')!.props.onChangeText!('A-100'));
   expect(api.list).toHaveBeenLastCalledWith('token', 'A-100', '', 0); await open(tree); expect(text(tree)).toContain('Enrollment History'); expect(text(tree)).toContain('Academic Year 2026 / Grade 8 / Section A'); expect(text(tree)).not.toContain('private');
+});
+
+test('Add Student admission success refreshes list and opens the authoritative profile and history', async () => {
+  jest.mocked(studentAdminService.admit).mockResolvedValueOnce({student: {id: 'student-private', fullName: 'Ayesha Ahmed', admissionNumber: 'A-100', email: 'ayesha@fixture.invalid', phone: '', dateOfBirth: '', gender: '', guardianName: '', guardianPhone: '', address: '', isActive: true, revision: 0}, capabilities: {editProfile: true}});
+  const tree = await render(); await press(tree, 'Add Student'); expect(dialog(tree).props.title).toBe('Add Student');
+  for (const [field, value] of [['Full name', 'Ayesha Ahmed'], ['Admission number', 'A-100'], ['Student account email', 'ayesha@fixture.invalid'], ['Initial password', 'Secure-fixture-password']]) await act(async () => tree.root.findAllByType(TextInput).find(node => node.props.accessibilityLabel === field)!.props.onChangeText!(value));
+  await select(tree, 'Admission Class', 'class-private'); await select(tree, 'Admission Section', 'section-b');
+  await act(async () => dialog(tree).props.onConfirm()); await act(async () => dialog(tree).props.onConfirm());
+  expect(dialog(tree).props.title).toBe('Student Created'); await act(async () => dialog(tree).props.onConfirm());
+  expect(api.list).toHaveBeenCalledTimes(2); expect(api.detail).toHaveBeenCalledWith('token', 'student-private', 0);
+  expect(studentAdminService.profile).toHaveBeenCalledWith('token', 'student-private'); expect(text(tree)).toContain('Student Profile'); expect(text(tree)).toContain('Current Enrollment'); expect(text(tree)).toContain('Enrollment History');
+  await press(tree, 'Back to Students'); expect(button(tree, 'Add Student')).toBeDefined();
 });
 test('initial enrollment validates target/reason and waits for explicit review and server confirmation', async () => {
   api.detail.mockResolvedValue({...detail, current: null, legacy: true, history: [], actions: {...detail.actions, enroll: true, transfer: false, promote: false, withdraw: false}});

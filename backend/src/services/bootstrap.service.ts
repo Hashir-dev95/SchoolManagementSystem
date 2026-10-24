@@ -1,5 +1,5 @@
-import User, {SUPER_ADMIN_BOOTSTRAP_INDEX, USER_ROLES} from '../models/user';
-import {createUser} from './auth.service';
+import User, { SUPER_ADMIN_BOOTSTRAP_INDEX, USER_ROLES } from '../models/user';
+import { createUser } from './auth.service';
 
 export class BootstrapError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -16,7 +16,7 @@ const validateInput = (body: unknown) => {
   if (Object.keys(input).some(key => !allowedFields.includes(key))) {
     throw new BootstrapError(400, 'Unsupported bootstrap fields');
   }
-  const {fullName, email, password, phone} = input;
+  const { fullName, email, password, phone } = input;
   if (
     typeof fullName !== 'string' ||
     fullName.trim().length < 2 ||
@@ -38,35 +38,54 @@ const validateInput = (body: unknown) => {
     password.trim().length < 12 ||
     Buffer.byteLength(password, 'utf8') > 72
   ) {
-    throw new BootstrapError(400, 'Password must contain at least 12 characters and at most 72 bytes');
+    throw new BootstrapError(
+      400,
+      'Password must contain at least 12 characters and at most 72 bytes',
+    );
   }
-  if (phone !== undefined && (typeof phone !== 'string' || phone.trim().length > 30)) {
+  if (
+    phone !== undefined &&
+    (typeof phone !== 'string' || phone.trim().length > 30)
+  ) {
     throw new BootstrapError(400, 'Invalid phone number');
   }
   return {
     fullName: fullName.trim(),
     email: email.trim().toLowerCase(),
     password,
-    ...(typeof phone === 'string' ? {phone: phone.trim()} : {}),
+    ...(typeof phone === 'string' ? { phone: phone.trim() } : {}),
   };
 };
 
 export const provisionBootstrapSuperAdmin = async (body: unknown) => {
   // Await the database invariant even when production disables Mongoose autoIndex.
   // Failure to create/verify the index must fail closed before account creation.
-  await User.collection.createIndex({bootstrapKey: 1}, SUPER_ADMIN_BOOTSTRAP_INDEX);
-  if (await User.exists({role: USER_ROLES.SUPER_ADMIN})) {
+  await User.collection.createIndex(
+    { bootstrapKey: 1 },
+    SUPER_ADMIN_BOOTSTRAP_INDEX,
+  );
+  if (await User.exists({ role: USER_ROLES.SUPER_ADMIN })) {
     throw new BootstrapError(409, 'Super Admin bootstrap is unavailable');
   }
   const input = validateInput(body);
   try {
-    return await createUser({...input, role: USER_ROLES.SUPER_ADMIN}, {bootstrap: true});
+    return await createUser(
+      { ...input, role: USER_ROLES.SUPER_ADMIN },
+      { bootstrap: true },
+    );
   } catch (error: unknown) {
     if (
-      (error && typeof error === 'object' && 'code' in error && error.code === 11000) ||
-      (error instanceof Error && error.message === 'User with this email already exists')
+      (error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 11000) ||
+      (error instanceof Error &&
+        error.message === 'User with this email already exists')
     ) {
-      throw new BootstrapError(409, 'Bootstrap request conflicts with existing records');
+      throw new BootstrapError(
+        409,
+        'Bootstrap request conflicts with existing records',
+      );
     }
     throw error;
   }

@@ -1,4 +1,4 @@
-import {Schema, model, Document, Types} from 'mongoose';
+import { Schema, model, Document, Types } from 'mongoose';
 
 export interface IAutomation extends Document {
   key: string;

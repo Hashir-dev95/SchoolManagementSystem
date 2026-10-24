@@ -1,4 +1,4 @@
-import {Schema, model, Document} from 'mongoose';
+import { Schema, model, Document } from 'mongoose';
 
 export const SAFETY_ALERT_TYPES = {
   MISSING_ATTENDANCE: 'missing_attendance',
@@ -41,7 +41,12 @@ export interface ISafetyAlert extends Document {
   status: SafetyAlertStatus;
   assignedTo?: Schema.Types.ObjectId;
   resolvedAt?: Date;
-  history: Array<{action: 'assign' | 'resolve' | 'escalate'; performedBy: Schema.Types.ObjectId; assignedTo?: Schema.Types.ObjectId; createdAt: Date}>;
+  history: Array<{
+    action: 'assign' | 'resolve' | 'escalate';
+    performedBy: Schema.Types.ObjectId;
+    assignedTo?: Schema.Types.ObjectId;
+    createdAt: Date;
+  }>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -103,12 +108,22 @@ const safetyAlertSchema = new Schema<ISafetyAlert>(
       type: Date,
     },
     history: {
-      type: [{
-        action: {type: String, enum: ['assign', 'resolve', 'escalate'], required: true},
-        performedBy: {type: Schema.Types.ObjectId, ref: 'User', required: true},
-        assignedTo: {type: Schema.Types.ObjectId, ref: 'User'},
-        createdAt: {type: Date, required: true},
-      }],
+      type: [
+        {
+          action: {
+            type: String,
+            enum: ['assign', 'resolve', 'escalate'],
+            required: true,
+          },
+          performedBy: {
+            type: Schema.Types.ObjectId,
+            ref: 'User',
+            required: true,
+          },
+          assignedTo: { type: Schema.Types.ObjectId, ref: 'User' },
+          createdAt: { type: Date, required: true },
+        },
+      ],
       default: [],
     },
   },
@@ -134,9 +149,6 @@ safetyAlertSchema.index({
   createdAt: -1,
 });
 
-const SafetyAlert = model<ISafetyAlert>(
-  'SafetyAlert',
-  safetyAlertSchema,
-);
+const SafetyAlert = model<ISafetyAlert>('SafetyAlert', safetyAlertSchema);
 
 export default SafetyAlert;

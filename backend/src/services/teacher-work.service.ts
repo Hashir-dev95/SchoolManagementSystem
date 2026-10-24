@@ -202,7 +202,7 @@ export const getTeacherWorkAttention = async (identity: Identity) => {
     total: number;
     urgent: number;
   }>([
-    { $match: AssignedWork.find(query).cast(AssignedWork) },
+    { $match: AssignedWork.find(query).cast() },
     {
       $group: {
         _id: null,

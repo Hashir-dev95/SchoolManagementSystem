@@ -24,6 +24,7 @@ export function AdminDialog({
   busy = false,
   danger = false,
   busyLabel = 'Saving assignment',
+  closeTitle = 'Cancel',
 }: {
   visible: boolean;
   title: string;
@@ -34,6 +35,7 @@ export function AdminDialog({
   busy?: boolean;
   danger?: boolean;
   busyLabel?: string;
+  closeTitle?: string;
 }) {
   return (
     <Modal
@@ -76,7 +78,7 @@ export function AdminDialog({
               />
             ) : null}
             <Button
-              title="Cancel"
+              title={closeTitle}
               variant="secondary"
               onPress={onClose}
               disabled={busy}
@@ -130,7 +132,7 @@ export function AdminSelect({
   const matches = options.filter(o =>
     `${o.label} ${o.detail ?? ''}`
       .toLocaleLowerCase()
-      .includes(search.toLocaleLowerCase()),
+      .includes(search.trim().toLocaleLowerCase()),
   );
   return (
     <View style={formStyles.field}>
@@ -204,6 +206,7 @@ export function AdminDateField({
   helper,
   error,
   disabled,
+  placeholder = 'YYYY-MM-DD',
 }: {
   label: string;
   value: string;
@@ -211,6 +214,7 @@ export function AdminDateField({
   helper: string;
   error?: string;
   disabled?: boolean;
+  placeholder?: string;
 }) {
   const [focused, setFocused] = useState(false);
   return (
@@ -218,7 +222,7 @@ export function AdminDateField({
       <Text style={formStyles.label}>{label}</Text>
       <TextInput
         accessibilityLabel={label}
-        placeholder="YYYY-MM-DD"
+        placeholder={placeholder}
         placeholderTextColor={colors.muted}
         value={value}
         onChangeText={onChange}

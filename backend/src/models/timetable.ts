@@ -70,10 +70,12 @@ const periodSchema = new Schema(
     },
     startTime: clock,
     endTime: clock,
+    roomId: {type: Schema.Types.ObjectId, ref: 'Room', immutable: true},
     room,
   },
   { timestamps: true },
 );
+periodSchema.index({roomId: 1}, {sparse: true});
 periodSchema.index({
   branchId: 1,
   timetableVersionId: 1,
@@ -89,6 +91,7 @@ const substituteSchema = new Schema(
     date: day,
     startTime: clock,
     endTime: clock,
+    roomId: {type: Schema.Types.ObjectId, ref: 'Room', immutable: true},
     room,
     status: {
       type: String,
@@ -106,6 +109,7 @@ const substituteSchema = new Schema(
   },
   { timestamps: true },
 );
+substituteSchema.index({roomId: 1}, {sparse: true});
 substituteSchema.index(
   { periodId: 1, date: 1 },
   {

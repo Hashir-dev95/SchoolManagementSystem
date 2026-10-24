@@ -499,3 +499,13 @@ test('unmount and background close owned resources', async () => {
   tree = undefined;
   expect(client.dispose).toHaveBeenCalled();
 });
+
+
+test('occurrence rejected during preview shows a safe error and cannot start or connect media', async () => {
+  jest.mocked(liveLessonService.previewConfig).mockRejectedValueOnce(new ApiError(403, 'Occurrence no longer authorized'));
+  await render();
+  expect(text()).toContain('do not have permission');
+  expect(button('Start Lesson').props.disabled).toBe(true);
+  expect(liveLessonService.startLesson).not.toHaveBeenCalled();
+  expect(client.preview).not.toHaveBeenCalled(); expect(client.connect).not.toHaveBeenCalled();
+});

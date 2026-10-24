@@ -1,10 +1,6 @@
-import {Schema, model, Document} from 'mongoose';
+import { Schema, model, Document } from 'mongoose';
 
-export type AttendanceStatus =
-  | 'present'
-  | 'absent'
-  | 'late'
-  | 'leave';
+export type AttendanceStatus = 'present' | 'absent' | 'late' | 'leave';
 
 export interface IAttendance extends Document {
   branchId: Schema.Types.ObjectId;
@@ -96,9 +92,6 @@ attendanceSchema.index({
   sectionId: 1,
 });
 
-const Attendance = model<IAttendance>(
-  'Attendance',
-  attendanceSchema,
-);
+const Attendance = model<IAttendance>('Attendance', attendanceSchema);
 
 export default Attendance;

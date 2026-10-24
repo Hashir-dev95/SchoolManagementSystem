@@ -11,7 +11,11 @@ export interface LessonDeliveryEvidence {
     revision: number;
     deliveryStatus: 'delivered' | 'partially_delivered' | 'not_delivered';
     actualTeachingDate: string;
-    topics: { topicId: string; state: 'partial' | 'completed' | 'not_covered'; evidence: string }[];
+    topics: {
+      topicId: string;
+      state: 'partial' | 'completed' | 'not_covered';
+      evidence: string;
+    }[];
     teacherNotes: string;
     correctionReason: string;
     recordedAt: string;

@@ -34,7 +34,7 @@ local.properties
 *.keystore
 !debug.keystore
 .kotlin/
-
+blueprint
 # node.js
 #
 node_modules/

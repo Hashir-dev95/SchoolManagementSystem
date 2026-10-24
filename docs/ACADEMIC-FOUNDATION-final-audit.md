@@ -1,0 +1,118 @@
+# Final end-to-end Academic Foundation audit
+
+Branch: `feture`. Audited commits: AS-PR1 `5688e3f`, AS-PR2 `69c3f29`, AS-PR3 `c0428c1`. HEAD/origin remain `c0428c17f71f19d07b7d3227302443a0a5af89e8`. This is an audit of the current worktree, including the narrow, uncommitted fixes below. Test results apply to this worktree with its preserved dirty dependencies, not an isolated pristine checkout of the three commits. No production database was accessed or migrated.
+
+`ACADEMIC FOUNDATION READY — T-PR14 MAY START`
+
+## Findings and fix boundary
+
+**AF-1 — fixed narrowly: new operational writes did not consistently revalidate curriculum/period.** Retained assignments and published syllabuses could support new lessons after period closure or with missing/inactive/mismatched ClassSubject. New task and attendance write paths also lacked the strict curriculum gate. Added `requireClassSubject` inside existing persisted Branch transaction fences for lesson mutations, Homework/Quiz creation/edit/publication, initial attendance opening, and new attendance draft/submission writes. Attendance operation receipt replay remains available before the new-write gate. Read handlers, published entitlements, submissions, review/moderation, and controlled historical amendments were not converted into current-enrollment authorization.
+
+Before-fix evidence: seven failures out of nine original audit cases, including a real closure-first race that incorrectly committed a lesson. At the original audit closure, focused evidence was 14/15 with AF-2 failing. After this history fix the same foundation suite passes 15/15; fresh results appear in AA?AJ. Added API tests exercise missing/inactive/wrong-period mappings, missing Class period migration, actual close/archive transitions, both process orderings for lesson/work/attendance against closure, actual submitted-attendance preservation after Section transfer, and own published work/submission access after closure.
+
+**AF-2 — RESOLVED by the narrow submitted-attendance historical reader.** The original supported-API reproduction returned 404 after Principal timetable retirement. It now returns the stored submitted record using exact original period/version/context and scoped historical authorization. Current active identity/Branch/view permission, responsible/submitted actor and exact assignment (or stored approved substitute grant) remain enforced. Draft/lazy attendance and all mutations still require current operational context. Teacher and Principal amendment history GETs use the read policy, with retired-context action availability disabled; new amendment requests and decisions retain their old operational fences. Snapshot tests prove history/receipts/marks unchanged. Retirement/replacement/substitute and scope tests pass. See [A–R blocker-resolution report](ACADEMIC-FOUNDATION-attendance-history-fix.md) for policy, exact hunks, mixed files and fresh results. The initial failed audit and source evidence remain in `.validation-academic-foundation/`; its pre-fix report is retained under `.validation-academic-history/`.
+
+## Required verdicts A–Z
+
+| Item | Verdict and evidence |
+| --- | --- |
+| A. AcademicPeriod | New setup, assignment, timetable, syllabus, enrollment target and now lesson/task/attendance writes require exact active DB period through Class. One active period per Branch; close/archive retain data. Promotion explicitly consumes a closed/archived source into a later active target. Authentication Session is used only for login/session revocation. |
+| B. Class/Section | PASS within audited API boundary. Exact Branch/period/Class relationships are checked; IDs merely existing is insufficient. Class period and Section parent cannot be changed through setup body allowlists. Foreign, inactive and mismatched parents are covered. Raw native DB imports remain a separate integrity responsibility; MongoDB references are not foreign-key constraints. |
+| C. Subject/ClassSubject | PASS for foundational new-write authority after AF-1. Exact Branch/period/Class/Subject and active mapping required. Published syllabus, active assignments and current/future approved timetable dependencies block mapping deactivation. Legacy reads remain compatible. |
+| D. StudentEnrollment | PASS. Global one-active-Student and Student/period partial unique indexes; immediate typed intervals, linked prior records, revision checks and actor-scoped receipts. Transfer, promotion, withdrawal and readmission preserve identity/history. Managed Students never fall back to Student.classId/sectionId. Closed-source active membership may remain until explicit promotion/withdrawal; period closure does not fabricate transitions. |
+| E. TeacherAssignment | PASS. DB-active Teacher/Branch, exact Section/Class and mapped Subject required; period is derived through immutable Class context. Principal own Branch, no Teacher self-assignment. Active tuple index reserves even future/expired assignments until revocation. |
+| F. Timetable | PASS for supported operations and submitted-attendance history. Creation/approval still require exact mapped assignment context. Submitted history pins its stored version/slot after retirement or replacement; current winner selection remains mandatory for mutations. No generic archived-version enumeration API was added. |
+| G. Syllabus/LessonPlan | New syllabus writes and lesson mutations enforce curriculum after AF-1; versioned publication, submission snapshots and permission/assignment review checks remain. Syllabus management is explicitly Super Admin, not an inferred Principal grant. Standalone retained syllabus GET works. Standalone retained syllabus and Teacher lesson-list history remain available. Occurrence-linked administrative lesson review retains its narrower live-context workflow policy; this attendance fix does not broaden lesson mutation/review authority. Coverage is delivery/review evidence, not automatic timetable or attendance truth. |
+| H. Teacher roster | PASS for managed enrollment and intentional zero-history compatibility. Exact assigned tuple plus Branch/period/Class/Section membership and active Student identity. Transfer in/out, withdrawal, promotion, forged compatibility fields, foreign Branch and unassigned Teacher cases are covered. |
+| I. Attendance | New open/draft/submit now require curriculum; enrollment intervals and submitted roster snapshots prevent promotion/transfer from rewriting history. Unmarked stays null, not absent. Amendments append effective history. PASS for submitted-history access after timetable retirement/replacement through the explicit read-only resolver (AF-2 resolved). |
+| J. Homework/Quiz | New writes/publication now recheck curriculum inside both occurrence and ordinary lesson transactions. Approved lesson topics and current enrollment recipient snapshots required; published audience entitlements retain original identity/context. Students cannot gain old published work merely by joining later. |
+| K. Submissions | PASS for scoped Student identity + immutable published entitlement/task/revision and original context. Existing tests cover concurrent replay, own/foreign evidence, review authority and privacy. New closure test submits to the original entitled task after period closure and denies another Student. |
+| L. Catch-up | PASS for retained contextual records. Items pin attendance occurrence/version, Student, task/delivery/topic evidence; promotion does not re-parent them. Review remains exact-assignment scoped. Materialization requires explicit effective absence; configuration does not turn unmarked into absent. |
+| M. Results | PASS for identity/context preservation and moderation/publication scope. Results copy the original task Class/Section/Subject/year/source revisions; promotion/withdrawal do not rewrite them. Teacher review authority and Principal approval policy remain separate. Student gets only own published result and released feedback. |
+| N. Branch security | PASS for tested academic APIs: DB actor Branch, primary reads, current role/account/session, explicit global Super Admin target where required, strict field allowlists, exact tuple checks. Principal/Teacher/Student foreign-ID and cross-product denials are exercised by regression suites. Parent is not implemented; no positive linked-child claim. |
+| O. RBAC | Foundation permission keys/values and Principal/Super Admin setup/enrollment grants align across frontend/backend. Frontend tables are intentionally a subset of all backend grants, not globally identical. Middleware role/permission checks plus service checks enforce authorization; missing-permission 403s are tested. Parent is absent from UserRole. |
+| P. Lifecycle/deactivation | Class/Section/Subject guards conservatively retain any referenced academic/history record. ClassSubject guards active assignment, published syllabus and current/future approved schedule. Period closure freezes new operational writes after AF-1 while retaining data. Timetable retirement no longer hides authorized submitted attendance; mutations remain operational. |
+| Q. Race safety | DB Branch fences, transactions, per-record actor/session/assignment locks, revisions, receipts and unique indexes; no process-local mutex dependence. See matrix below. Submitted historical access and denial boundaries are separately verified by the history-fix tests. |
+| R. Database indexes | Defined and explicitly ensured before production listen; see inventory below. Tests use owned MongoDB replica sets with autoIndex disabled where applicable. Existing conflicting production data causes startup failure; it is not silently deleted/repaired. No live production index inventory was performed. |
+| S. Legacy compatibility | Read-only compatibility and controlled migration are explicitly separated; see legacy inventory below. New lesson/task/attendance writes now also require migrated period-backed curriculum. No inferred mappings or invented enrollment history. |
+| T. Production rollout | Foundation code gate ready after AF-2 resolution. Admin setup/migration and transaction topology remain deployment prerequisites below; no production migration executed. |
+| U. Principal workflow | Existing dedicated Academic Setup -> Sections/Subjects/ClassSubjects -> Enrollment -> Teacher Assignment is coherent; current Student/User identities must already exist or be provisioned through the trusted service. New admissions UI is not claimed. Super Admin supplies period governance and syllabus management; timetable administration has authorized API support. |
+| V. Teacher workflow | Assigned contexts -> timetable -> roster -> attendance -> syllabus/lesson -> task -> evidence/review -> Catch-up/results are exercised across API and rendered suites. Prerequisites include active curriculum, approved syllabus, and configured Principal approval authority. Supported submitted-attendance history now remains readable after retirement/replacement without new operational authority. |
+| W. Student/Parent | Student own current/historical entitled work/evidence/Catch-up/published results remain supported. Parent role, linked-child model and Parent endpoints are absent; Parent compatibility is unimplemented and requires a future verified-link design before enabling Parent access. No Parent authorization test success is fabricated. |
+| X. Finance | PASS for preservation only. AS-PR3 tests compare real Fee documents/outstanding totals and historical finance collections across promotion/withdrawal. Enrollment creates no fee assignment/invoice/payment. New-year fee work remains separate. |
+| Y. API/DTO privacy | Explicit academic DTOs expose necessary names/context, lifecycle/revisions and business reasons. No fence, token, transaction metadata, guardian/profile or private Teacher/result review fields in Student/public DTOs. Source and regression projection assertions support the boundary. IDs are API correlation fields, not a raw-ID-only UI. |
+| Z. Frontend integration | Principal has unique setup/enrollment/assignment destinations; Teacher consumes server-scoped assigned contexts. Focused rendered/navigation tests and full frontend suite pass. No native-device visual or live manual deployment walkthrough is claimed. |
+
+## Race-safety matrix
+
+| Conflict | Mechanism / verification |
+| --- | --- |
+| Enrollment vs Enrollment | Student active unique indexes + Branch transaction + receipt uniqueness; two API instances, both orderings. |
+| Transfer vs Transfer | Shared Branch/Student fence + revision and active index; distinct targets, both process orders. |
+| Promotion vs Promotion / Withdrawal | Shared Branch fence + close/create transaction; distinct promotion targets and withdrawal conflicts in both orders. |
+| Enrollment vs Section deactivation | AS-PR1/AS-PR3 process/fence orderings verify enrollment wins or inactive target denial, no dangling membership. |
+| Promotion vs Class deactivation | AS-PR3 two-process orderings; conservative Class/Section dependencies can independently deny deactivation. |
+| Assignment vs ClassSubject deactivation | AS-PR2 two-process both orders, active assignment dependency guard. |
+| Timetable vs ClassSubject deactivation | AS-PR2 creation/approval in both orders; active assignment independently reserves curriculum. |
+| Syllabus write/publish vs ClassSubject deactivation | AS-PR2 create/update/publish in both orders; drafts may survive deactivation but cannot publish afterward. |
+| Assignment vs Class/Section deactivation | AS-PR1 persisted fence tests for both orderings; additional Actor/session invalidation coverage. |
+| Class deactivation vs Timetable | Same persisted Branch fence; Class cannot deactivate while Sections, mappings or timetable/history references exist. Direct two-process Class-vs-timetable case was not newly added; proof is code/dependency based, not claimed separately executed. |
+| Section deactivation vs Transfer/Attendance | AS-PR3 transfer races; Section any-history dependency guard, occurrence Branch/Section fences and attendance mutation invalidation tests. Exact Section-vs-new-attendance process pair is not separately claimed. |
+| Period close vs Lesson/Task/Attendance | Six NEW two-process cases, both orderings per operation. Operation-first commits then closes; closure-first rejects new write 409. |
+
+## Index inventory
+
+| Model | Important uniqueness | Production creation |
+| --- | --- | --- |
+| AcademicPeriod | Branch+code; partial one status-active Branch | ensureAcademicSetupIndexes |
+| Class | Branch+code+legacy year; Branch+period+code partial period ObjectId | ensureAcademicSetupIndexes |
+| Section | Branch+Class+code | ensureAcademicSetupIndexes |
+| Subject | Branch+name with case-insensitive collation | ensureAcademicSetupIndexes, explicit startup |
+| ClassSubject | Branch+period+Class+Subject across lifecycle | ensureAcademicSetupIndexes |
+| StudentEnrollment | Partial active Student; partial active Student+period; actor/Student/Branch operation receipt | ensureEnrollmentIndexes through setup startup |
+| TeacherAssignment | Partial active Teacher+Branch+Class+Section+Subject | explicit startup, ensureAssignmentAdminIndexes and creation guard |
+| Timetable | Branch+version number; approved substitute period+date; actor operation receipt for issues | ensureTimetableIndexes before listen |
+
+Timetable slot interval conflicts are validated inside the persisted Branch publication protocol; they are not represented as a fictitious interval-uniqueness index. Server also ensures Syllabus/LessonPlan/Delivery, attendance/amendment, work/evidence, Catch-up and result indexes. `server.ts` fails startup without replica-set/sharded topology. No index above is merely a conceptual comment; existing duplicate cleanup remains a migration prerequisite. Native DB writes bypass relationship service validation and are outside the HTTP authority guarantee.
+
+## Legacy inventory and rollout
+
+- Class without academicPeriodId: **readable compatibility / controlled migration required** before any new mapped academic write. Never infer period from an authentication Session.
+- Class.academicYear: compatibility snapshot derived from period.code on new setup writes; retained historical syllabus, lesson, delivery, Homework/Quiz, Results also retain this original year snapshot. Class identity pins period; a client year string cannot override the authoritative relationship. Fee.academicYear remains a finance label, not academic authorization.
+- Student.classId/sectionId: **read compatibility only for zero-enrollment Students**, and compatibility projection after lifecycle changes. Once any enrollment history exists, it never independently grants current membership.
+- Students without enrollment: **controlled, reviewed current-baseline migration required** for installation-wide enrollment authority. Zero-history read fallback remains; no runtime backfill or invented past years.
+- Assignments/timetables/syllabuses without mapping: **retained reads / migration required for new writes**. Revocation remains available. Do not infer official curriculum from old operational records.
+- Archived/retired timetable/occurrence history: **submitted-attendance read blocker resolved**, using owned stored context and current scoped read eligibility; retired occurrences remain unavailable to editors.
+
+Rollout order:
+
+1. Historical-read audit now passes; resolve the separately known repository build diagnostic before a normal compiled deployment. Freeze/coordinate legacy imports during migration.
+2. Inventory Branch/Class/Section/Subject/User/Student relationships, duplicates, inconsistent year snapshots and existing academic references. Review ambiguous records manually; back up data. Configure supported MongoDB topology.
+3. Deploy models and explicit index/startup mechanism against reviewed data; fail closed on conflicts. Reconcile approved restrictive legacy indexes only through the documented migration behavior. Do not drop unexpected indexes or delete user data.
+4. Super Admin explicitly creates/activates each Branch AcademicPeriod. Principal configures Classes in that period, Sections, Subjects, then ClassSubject mappings. Migrate trustworthy legacy Class identity/period mappings with a separately reviewed procedure.
+5. Confirm actual current Students and effective dates. Explicitly enroll verified placements or execute a reviewed deterministic current-baseline migration with provenance. Do not invent historical periods/attendance or duplicate Student identity.
+6. Verify/revoke/recreate TeacherAssignments against active curriculum and correct validity windows. Configure approved timetable versions, Super Admin syllabus publication and Principal lesson/result/amendment approval policy.
+7. Verify enrollment-derived rosters, open draft attendance fingerprints and new task audiences; preserve submitted/published snapshots. Enable strict downstream workflows only after configuration is complete. Existing strict write guards are unconditional; there is no permissive migration toggle or claim of a newly implemented rollout flag.
+
+After closure, retained academic reads, original published-task Student submissions within existing deadlines, explicit historical attendance amendments, released feedback/result review/moderation/publication and old lesson delivery evidence/corrections retain their existing scoped policies. They do not create new period membership or re-parent records. Promotion and withdrawal remain explicit lifecycle decisions. New Class/curriculum/assignment/timetable/syllabus/lesson/task/attendance writes into the closed period are denied; operation replay policy differs by service and is not claimed globally uniform.
+
+## Validation, changes and readiness AA–AJ
+
+Fresh history-fix evidence is under `.validation-academic-history/`; prior frontend evidence remains under `.validation-academic-foundation/`.
+
+- **AA. Backend focused:** foundation 15/15, Teacher attendance 51/51 and amendments 49/49; combined 115/115, zero failures/skips. Retirement, replacement, substitute revocation, foreign/unrelated actor denial, unchanged snapshots and retained strict writes are verified. Initial failed audit evidence is preserved.
+- **AB. Backend regression:** 593/593, zero failures/skips, across 16 files including the full original relevant chain and audit suite. Logs: backend-focused.log, backend-regression.log. Enrollment/roster, mapping/period fences, assignment/timetable, lesson/task, evidence, Catch-up, Results and finance preservation coverage remain green.
+- **AC. Frontend:** no frontend source touched by this narrow fix; frontend regression/TypeScript were not rerun. Prior audit results remain 137/137 focused, 427/427 full across 46 suites, and frontend TypeScript PASS. They are prior evidence, not new results.
+- **AD. Static:** fresh backend TypeScript has only the unchanged unrelated safety-alert.controller.ts(47,49) TS2322. ESLint on all five history-fix source/test files PASS with zero warnings; git diff --check PASS. Logs: backend-types.log, eslint.log, diff-check.log.
+- **AE. Exact history-fix files:** attendance-history.service.ts (new), teacher-attendance.service.ts, attendance-amendment.service.ts, academic-foundation.security.test.ts, teacher-attendance.security.test.ts; this re-evaluated report plus A–R history-fix report. All prior audit write-path fixes and amendment-fixture edits remain intact. See the linked fix report for full repository paths and exact change descriptions.
+- **AF. Mixed files:** teacher-attendance.service.ts already contained prior audit guards. Only an import and submitted-read branch were added; removing those hunks reproduces task-start bytes exactly. Existing untracked audit test/report were explicitly extended. No unrelated user-owned mixed hunk.
+- **AG. Preservation:** original pre-audit dirty files 40/40 byte-identical, including the original 22/22. Of 44 tracked dirty files at history-fix start, 43 match exactly; the sole authorized mixed tracked file is explained in AF. Every other captured source file outside the explicit fix list matches baseline. HEAD/origin remain c0428c17f71f19d07b7d3227302443a0a5af89e8 on feture, index empty. Nothing staged, committed, pushed, reset, restored or cleaned. Evidence: preservation.json and task-start baseline.json.
+- **AH. Deferred:** bulk promotion/cross-Branch transfer remain safe deferred and unsupported; new-year fees remain separate finance work. Verified legacy migration/configuration/index reconciliation are production prerequisites. AI, Live/Recording and verified Parent-child access are future modules. Native-device visual verification was not performed. None was implemented here.
+- **AI. Remaining production prerequisites:** no additional demonstrated Foundation code blocker in supported workflows after the narrow history fix. Production data/migration/setup/approval policy must still be reviewed; the known unrelated backend build diagnostic remains separately actionable before compiled deployment. Read access does not grant retired-context amendment or operational authority; general archived-review browsers and former-Teacher access were not added.
+- **AJ. T-PR14 readiness:** Foundation gate ready; no Staff Self-Service, appointments, payslips, PTM, Live Host, Recording or Transcript work started. Readiness applies to the current worktree including unstaged audit/history fixes, not solely HEAD.
+
+Full A–R resolution report: [Historical attendance fix](ACADEMIC-FOUNDATION-attendance-history-fix.md).
+
+Final verdict:
+
+`ACADEMIC FOUNDATION READY — T-PR14 MAY START`

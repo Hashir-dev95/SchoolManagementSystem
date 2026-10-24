@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {after, before, beforeEach, mock, test} from 'node:test';
 import type {Server} from 'node:http';
 import mongoose from 'mongoose';
-import {MongoMemoryServer} from 'mongodb-memory-server';
+import {MongoMemoryReplSet} from 'mongodb-memory-server';
 import app from '../src/app';
 import User, {UserRole} from '../src/models/user';
 import Branch from '../src/models/branch';
@@ -21,7 +21,7 @@ import {PERMISSIONS} from '../src/constants/permissions';
 // No dotenv or configured database URI: only this suite's ephemeral DB is used.
 const originalPolicy = process.env.PRINCIPAL_APPROVAL_AUTHORITY;
 const originalJwt = process.env.JWT_SECRET;
-let db: MongoMemoryServer;
+let db: MongoMemoryReplSet;
 let server: Server;
 let base: string;
 let branchA: mongoose.Types.ObjectId;
@@ -37,7 +37,7 @@ let studentB: mongoose.Types.ObjectId;
 let fee: mongoose.Types.ObjectId;
 
 before(async () => {
-  db = await MongoMemoryServer.create();
+  db = await MongoMemoryReplSet.create({replSet: {count: 1}});
   await mongoose.connect(db.getUri(), {dbName: 'approval_authority_tests', autoIndex: false});
   server = app.listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));

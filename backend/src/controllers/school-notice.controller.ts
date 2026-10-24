@@ -1,6 +1,6 @@
-import {Response} from 'express';
+import { Response } from 'express';
 
-import {BranchScopedRequest} from '../middleware/branch.middleware';
+import { BranchScopedRequest } from '../middleware/branch.middleware';
 import {
   getBranchSchoolNotices,
   getSchoolNoticeById,
@@ -28,9 +28,7 @@ export const getSchoolNoticesController = async (
     });
   } catch (error) {
     const message =
-      error instanceof Error
-        ? error.message
-        : 'Failed to fetch school notices';
+      error instanceof Error ? error.message : 'Failed to fetch school notices';
 
     if (message === 'Invalid branch ID') {
       res.status(400).json({
@@ -73,10 +71,7 @@ export const getSchoolNoticeByIdController = async (
       return;
     }
 
-    const data = await getSchoolNoticeById(
-      noticeId,
-      req.branchId,
-    );
+    const data = await getSchoolNoticeById(noticeId, req.branchId);
 
     res.status(200).json({
       success: true,
@@ -85,14 +80,9 @@ export const getSchoolNoticeByIdController = async (
     });
   } catch (error) {
     const message =
-      error instanceof Error
-        ? error.message
-        : 'Failed to fetch school notice';
+      error instanceof Error ? error.message : 'Failed to fetch school notice';
 
-    if (
-      message === 'Invalid notice ID' ||
-      message === 'Invalid branch ID'
-    ) {
+    if (message === 'Invalid notice ID' || message === 'Invalid branch ID') {
       res.status(400).json({
         success: false,
         message,

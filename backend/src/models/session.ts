@@ -1,4 +1,4 @@
-import {Schema, model, Document, Types} from 'mongoose';
+import { Schema, model, Document, Types } from 'mongoose';
 
 export interface ISession extends Document {
   token: string;
@@ -44,7 +44,7 @@ const sessionSchema = new Schema<ISession>(
   },
 );
 
-sessionSchema.index({userId: 1, isRevoked: 1});
+sessionSchema.index({ userId: 1, isRevoked: 1 });
 
 const Session = model<ISession>('Session', sessionSchema);
 

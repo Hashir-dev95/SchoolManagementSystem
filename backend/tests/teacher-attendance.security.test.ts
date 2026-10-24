@@ -7,6 +7,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import app from '../src/app';
 import User, { type UserRole } from '../src/models/user';
 import Branch from '../src/models/branch';
+import Room from '../src/models/room';
 import SchoolClass from '../src/models/schoolClass';
 import Section from '../src/models/section';
 import Subject from '../src/models/subject';
@@ -51,6 +52,7 @@ const permissionSnapshot = Object.fromEntries(
 );
 let database: MongoMemoryReplSet, server: Server, base: string;
 let branchA: Id, branchB: Id;
+let ownRoom: string, substituteRoom: string, foreignRoom: string;
 let teacherA: Actor, teacherB: Actor, foreignTeacher: Actor, principal: Actor;
 let class8: Id, class9: Id, class10: Id, foreignClass: Id;
 let section8A: Id,
@@ -191,6 +193,7 @@ beforeEach(async () => {
     SchoolClass,
     Session,
     User,
+    Room,
     Branch,
   ])
     await model.collection.deleteMany({});
@@ -214,6 +217,9 @@ beforeEach(async () => {
   teacherB = await actor('teacher-b', 'teacher', branchA);
   foreignTeacher = await actor('foreign-teacher', 'teacher', branchB);
   principal = await actor('principal', 'principal', branchA);
+  ownRoom = String((await Room.create({branchId: branchA, name: 'Room 8', code: 'R8', createdBy: principal.id, updatedBy: principal.id}))._id);
+  substituteRoom = String((await Room.create({branchId: branchA, name: 'Approved revised room', code: 'SUB', createdBy: principal.id, updatedBy: principal.id}))._id);
+  foreignRoom = String((await Room.create({branchId: branchB, name: 'Room 8', code: 'R8', createdBy: foreignTeacher.id, updatedBy: foreignTeacher.id}))._id);
   const schoolClass = async (name: string, code: string, branchId = branchA) =>
     (
       await new SchoolClass({
@@ -284,7 +290,7 @@ const slot = (extra: Record<string, unknown> = {}) => ({
   dayOfWeek: 2,
   startTime: '09:00',
   endTime: '09:40',
-  room: 'Room 8',
+  roomId: String(extra.teacherId) === String(foreignTeacher.id) ? foreignRoom : ownRoom,
   ...extra,
 });
 type Provision = { versionId: string; status: string };
@@ -323,7 +329,7 @@ const replacement = async (
       date: nowDate,
       startTime: '10:00',
       endTime: '10:45',
-      room: 'Approved revised room',
+      roomId: substituteRoom,
       ...extra,
     },
   );

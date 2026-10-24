@@ -1,4 +1,4 @@
-import {Schema, model, Document} from 'mongoose';
+import { Schema, model, Document } from 'mongoose';
 
 export const SCHOOL_NOTICE_STATUSES = {
   DRAFT: 'draft',
@@ -107,16 +107,8 @@ schoolNoticeSchema.index({
   expiresAt: 1,
 });
 
-schoolNoticeSchema.index({
-  branchId: 1,
-  audienceRoles: 1,
-  status: 1,
-  createdAt: -1,
-});
+schoolNoticeSchema.index({branchId: 1, audienceRoles: 1, status: 1, createdAt: -1});
 
-const SchoolNotice = model<ISchoolNotice>(
-  'SchoolNotice',
-  schoolNoticeSchema,
-);
+const SchoolNotice = model<ISchoolNotice>('SchoolNotice', schoolNoticeSchema);
 
 export default SchoolNotice;

@@ -19,6 +19,8 @@ import {
   createSubstitute,
   approveSubstitute,
   retireSchedule,
+  timetableOptions,
+  listTimetableVersions,
 } from '../services/timetable-admin.service';
 const handle =
   (action: (req: AuthenticatedRequest) => Promise<unknown>, status = 200) =>
@@ -108,6 +110,24 @@ timetableAdminRouter.use(
   requireRole('principal', 'super_admin'),
   requirePermission(PERMISSIONS.TIMETABLE_MANAGE),
 );
+
+timetableAdminRouter.get('/options', handle(req => {
+  query(req, ['branchId', 'teacherId', 'classId', 'sectionId', 'subjectId', 'offset']);
+  return timetableOptions(req.user, req.query);
+}));
+timetableAdminRouter.get('/versions', handle(req => {
+  query(req, ['branchId', 'offset']);
+  return listTimetableVersions(req.user, req.query);
+}));
+
+timetableAdminRouter.get('/options', handle(req => {
+  query(req, ['branchId', 'teacherId', 'offset']);
+  return timetableOptions(req.user, req.query);
+}));
+timetableAdminRouter.get('/versions', handle(req => {
+  query(req, ['branchId', 'offset']);
+  return listTimetableVersions(req.user, req.query);
+}));
 timetableAdminRouter.post(
   '/versions',
   handle(req => {

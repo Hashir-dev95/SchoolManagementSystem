@@ -1,4 +1,4 @@
-import {Schema, model, Document} from 'mongoose';
+import { Schema, model, Document } from 'mongoose';
 
 export const USER_ROLES = {
   SUPER_ADMIN: 'super_admin',
@@ -12,7 +12,7 @@ export type UserRole = (typeof USER_ROLES)[keyof typeof USER_ROLES];
 export const SUPER_ADMIN_BOOTSTRAP_INDEX = {
   name: 'unique_super_admin_bootstrap',
   unique: true,
-  partialFilterExpression: {bootstrapKey: {$type: 'string'}},
+  partialFilterExpression: { bootstrapKey: { $type: 'string' } },
 } as const;
 
 export interface IUser extends Document {
@@ -87,7 +87,7 @@ const userSchema = new Schema<IUser>(
   },
 );
 
-userSchema.index({bootstrapKey: 1}, SUPER_ADMIN_BOOTSTRAP_INDEX);
+userSchema.index({ bootstrapKey: 1 }, SUPER_ADMIN_BOOTSTRAP_INDEX);
 
 const User = model<IUser>('User', userSchema);
 

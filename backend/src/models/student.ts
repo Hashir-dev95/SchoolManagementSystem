@@ -1,4 +1,4 @@
-import {Schema, model} from 'mongoose';
+import { Schema, model } from 'mongoose';
 
 export interface IStudent {
   userId: Schema.Types.ObjectId;

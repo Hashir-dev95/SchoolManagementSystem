@@ -5,11 +5,13 @@ import {PERMISSIONS} from '../constants/permissions';
 import {ROLE_PERMISSIONS} from '../constants/rolePermissions';
 import {ApprovalAccessError, assertApprovalAuthority} from './approval-authority.policy';
 import {assertApprovalReferences, serializeApproval, validateApprovalId} from './approval-scope.service';
+import {withPrincipalWriteAuthority, fencePrincipalWriteUser} from './principal-write-access.service';
 
 export type ApprovalAction = 'approved' | 'rejected' | 'changes_requested' | 'delegated';
 export interface ApprovalActionInput {
   requestId: string;
   actorId: string;
+  token?: string;
   branchId: string;
   action: ApprovalAction;
   reason?: string;
@@ -183,18 +185,30 @@ export const processApprovalRequest = async (data: ApprovalActionInput) => {
   }
   // Compare the authorized snapshot, not just status. An intervening delegation
   // or amount/entity change must not turn an earlier authority check into a write.
-  const updated = await ApprovalRequest.findOneAndUpdate({
-    _id: request._id, branchId: request.branchId, status: 'pending',
-    __v: request.__v ?? {$exists: false}, updatedAt: request.updatedAt,
-    approvalType: request.approvalType, amount: request.amount ?? null,
-    requesterId: request.requesterId, entityType: request.entityType, entityId: request.entityId,
-    delegatedTo: request.delegatedTo ?? null, delegatedBy: request.delegatedBy ?? null,
-    delegationExpiresAt: request.delegationExpiresAt ?? null,
-    // Evaluate expiry against the database clock at the atomic write, including
-    // time spent in network queues after application authorization completed.
-    ...(isDelegate ? {$expr: {$gt: ['$delegationExpiresAt', '$$NOW']}} : {}),
-    ...(data.action === 'delegated' ? {$expr: {$gt: [{$literal: data.delegationExpiresAt}, '$$NOW']}} : {}),
-  }, update, {returnDocument: 'after', runValidators: true});
-  if (!updated) throw new ApprovalAccessError(409, 'Approval request changed or was already processed');
+  const updated = await withPrincipalWriteAuthority(data, PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE, async session => {
+    const result = await ApprovalRequest.findOneAndUpdate({
+      _id: request._id, branchId: request.branchId, status: 'pending',
+      __v: request.__v ?? {$exists: false}, updatedAt: request.updatedAt,
+      approvalType: request.approvalType, amount: request.amount ?? null,
+      requesterId: request.requesterId, entityType: request.entityType, entityId: request.entityId,
+      delegatedTo: request.delegatedTo ?? null, delegatedBy: request.delegatedBy ?? null,
+      delegationExpiresAt: request.delegationExpiresAt ?? null,
+      // Evaluate expiry against the database clock at the atomic write, including
+      // time spent in network queues after application authorization completed.
+      ...(isDelegate ? {$expr: {$gt: ['$delegationExpiresAt', '$$NOW']}} : {}),
+      ...(data.action === 'delegated' ? {$expr: {$gt: [{$literal: data.delegationExpiresAt}, '$$NOW']}} : {}),
+    }, update, {returnDocument: 'after', runValidators: true, session});
+    if (!result) throw new ApprovalAccessError(409, 'Approval request changed or was already processed');
+    return result;
+  }, async session => {
+    // Fence every staff identity contributing authority, not just the caller.
+    for (const id of [isDelegate ? request.delegatedBy?.toString() : undefined, data.action === 'delegated' ? data.delegatedTo : undefined]) {
+      if (!id) continue;
+      await fencePrincipalWriteUser(id, data.branchId, ['principal'], session);
+      assertApprovalAuthority(id, data.branchId, request);
+    }
+    assertApprovalAuthority(data.actorId, data.branchId, request);
+    await assertApprovalReferences(request);
+  });
   return serializeApproval(updated);
 };

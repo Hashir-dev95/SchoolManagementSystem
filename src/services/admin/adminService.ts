@@ -252,7 +252,7 @@ export const adminService = {
       {
         method: 'PATCH',
         token: accessToken,
-        body: {status},
+        body: { status },
       },
     );
   },
@@ -333,7 +333,7 @@ export const adminService = {
       {
         method: 'PATCH',
         token: accessToken,
-        body: {isPaused},
+        body: { isPaused },
       },
     );
   },

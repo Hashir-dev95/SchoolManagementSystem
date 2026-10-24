@@ -19,6 +19,7 @@ import {
   type TeacherHomeAction,
 } from '../../services/teacher/homeService';
 import { useTeacherResource } from './useTeacherResource';
+import { hasPermission, PERMISSIONS } from '../../constants/permissions';
 
 const timeLabel = (clock: string) => {
   const [hour, minute] = clock.split(':').map(Number);
@@ -44,8 +45,10 @@ export const heroContext = (hero: TeacherHome['hero']) => {
 };
 export default function TeacherHomeScreen({
   onAction,
+  onOpenLiveLesson,
 }: {
   onAction: (action: TeacherHomeAction) => void;
+  onOpenLiveLesson?: (occurrence: {periodId: string; date: string}) => void;
 }) {
   const { user, accessToken } = useAuth();
   const load = useCallback(() => {
@@ -96,6 +99,25 @@ export default function TeacherHomeScreen({
               subtitle={heroContext(data.hero)}
             />
           </View>
+          {user?.role === 'teacher' && hasPermission(user.role, PERMISSIONS.LIVE_LESSON_START) && onOpenLiveLesson ? (
+            <Card>
+              <Text accessibilityRole="header" style={homeStyles.title}>Live Lesson</Text>
+              <Text style={homeStyles.copy}>
+                {data.hero.currentOrNextPeriod
+                  ? 'Preview your current or next lesson before starting live.'
+                  : 'No live lesson is available to start right now.'}
+              </Text>
+              <Button
+                title="Go Live"
+                disabled={!data.hero.currentOrNextPeriod}
+                style={homeStyles.action}
+                onPress={() => {
+                  const period = data.hero.currentOrNextPeriod;
+                  if (period) onOpenLiveLesson({periodId: period.periodId, date: period.date});
+                }}
+              />
+            </Card>
+          ) : null}
           <Card>
             <StatusBadge
               status={action ? 'pending' : 'paid'}

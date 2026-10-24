@@ -1,9 +1,6 @@
-import {Schema, model, Document, Types} from 'mongoose';
+import { Schema, model, Document, Types } from 'mongoose';
 
-export type PrivilegedRequestStatus =
-  | 'pending'
-  | 'approved'
-  | 'rejected';
+export type PrivilegedRequestStatus = 'pending' | 'approved' | 'rejected';
 
 export interface IPrivilegedRequest extends Document {
   requesterId: Types.ObjectId;
@@ -65,7 +62,7 @@ const privilegedRequestSchema = new Schema<IPrivilegedRequest>(
   },
 );
 
-privilegedRequestSchema.index({status: 1, createdAt: -1});
+privilegedRequestSchema.index({ status: 1, createdAt: -1 });
 
 const PrivilegedRequest = model<IPrivilegedRequest>(
   'PrivilegedRequest',

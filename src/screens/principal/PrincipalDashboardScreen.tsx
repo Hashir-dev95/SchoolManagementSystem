@@ -115,8 +115,8 @@ export default function PrincipalDashboardScreen({
           <SectionCard title="Branch snapshot">
             <Card style={styles.unavailableCard}>
               <Text style={styles.note}>
-                {data.students.active} active of {data.students.total} students · {' '}
-                {data.attendance.totalMarked} attendance records today · {' '}
+                {data.students.active} active of {data.students.total} students
+                · {data.attendance.totalMarked} attendance records today ·{' '}
                 {data.feeSummary.paidAmount.toLocaleString('en-PK')} collected
               </Text>
             </Card>

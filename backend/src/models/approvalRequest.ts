@@ -13,8 +13,7 @@ export const APPROVAL_TYPES = {
   CERTIFICATE: 'certificate',
 } as const;
 
-export type ApprovalType =
-  (typeof APPROVAL_TYPES)[keyof typeof APPROVAL_TYPES];
+export type ApprovalType = (typeof APPROVAL_TYPES)[keyof typeof APPROVAL_TYPES];
 
 export type ApprovalStatus =
   | 'pending'
@@ -97,11 +96,11 @@ const approvalHistorySchema = new Schema<IApprovalHistory>(
       trim: true,
       maxlength: 500,
     },
-    authority: {type: String, enum: ['direct', 'delegated']},
-    delegatedBy: {type: Schema.Types.ObjectId, ref: 'User'},
+    authority: { type: String, enum: ['direct', 'delegated'] },
+    delegatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },
   {
-    timestamps: {createdAt: true, updatedAt: false},
+    timestamps: { createdAt: true, updatedAt: false },
     _id: true,
   },
 );
@@ -145,7 +144,11 @@ const approvalRequestSchema = new Schema<IApprovalRequest>(
     amount: {
       type: Number,
       min: 0,
-      validate: {validator: (value: number | undefined) => value === undefined || Number.isFinite(value), message: 'Invalid approval amount'},
+      validate: {
+        validator: (value: number | undefined) =>
+          value === undefined || Number.isFinite(value),
+        message: 'Invalid approval amount',
+      },
     },
 
     reason: {
@@ -171,12 +174,7 @@ const approvalRequestSchema = new Schema<IApprovalRequest>(
 
     status: {
       type: String,
-      enum: [
-        'pending',
-        'approved',
-        'rejected',
-        'changes_requested',
-      ],
+      enum: ['pending', 'approved', 'rejected', 'changes_requested'],
       default: 'pending',
       required: true,
       index: true,
@@ -195,7 +193,7 @@ const approvalRequestSchema = new Schema<IApprovalRequest>(
       type: Schema.Types.ObjectId,
       ref: 'User',
     },
-    delegatedBy: {type: Schema.Types.ObjectId, ref: 'User'},
+    delegatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
 
     delegationExpiresAt: {
       type: Date,

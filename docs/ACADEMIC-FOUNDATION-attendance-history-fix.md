@@ -1,0 +1,52 @@
+# Academic Foundation historical attendance read fix
+
+Final verdict: `ACADEMIC FOUNDATION READY — T-PR14 MAY START`
+
+**A. Root cause.** Submitted-session GET called getTeacherPeriod, which selects only current approved timetable winners. Retirement or replacement concealed a retained submitted session even from the submitting, still-authorized Teacher.
+
+**B. Previous authority.** Read, editor and amendment context all depended on the current operational occurrence resolver. Stored roster/marks survived, but submitted history had no separate read authorization.
+
+**C. New historical authority.** authorizeHistoricalAttendanceRead resolves only a stored submitted session. DB-active Teacher/Branch and attendance-view permission remain required through the existing route/service scope. Branch must match; responsibleTeacherId must match the caller; submittedBy, when present, must also match. Standard teaching requires a current effective, non-revoked exact Class/Section/Subject assignment and matching original period Teacher. This deliberately preserves the project's assignment-revocation policy; it is not perpetual access to every former assignment. Substitute reads require the stored substitute identity to match an explicitly approved, same-Branch, same-date, same-period substitute grant. Explicit substitute revocation still denies access.
+
+The resolver validates exact stored period/version/Branch/Class/Section/Subject/date-weekday relationships and the original version window. It accepts approved or retired stored versions, not drafts, and never selects a current winner for read authorization. Active catalog-parent checks remain as before. No generic allowInactive flag or retired-ID enumeration endpoint exists.
+
+**Stored context.** AttendanceSession already stores Branch, Class, Section, Subject, period/version/date, responsible Teacher, optional substitute, roster IDs/version, submission actor/time/state/revision. It does not store a separate AcademicPeriod or assignment ID; none was fabricated. Class identity supplies its retained period association, and the existing assignment tuple supplies current read eligibility. Once submitted, ordinary API writers cannot edit that snapshot. Historical display uses the original retained timetable slot/version and the stored roster/marks/effective corrections, with existing scoped name resolution. No model migration or historical rewrite was needed.
+
+**D. New-write authority.** Open/draft handlers still use getTeacherPeriod/mutateOccurrence, current approved timetable selection, current Teacher/substitute/Branch/session checks, roster membership, revisions, receipts and transaction fences. The previous audit's requireClassSubject/active-period gates remain byte-preserved. writeTeacherAttendance may load a submitted record for authorization, but its mutation still independently requires current operational context and rejects submitted-state changes. Read DTOs disable save/issue/acknowledgement actions. No timetable reactivation or attendance reopen was added.
+
+**E. Retirement and replacement.** The same authorized Teacher reads the original submitted attendance after retirement or higher-version approval. Returned period/version remain the stored ones. Draft sessions and lazy occurrence opening remain operational and fail on retired/nonwinning versions. Historical record content, receipts and pending amendment audit remain unchanged by reads and denied writes.
+
+**F–H. Security and amendment policy.** Unrelated same-Branch Teacher is denied even when assigned the same tuple; foreign Teacher/Principal, guessed IDs, missing attendance-view permission, inactive identity, DB Branch move, revoked assignment and revoked substitute are denied. A historical read cannot be used to POST marks, create another session, request a new retired-context amendment or decide a pending request after retirement.
+
+Teacher amendment history and the Principal's existing Branch/policy-scoped review GET now use the historical reader for submitted records. Principal request/actor/approval authority and Student roster membership checks remain. Action availability checks current version selection separately and cannot gate the historical read. Retirement disables canReview/canRequestCorrection/canRequestLeave. New correction/leave requests and Principal decisions retain their original operational resolver and fences; this task does not extend amendment mutation policy after retirement. Existing controlled amendments after AcademicPeriod closure, while the timetable context remains operational, retain their original policy.
+
+**I. Exact files changed this task.**
+
+- backend/src/services/attendance-history.service.ts — new read-only authorization resolver and action-availability query.
+- backend/src/services/teacher-attendance.service.ts — import plus submitted-only historical branch in session GET. No changes to prior curriculum guards or mutation handlers.
+- backend/src/services/attendance-amendment.service.ts — explicit historical read context for Teacher/Principal GETs, independent action availability; mutation callers retain teacherContext.
+- backend/tests/academic-foundation.security.test.ts — extend the original failing retirement case with positive read, Principal history, denial matrix and immutable-content assertions; original other 14 cases retained.
+- backend/tests/teacher-attendance.security.test.ts — update the old race's post-retirement GET expectation while retaining fence assertions and rejected-write check; add replacement-version and substitute-retirement/revocation cases.
+- docs/ACADEMIC-FOUNDATION-final-audit.md — re-evaluated A–AJ verdicts and fresh validation; this report. Evidence stays under .validation-academic-history/.
+
+**J. Mixed files.** One previously tracked dirty file is intentionally extended: teacher-attendance.service.ts already contained the prior audit's curriculum guards. The exact new hunks are the history import and submitted-only read branch; removing only those new hunks reconstructs its task-start content exactly. The existing untracked audit test and report are also explicitly extended and captured in the task-start baseline. No unrelated user-owned hunk was edited. fix-vs-start.patch is evidence with snapshot paths, not a staging patch.
+
+**K. Audit suite.** 15/15 PASS; all original 14 successful cases remain green and the expanded retirement case now passes.
+
+**L. Focused attendance validation.** 115/115 PASS, zero failures/skips. Includes foundation 15, Teacher attendance 51, and amendments 49. The previous race still proves retirement waits for the fenced submission commit; its former expected post-retirement 404 was updated to 200 and denied further write. Initial evidence retains that obsolete assertion failure; it was not a transaction regression.
+
+**M. Full relevant backend regression.** 593/593 PASS, zero failures/skips across 16 security test files. Includes all three focused suites plus setup, mapping, enrollment/roster, assignments, timetable, Syllabus/LessonPlan, task publication, submissions/reviews, Catch-up, Results, communications and delivery. Tests use owned temporary local MongoDB replica sets and API processes, never development/production data.
+
+**N. Static checks.** Backend TypeScript reports exactly the known unrelated safety-alert.controller.ts(47,49) TS2322 (void versus ISafetyAlert); its bytes are unchanged. All five source/test files ESLint PASS with zero warnings; git diff --check PASS. No frontend source changed, so frontend tests/TypeScript were not rerun for this task, as requested. Earlier audit's 137 focused / 427 full frontend tests and frontend TypeScript remain prior evidence, not fresh results.
+
+**O. Preservation.** 40/40 original pre-audit dirty files remain byte-identical. Of 44 tracked dirty files at this task start, 43 remain byte-identical; the only intentionally extended tracked dirty file is teacher-attendance.service.ts. All other captured files match their task-start SHA-256. Prior audit lesson/task guards and amendment fixture match task-start bytes; removing the new submitted-read branch/import reproduces the previous attendance file exactly. Index empty, branch feture, HEAD/origin unchanged at c0428c17f71f19d07b7d3227302443a0a5af89e8. Nothing staged, committed, pushed, reset, restored or cleaned. Original records were not rewritten. Existing unrelated untracked directories were not modified; no complete retrospective hash claim for their contents.
+
+**P. Full foundation re-evaluation.** AcademicPeriod/Class/Section identity, ClassSubject new-write authority, StudentEnrollment history/uniqueness, exact TeacherAssignment scope, timetable new writes, enrollment-based rosters/audiences, explicit attendance marking, versioned Syllabus/LessonPlan and task context, immutable evidence, Catch-up and moderated/published Results remain supported by the fresh full regression. Existing lifecycle/uniqueness/process-fence tests remain green, including all 14 previous successful audit cases. The reproduced submitted-attendance read blocker is resolved without broadening current operations or ownership. Standalone retained syllabus and Teacher lesson-list reads retain their existing behavior; occurrence-linked administrative lesson reviews keep their narrower live-context workflow policy. This task does not introduce a general archival browser or expand former Teacher access. No additional demonstrated Academic Foundation code blocker remains within the supported workflows.
+
+Deployment prerequisites remain explicit: reviewed legacy Class/current-enrollment migration, intended ClassSubject setup, assignment verification, supported MongoDB topology/index reconciliation, approval policy configuration, and resolution of the unrelated repository build diagnostic before a normal compiled deployment. No production migration was run. Parent verified-child access remains a future module; bulk promotion, cross-Branch transfer, new-year fees, AI and Live/Recording remain deferred under the original classification. These are not silently implemented or claimed production-complete.
+
+**Q. T-PR14 readiness.** The Academic Foundation gate is ready for T-PR14 to start in a subsequent task. No Staff Self-Service, appointments, payslips, PTM, Live Host, Recording or Transcript implementation was started here.
+
+**R. Final verdict**
+
+`ACADEMIC FOUNDATION READY — T-PR14 MAY START`

@@ -306,12 +306,14 @@ test('available sessions require managed enrollment and expose only scoped lesso
   assert.deepEqual(await service.available(student), { sessions: [] });
   await assert.rejects(service.available(teacher));
 });
-test('wrong teacher, unauthenticated identity, student start and principal host denied', async () => {
+test('wrong teacher, unauthenticated identity, student start and Principal/Super Admin host denied', async () => {
   await deny(start(other, otherToken));
   await deny(service.start(undefined, '', String(period), date));
   await deny(start(student, studentToken));
   await User.updateOne({ _id: other.userId }, { role: 'principal' });
   await deny(start({ ...other, role: 'principal' }, otherToken));
+  await User.updateOne({ _id: other.userId }, { role: 'super_admin', branchId: null });
+  await deny(start({ ...other, role: 'super_admin' }, otherToken));
 });
 for (const [name, mutation] of Object.entries({
   'inactive teacher': () =>

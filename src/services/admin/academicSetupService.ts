@@ -1,17 +1,18 @@
 import {apiClient} from '../api/apiClient';
 
-export type SetupKind = 'periods' | 'classes' | 'sections' | 'subjects';
+export type SetupKind = 'periods' | 'classes' | 'sections' | 'subjects' | 'rooms';
 export interface AcademicPeriod {
   id: string; name: string; code: string; startDate: string; endDate: string;
   status: 'draft' | 'active' | 'closed' | 'archived'; revision: number;
 }
 export interface CatalogRecord {
   id: string; name: string; code?: string; isActive: boolean; revision: number;
+  category?: string;
   academicPeriodId?: string | null; academicYear?: string; periodName?: string;
   periodStatus?: string; legacy?: boolean; classId?: string;
 }
 export interface SetupPage<T> {items: T[]; total: number; nextOffset: number | null; branchName: string; current?: AcademicPeriod | null}
-export interface SetupQuery {branchId?: string; academicPeriodId?: string; classId?: string; offset?: number}
+export interface SetupQuery {q?: string;branchId?: string; academicPeriodId?: string; classId?: string; offset?: number}
 export type SetupAction = 'activate' | 'close' | 'archive' | 'deactivate' | 'reactivate';
 function path(kind: string, query: SetupQuery = {}, suffix = '') {
   const params = Object.entries(query).filter(([, value]) => value !== undefined && value !== '');

@@ -38,7 +38,14 @@ const schema = new Schema(
     topicIds: { type: [Schema.Types.ObjectId], required: true },
     teachingDate: { type: String, required: true },
     occurrence: {
-      type: new Schema({ periodId: ref('TimetablePeriod'), timetableVersionId: ref('TimetableVersion'), date: { type: String, required: true } }, { _id: false }),
+      type: new Schema(
+        {
+          periodId: ref('TimetablePeriod'),
+          timetableVersionId: ref('TimetableVersion'),
+          date: { type: String, required: true },
+        },
+        { _id: false },
+      ),
       default: undefined,
       immutable: true,
     },
@@ -59,15 +66,27 @@ const schema = new Schema(
     submissions: { type: [snapshot], default: [] },
     approvalRequestId: { type: Schema.Types.ObjectId, ref: 'ApprovalRequest' },
     approvedRevision: Number,
-    reviews: { type: [new Schema({
-      submittedRevision: { type: Number, required: true },
-      action: { type: String, enum: ['approved', 'needs_revision', 'rejected'], required: true },
-      note: { type: String, required: false, default: '' },
-      reviewedBy: ref('User'),
-      reviewedAt: { type: Date, required: true },
-      clientOperationId: { type: String, required: true },
-      fingerprint: { type: String, required: true },
-    }, { _id: false })], default: [] },
+    reviews: {
+      type: [
+        new Schema(
+          {
+            submittedRevision: { type: Number, required: true },
+            action: {
+              type: String,
+              enum: ['approved', 'needs_revision', 'rejected'],
+              required: true,
+            },
+            note: { type: String, required: false, default: '' },
+            reviewedBy: ref('User'),
+            reviewedAt: { type: Date, required: true },
+            clientOperationId: { type: String, required: true },
+            fingerprint: { type: String, required: true },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
     createdBy: ref('User'),
     updatedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     submittedAt: Date,

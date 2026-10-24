@@ -1,3 +1,4 @@
+import Room from '../src/models/room';
 import {Syllabus} from '../src/models/syllabus';
 import {schoolToday, addScheduleDays, scheduleWeekday} from '../src/services/school-date.service';
 import {TimetablePeriod, TimetableVersion} from '../src/models/timetable';
@@ -77,6 +78,7 @@ beforeEach(async () => {
   classId = String((await new SchoolClass({branchId: branch, academicPeriodId: periodId, academicYear: 'CURRENT', name: 'Grade 8', code: 'G8'}).save())._id);
   sectionId = String((await new Section({branchId: branch, classId, name: 'A', code: 'A'}).save())._id);
   subjectId = String((await Subject.create({branchId: branch, name: 'Mathematics'}))._id);
+  fixtureRoomId = String((await Room.create({branchId:branch,name:'101',code:'101',category:'classroom',createdBy:teacherId,updatedBy:teacherId}))._id);
 });
 after(async () => {
   ROLE_PERMISSIONS.principal = principalGrants; ROLE_PERMISSIONS.super_admin = adminGrants;
@@ -93,7 +95,8 @@ const mapSubject = (id = subjectId) => curriculum('', principal, {subjectId: id}
 const mappingAction = (id: string, action: string, revision = 1) => curriculum('/' + id + '/' + action, principal, {revision});
 const syllabusInput = () => ({classId, subjectId, version: 1, title: 'Mapped syllabus', units: [{title: 'Unit', topics: [{title: 'Topic'}]}]});
 const day = () => schoolToday();
-const scheduleInput = () => ({branchId: branch, versionNumber: 1, effectiveFrom: day(), effectiveUntil: addScheduleDays(day(), 30), periods: [{teacherId, classId, sectionId, subjectId, dayOfWeek: scheduleWeekday(day()), startTime: '08:00', endTime: '09:00', room: '101'}]});
+let fixtureRoomId: string;
+const scheduleInput = () => ({branchId: branch, versionNumber: 1, effectiveFrom: day(), effectiveUntil: addScheduleDays(day(), 30), periods: [{teacherId, classId, sectionId, subjectId, dayOfWeek: scheduleWeekday(day()), startTime: '08:00', endTime: '09:00', roomId: fixtureRoomId, room: '101'}]});
 const retainedAssignment = () => TeacherAssignment.create({teacherId, branchId: branch, classId, sectionId, subjectId, validFrom: new Date('2020-01-01'), createdBy: teacherId, updatedBy: teacherId});
 
 test('mapping auth and role policy are enforced by API and service permissions', async () => {

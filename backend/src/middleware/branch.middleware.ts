@@ -55,7 +55,7 @@ export const requireBranchScope = async (
     req.branchId = user.branchId.toString();
 
     next();
-  } catch (error) {
+  } catch {
     res.status(500).json({
       success: false,
       message: 'Failed to verify branch scope',

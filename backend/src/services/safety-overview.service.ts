@@ -1,4 +1,4 @@
-import {Types} from 'mongoose';
+import {Types, type ClientSession} from 'mongoose';
 import User from '../models/user';
 import SafetyAlert, {ISafetyAlert, SAFETY_ALERT_TYPES, SAFETY_ALERT_STATUSES, SAFETY_ALERT_SEVERITIES} from '../models/safetyAlert';
 import {PERMISSIONS} from '../constants/permissions';
@@ -12,13 +12,13 @@ export type SafetyAction = 'assign' | 'resolve' | 'escalate';
 export interface SafetyFilters {status?: unknown; severity?: unknown; type?: unknown}
 
 // Whitelist public fields; never populate a user without checking its branch.
-export const serializeSafetyAlerts = async (alerts: ISafetyAlert[], details: boolean) => {
+export const serializeSafetyAlerts = async (alerts: ISafetyAlert[], details: boolean, session?: ClientSession) => {
   if (!alerts.length) return [];
   const ids = alerts.flatMap(alert => [alert.assignedTo,
     ...(details ? (alert.history || []).flatMap(entry => [entry.performedBy, entry.assignedTo]) : []),
   ]).filter(Boolean);
   const users = await User.find().where('_id').in(ids).where('branchId').equals(alerts[0].branchId)
-    .where('role').in([...PRINCIPAL_WRITE_ASSIGNEE_ROLES]).select('_id fullName role').lean();
+    .where('role').in([...PRINCIPAL_WRITE_ASSIGNEE_ROLES]).select('_id fullName role').session(session ?? null).lean();
   const identities = new Map(users.map(user => [String(user._id), {id: String(user._id), fullName: user.fullName, role: user.role}]));
   const display = (id: unknown) => identities.get(String(id)) ?? null;
   return alerts.map(alert => {
@@ -40,6 +40,8 @@ export const serializeSafetyAlerts = async (alerts: ISafetyAlert[], details: boo
     };
   });
 };
+
+export type SafetyAlertDTO = Awaited<ReturnType<typeof serializeSafetyAlerts>>[number];
 
 export const getSafetyOverview = async (branchId: string, filters: SafetyFilters, details: boolean) => {
   objectIdField(branchId, 'branch ID');

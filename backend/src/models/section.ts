@@ -1,4 +1,4 @@
-import {Schema, model} from 'mongoose';
+import { Schema, model } from 'mongoose';
 
 export interface ISection {
   branchId: Schema.Types.ObjectId;
@@ -53,10 +53,7 @@ const sectionSchema = new Schema<ISection>(
   },
 );
 
-sectionSchema.index(
-  {branchId: 1, classId: 1, code: 1},
-  {unique: true},
-);
+sectionSchema.index({ branchId: 1, classId: 1, code: 1 }, { unique: true });
 
 const Section = model<ISection>('Section', sectionSchema);
 

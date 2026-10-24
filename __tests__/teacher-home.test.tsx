@@ -13,11 +13,12 @@ import {
 } from '../src/services/teacher/homeService';
 import { ApiError } from '../src/services/api/apiClient';
 let mockToken: string | null = 'token';
+let mockRole = 'teacher';
 const mockFocus: { focus: () => void; blur: () => void }[] = [];
 jest.mock('../src/context/AuthContext', () => ({
   useAuth: () => ({
     accessToken: mockToken,
-    user: { id: 'teacher', role: 'teacher', fullName: 'Ayesha Khan' },
+    user: { id: 'teacher', role: mockRole, fullName: 'Ayesha Khan' },
     logout: jest.fn(),
   }),
 }));
@@ -93,10 +94,10 @@ const text = (tree: Renderer.ReactTestRenderer) =>
   JSON.stringify(tree.toJSON(), (key, value) =>
     key === 'props' ? undefined : value,
   );
-async function render() {
+async function render(onOpenLiveLesson?: (occurrence: {periodId: string; date: string}) => void) {
   let tree!: Renderer.ReactTestRenderer;
   await act(async () => {
-    tree = Renderer.create(<TeacherHomeScreen onAction={onAction} />);
+    tree = Renderer.create(<TeacherHomeScreen onAction={onAction} onOpenLiveLesson={onOpenLiveLesson} />);
   });
   trees.push(tree);
   return tree;
@@ -112,7 +113,7 @@ const pending = <T,>() => {
 };
 beforeEach(() => {
   jest.clearAllMocks();
-  mockToken = 'token';
+  mockToken = 'token'; mockRole = 'teacher';
   api.getHome.mockReset().mockResolvedValue(fixture);
 });
 afterEach(async () => {
@@ -339,4 +340,38 @@ test('visible Home revalidates its clock and queues each minute without remounti
   } finally {
     jest.useRealTimers();
   }
+});
+
+
+test.each(['current', 'next'] as const)('Home Go Live opens the existing occurrence route for %s teaching duty', async state => {
+  api.getHome.mockResolvedValue({...fixture, hero: {...fixture.hero, state, currentOrNextPeriod: {...period, isSubstitute: true}}});
+  const navigation = {navigate: jest.fn()};
+  let tree!: Renderer.ReactTestRenderer;
+  await act(async () => {tree = Renderer.create(<TeacherWorkspaceScreen navigation={navigation as never} route={{} as never} />);});
+  trees.push(tree);
+  expect(text(tree)).toContain('Live Lesson');
+  expect(button(tree, 'Go Live').props.disabled).toBe(false);
+  await act(async () => button(tree, 'Go Live').props.onPress());
+  expect(navigation.navigate).toHaveBeenCalledWith('TeacherLiveLesson', {periodId: period.periodId, date: period.date});
+});
+test.each(['finished', 'no_periods'] as const)('Home %s keeps a clear safe Live Lesson state without fabricating an occurrence', async state => {
+  api.getHome.mockResolvedValue({...fixture, hero: {...fixture.hero, state, currentOrNextPeriod: null}});
+  const open = jest.fn(), tree = await render(open);
+  expect(text(tree)).toContain('No live lesson is available to start right now.');
+  expect(button(tree, 'Go Live').props.disabled).toBe(true);
+  await act(async () => button(tree, 'Go Live').props.onPress());
+  expect(open).not.toHaveBeenCalled();
+});
+test.each(['principal', 'student', 'super_admin'])('role %s cannot expose Teacher hosting through Home', async role => {
+  mockRole = role;
+  const open = jest.fn(), tree = await render(open);
+  expect(button(tree, 'Go Live')).toBeUndefined(); expect(open).not.toHaveBeenCalled();
+  expect(api.getHome).not.toHaveBeenCalled();
+});
+test('Home authorization refresh removes the previously available live occurrence', async () => {
+  const open = jest.fn(), tree = await render(open);
+  expect(button(tree, 'Go Live')).toBeDefined();
+  api.getHome.mockRejectedValueOnce(new ApiError(403, 'Teacher authority changed'));
+  await act(async () => tree.root.findByType(DashboardShell).props.onRefresh());
+  expect(text(tree)).toContain('Teacher authority changed'); expect(button(tree, 'Go Live')).toBeUndefined();
 });

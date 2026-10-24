@@ -106,7 +106,7 @@ test('Principal can read only its DB Branch; supplied Branch never grants author
   assert.equal(result.json.data.current.id, periodId);
   assert.deepEqual(Object.keys(result.json.data.current).sort(), ['id', 'name', 'code', 'startDate', 'endDate', 'status', 'revision'].sort());
   assert.equal((await setup('periods', `?branchId=${foreign}`)).status, 404);
-  assert.equal((await setup('classes', `?branchId=${foreign}`, principal, {name: 'X', code: 'X', academicPeriodId: periodId})).status, 404);
+  assert.equal((await setup('classes', `?branchId=${foreign}`, principal, {name: 'X', code: 'X', academicPeriodId: periodId})).status, 403);
   assert.equal((await setup('periods', '', principal, periodBody())).status, 403);
   ROLE_PERMISSIONS.principal.push(PERMISSIONS.ACADEMIC_PERIODS_MANAGE);
   assert.equal((await setup('periods', '', principal, periodBody())).status, 403);
@@ -165,7 +165,7 @@ test('Classes validate exact period and allow safe edits and lifecycle with revi
   const body = {name: 'Grade 9', code: 'G9', academicPeriodId: periodId};
   assert.equal((await setup('classes', '', principal, {...body, branchId: foreign})).status, 400);
   const foreignPeriod = (await setup('periods', `?branchId=${foreign}`, admin, periodBody())).json.data.id;
-  assert.equal((await setup('classes', '', principal, {...body, academicPeriodId: foreignPeriod})).status, 404);
+  assert.equal((await setup('classes', '', principal, {...body, academicPeriodId: foreignPeriod})).status, 403);
   const draft = (await setup('periods', `?branchId=${branch}`, admin, periodBody())).json.data.id;
   assert.equal((await setup('classes', '', principal, {...body, academicPeriodId: draft})).status, 409);
   const results = await Promise.all([1, 2].map(() => setup('classes', '', principal, body)));
@@ -176,7 +176,7 @@ test('Classes validate exact period and allow safe edits and lifecycle with revi
   assert.equal((await setup('classes', `/${id}/deactivate`, principal, {revision: 2})).status, 200);
   assert.equal((await setup('classes', `/${id}/reactivate`, principal, {revision: 3})).status, 200);
   assert.equal((await deactivate('classes', classId)).status, 409); // child Section retained
-  assert.equal((await setup('classes', `/${id}?branchId=${foreign}`, principal, {name: 'X', code: 'X', revision: 4}, 'PATCH')).status, 404);
+  assert.equal((await setup('classes', `/${id}?branchId=${foreign}`, principal, {name: 'X', code: 'X', revision: 4}, 'PATCH')).status, 403);
 });
 test('legacy Classes remain readable and cannot be implicitly migrated', async () => {
   const legacy = await new SchoolClass({branchId: branch, name: 'Legacy', code: 'OLD', academicYear: '2025'}).save();
@@ -187,7 +187,7 @@ test('legacy Classes remain readable and cannot be implicitly migrated', async (
 });
 test('Sections enforce exact parent, concurrent uniqueness, edit and inactive parent rules', async () => {
   const otherClass = await new SchoolClass({branchId: foreign, name: 'Other', code: 'OTHER', academicYear: '2026'}).save();
-  assert.equal((await setup('sections', '', principal, {name: 'X', code: 'X', classId: String(otherClass._id)})).status, 404);
+  assert.equal((await setup('sections', '', principal, {name: 'X', code: 'X', classId: String(otherClass._id)})).status, 403);
   assert.equal((await setup('sections', `?classId=${otherClass._id}`)).status, 404);
   const results = await Promise.all([1, 2].map(() => setup('sections', '', principal, {name: 'B', code: 'B', classId})));
   assert.deepEqual(results.map(r => r.status).sort(), [201, 409]);
@@ -218,9 +218,9 @@ test('every catalog mutation conceals foreign IDs and rejects branch/parent/year
     const fields = {name: 'Forged', ...(kind === 'subjects' ? {} : {code: 'FORGED'}), revision: 1};
     const foreignResult = await setup(kind, `/${id}`, principal, fields, 'PATCH');
     const missingResult = await setup(kind, `/${new mongoose.Types.ObjectId()}`, principal, fields, 'PATCH');
-    assert.equal(foreignResult.status, 404); assert.deepEqual(foreignResult.json, missingResult.json);
-    for (const action of ['deactivate', 'reactivate']) assert.equal((await setup(kind, `/${id}/${action}`, principal, {revision: 1})).status, 404);
-    assert.equal((await setup(kind, `?branchId=${foreign}`, principal, {name: 'Forged'})).status, 404);
+    assert.equal(foreignResult.status, 403); assert.deepEqual(foreignResult.json, missingResult.json);
+    for (const action of ['deactivate', 'reactivate']) assert.equal((await setup(kind, `/${id}/${action}`, principal, {revision: 1})).status, 403);
+    assert.equal((await setup(kind, `?branchId=${foreign}`, principal, {name: 'Forged'})).status, 403);
     assert.equal((await setup(kind, '', principal, {name: 'Forged', branchId: foreign})).status, 400);
   }
   assert.equal((await setup('classes', '', principal, {name: 'Forged', code: 'X', academicPeriodId: periodId, academicYear: 'INJECTED'})).status, 400);
@@ -277,7 +277,7 @@ for (const change of ['branch', 'inactive', 'role', 'session', 'permission'] as 
       else await User.updateOne({role: 'principal'}, {$set: change === 'branch' ? {branchId: foreign} : change === 'inactive' ? {isActive: false} : {role: 'teacher'}});
       release();
       const result = await pending;
-      assert.equal(result.status, change === 'branch' ? 404 : change === 'permission' ? 403 : 401);
+      assert.equal(result.status, change === 'branch' ? 403 : change === 'permission' ? 403 : 401);
       assert.equal(await Subject.countDocuments({name: 'Pending unauthorized'}), 0);
     } finally {release(); Branch.collection.updateOne = original;}
   });
@@ -417,4 +417,89 @@ test('standalone MongoDB fails closed without partial catalog writes', async () 
     await assert.rejects(withAcademicCatalogLock(String(b._id), async () => {throw new Error('must not reach callback');}), (error: any) => error.status === 503);
     assert.equal((await Branch.findById(b._id))!.__v, 0);
   } finally {await mongoose.disconnect(); await standalone.stop(); await mongoose.connect(db.getUri(), {autoIndex: false});}
+});
+
+
+test('period date-only strings survive create, Mongo storage, read and edit without conversion', async () => {
+  const ranges = [['2026-04-01', '2027-03-31'], ['2028-02-29', '2028-03-01'], ['2000-02-29', '2000-03-01'], ['0096-02-29', '0096-03-01']];
+  for (const [index, [startDate, endDate]] of ranges.entries()) {
+    const created = await setup('periods', '?branchId=' + branch, admin, {...periodBody('DATE' + index), startDate, endDate});
+    assert.equal(created.status, 201);
+    const id = created.json.data.id;
+    const stored = await AcademicPeriod.collection.findOne({_id: new mongoose.Types.ObjectId(id)});
+    assert.ok(stored); assert.equal(stored.startDate, startDate); assert.equal(stored.endDate, endDate);
+    const read = await setup('periods', '/' + id + '?branchId=' + branch, admin);
+    assert.equal(read.status, 200); assert.equal(read.json.data.startDate, startDate); assert.equal(read.json.data.endDate, endDate);
+    const body = {name: 'Edited dates', startDate, endDate, revision: 1};
+    assert.equal((await setup('periods', '/' + id + '?branchId=' + branch, admin, body, 'PATCH')).status, 200);
+    const edited = await AcademicPeriod.collection.findOne({_id: new mongoose.Types.ObjectId(id)});
+    assert.ok(edited); assert.equal(edited.startDate, startDate); assert.equal(edited.endDate, endDate);
+  }
+});
+test('period date contract rejects locale formats, impossible calendar days, year zero and non-increasing ranges', async () => {
+  const invalid = ['0000-01-01', '1900-02-29', '2026-02-29', '2026-04-31', '2026-00-01', '2026-13-01', '2026-04-00', '01-04-2026', '04/01/2026', '2026-4-1', '2026-04-01T00:00:00Z'];
+  for (const value of invalid) {
+    for (const field of ['startDate', 'endDate']) {
+      assert.equal((await setup('periods', '?branchId=' + branch, admin, {...periodBody('INVALID'), [field]: value})).status, 400);
+    }
+  }
+  for (const endDate of ['2027-08-01', '2027-07-31']) {
+    assert.equal((await setup('periods', '?branchId=' + branch, admin, {...periodBody('INVALID'), endDate})).status, 400);
+  }
+  assert.equal(await AcademicPeriod.countDocuments({code: 'INVALID'}), 0);
+});
+
+const roomBody = (extra: Record<string,unknown> = {}) => ({name:'Science Lab 1',code:'LAB1',category:'science_lab',...extra});
+test('Rooms: create normalized catalog, safe DTO, literal name/code search and revisioned edit', async()=>{
+  const created=await setup('rooms','',principal,roomBody({code:'lab1'})); assert.equal(created.status,201);
+  const r=created.json.data; assert.equal(r.code,'LAB1'); assert.equal(r.category,'science_lab');
+  assert.deepEqual(Object.keys(r).sort(),['id','name','code','category','isActive','revision'].sort());
+  assert.equal((await setup('rooms','?q=lab1')).json.data.total,1);
+  assert.equal((await setup('rooms','?q=SCIENCE')).json.data.total,1);
+  assert.equal((await setup('rooms','?q=.*')).json.data.total,0);
+  assert.equal((await setup('rooms','/'+r.id,principal,roomBody({name:'Chemistry Lab',revision:1}),'PATCH')).status,200);
+  assert.equal((await setup('rooms','/'+r.id,principal,roomBody({revision:1}),'PATCH')).status,409);
+});
+test('Rooms: duplicate codes and case-insensitive names cannot race within Branch; other Branch is independent', async()=>{
+  const results=await Promise.all([setup('rooms','',principal,roomBody()),setup('rooms','',principal,roomBody())]);
+  assert.deepEqual(results.map(r=>r.status).sort(),[201,409]);
+  assert.equal((await setup('rooms','',principal,roomBody({name:'science lab 1',code:'OTHER'}))).status,409);
+  assert.equal((await setup('rooms','?branchId='+foreign,admin,roomBody())).status,201);
+});
+test('Rooms: unused Room deactivate/reactivate retains identity and requires latest revision', async()=>{
+  const r=(await setup('rooms','',principal,roomBody())).json.data;
+  assert.equal((await deactivate('rooms',r.id)).status,200);
+  assert.equal((await setup('rooms')).json.data.items[0].isActive,false);
+  assert.equal((await setup('rooms','/'+r.id+'/reactivate',principal,{revision:2})).status,200);
+  assert.equal((await setup('rooms','/'+r.id,principal,undefined,'DELETE')).status,404);
+});
+for(const collection of ['timetableperiods','substituteassignments'])test('Rooms: deactivation retains referenced '+collection,async()=>{
+  const r=(await setup('rooms','',principal,roomBody())).json.data;
+  await mongoose.connection.collection(collection).insertOne({roomId:new mongoose.Types.ObjectId(r.id)});
+  assert.equal((await deactivate('rooms',r.id)).status,409);
+});
+test('Rooms: role, central grants, explicit global SA Branch and Principal cross-Branch fail closed',async()=>{
+  assert.equal((await setup('rooms','',teacher)).status,403);
+  assert.equal((await setup('rooms','',admin)).status,400);
+  const r=(await setup('rooms','?branchId='+foreign,admin,roomBody())).json.data;
+  assert.equal((await setup('rooms','?branchId='+foreign,principal,roomBody())).status,403);
+  assert.equal((await setup('rooms','/'+r.id,principal,roomBody({revision:1}),'PATCH')).status,403);
+  const scoped=await actor('super_admin',branch);
+  assert.equal((await setup('rooms','?branchId='+foreign,scoped.token)).status,403);
+  ROLE_PERMISSIONS.principal=principalGrants.filter(p=>p!==PERMISSIONS.ACADEMIC_ROOMS_MANAGE);
+  assert.equal((await setup('rooms','',principal,roomBody())).status,403);
+  ROLE_PERMISSIONS.principal=principalGrants.filter(p=>p!==PERMISSIONS.ACADEMIC_ROOMS_VIEW);
+  assert.equal((await setup('rooms')).status,403);
+});
+test('Rooms: invalid category, injected authority and inactive Branch are rejected',async()=>{
+  assert.equal((await setup('rooms','',principal,roomBody({category:'zego'}))).status,400);
+  assert.equal((await setup('rooms','',principal,roomBody({branchId:foreign}))).status,400);
+  await Branch.collection.updateOne({_id:new mongoose.Types.ObjectId(branch)},{$set:{isActive:false}});
+  assert.equal((await setup('rooms','',principal,roomBody())).status,403);
+});
+test('Rooms: pagination is bounded and repeatable',async()=>{
+  const Room=(await import('../src/models/room')).default;
+  await Room.insertMany(Array.from({length:51},(_,i)=>({branchId:branch,name:'Room '+String(i).padStart(2,'0'),code:'R'+i,createdBy:teacherId,updatedBy:teacherId})));
+  const first=(await setup('rooms')).json.data, next=(await setup('rooms','?offset=50')).json.data;
+  assert.equal(first.items.length,50);assert.equal(first.nextOffset,50);assert.equal(next.items.length,1);assert.equal(next.nextOffset,null);
 });

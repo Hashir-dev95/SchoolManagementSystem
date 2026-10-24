@@ -88,6 +88,9 @@ export default function TeacherWorkspaceScreen({
       ) : null}
       {destination === 'Home' ? (
         <TeacherHomeScreen
+          onOpenLiveLesson={user?.role === 'teacher' && hasPermission(user.role, PERMISSIONS.LIVE_LESSON_START)
+            ? occurrence => navigation.navigate('TeacherLiveLesson', occurrence)
+            : undefined}
           onAction={action => {
             if (action.type === 'attendance')
               navigation.navigate('TeacherAttendanceQueue');

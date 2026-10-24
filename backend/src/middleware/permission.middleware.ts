@@ -1,8 +1,8 @@
-import {NextFunction, Response} from 'express';
+import { NextFunction, Response } from 'express';
 
-import {AuthenticatedRequest} from './auth.middleware';
-import {Permission} from '../constants/permissions';
-import {ROLE_PERMISSIONS} from '../constants/rolePermissions';
+import { AuthenticatedRequest } from './auth.middleware';
+import { Permission } from '../constants/permissions';
+import { ROLE_PERMISSIONS } from '../constants/rolePermissions';
 
 export const requirePermission = (...requiredPermissions: Permission[]) => {
   return (
@@ -20,7 +20,7 @@ export const requirePermission = (...requiredPermissions: Permission[]) => {
 
     const userPermissions = ROLE_PERMISSIONS[req.user.role];
 
-    const hasPermission = requiredPermissions.every((permission) =>
+    const hasPermission = requiredPermissions.every(permission =>
       userPermissions.includes(permission),
     );
 

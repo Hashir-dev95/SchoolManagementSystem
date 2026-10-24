@@ -3,7 +3,7 @@ import {after, before, beforeEach, mock, test} from 'node:test';
 import type {Server} from 'node:http';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
-import {MongoMemoryServer} from 'mongodb-memory-server';
+import {MongoMemoryReplSet} from 'mongodb-memory-server';
 import app from '../src/app';
 import User, {UserRole} from '../src/models/user';
 import Branch from '../src/models/branch';
@@ -23,7 +23,7 @@ import {ROLE_PERMISSIONS} from '../src/constants/rolePermissions';
 import {PERMISSIONS, Permission} from '../src/constants/permissions';
 
 // Never load dotenv or a configured DB URI. Only this suite's temporary MongoDB.
-let database: MongoMemoryServer, server: Server, base: string;
+let database: MongoMemoryReplSet, server: Server, base: string;
 const jwtSecret = 'isolated-principal-authorization-test-secret';
 const savedEnv = {jwt: process.env.JWT_SECRET, authority: process.env.PRINCIPAL_APPROVAL_AUTHORITY};
 type Actor = {id: mongoose.Types.ObjectId; token: string};
@@ -37,7 +37,7 @@ let approvalA: mongoose.Types.ObjectId, approvalB: mongoose.Types.ObjectId;
 let feeA: mongoose.Types.ObjectId, studentA: mongoose.Types.ObjectId;
 
 before(async () => {
-  database = await MongoMemoryServer.create();
+  database = await MongoMemoryReplSet.create({replSet: {count: 1}});
   await mongoose.connect(database.getUri(), {dbName: 'principal_authorization_tests', autoIndex: false});
   server = app.listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));

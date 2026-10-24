@@ -3,7 +3,7 @@ import {after, before, beforeEach, mock, test} from 'node:test';
 import type {Server} from 'node:http';
 import {request as nodeRequest} from 'node:http';
 import mongoose from 'mongoose';
-import {MongoMemoryServer} from 'mongodb-memory-server';
+import {MongoMemoryReplSet} from 'mongodb-memory-server';
 import app from '../src/app';
 import User, {UserRole} from '../src/models/user';
 import Branch from '../src/models/branch';
@@ -20,7 +20,7 @@ import {createPrincipalTask, processPrincipalTaskAction} from '../src/services/p
 import {processSafetyAlertAction} from '../src/services/safety-alert.service';
 
 // This suite never imports dotenv/config or reads MONGODB_URI.
-let database: MongoMemoryServer;
+let database: MongoMemoryReplSet;
 let server: Server;
 let base: string;
 const originalJwt = process.env.JWT_SECRET;
@@ -31,7 +31,7 @@ let branch: mongoose.Types.ObjectId, otherBranch: mongoose.Types.ObjectId;
 const future = () => new Date(Date.now() + 86400000).toISOString();
 
 before(async () => {
-  database = await MongoMemoryServer.create();
+  database = await MongoMemoryReplSet.create({replSet: {count: 1}});
   await mongoose.connect(database.getUri(), {dbName: 'principal_write_contract_tests', autoIndex: false});
   server = app.listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));
@@ -814,11 +814,66 @@ test('Principal safety defaults do not broaden other role permission sets', () =
     for (const role of ['teacher', 'student', 'super_admin'] as const) assert.equal(ROLE_PERMISSIONS[role].includes(permission), false);
   }
   assert.deepEqual(ROLE_PERMISSIONS.super_admin, Object.values(PERMISSIONS).filter(permission =>
+    !permission.startsWith('liveLesson.') &&
     !permission.startsWith('staff.') &&
     !permission.startsWith('teacher.academic.') && !permission.startsWith('teacher.lessons.') &&
+    !permission.startsWith('teacher.assessments.') &&
     !permission.startsWith('teacher.notices.') && !permission.startsWith('teacher.work.') &&
     permission !== PERMISSIONS.PRINCIPAL_SAFETY_VIEW && permission !== PERMISSIONS.PRINCIPAL_SAFETY_MANAGE &&
     permission !== PERMISSIONS.TEACHER_CLASSES_VIEW && permission !== PERMISSIONS.TEACHER_TIMETABLE_VIEW &&
     permission !== PERMISSIONS.TEACHER_ATTENDANCE_VIEW && permission !== PERMISSIONS.TEACHER_ATTENDANCE_MANAGE &&
     permission !== PERMISSIONS.TEACHER_TIMETABLE_ACKNOWLEDGE && permission !== PERMISSIONS.TEACHER_TIMETABLE_ISSUE));
+  // These operate in the authenticated Teacher's academic/live context; global
+  // administration must not inherit them just because a new constant exists.
+  for (const permission of [PERMISSIONS.TEACHER_ASSESSMENTS_VIEW, PERMISSIONS.TEACHER_ASSESSMENTS_MANAGE,
+    PERMISSIONS.LIVE_LESSON_START, PERMISSIONS.LIVE_LESSON_END]) {
+    assert.equal(ROLE_PERMISSIONS.teacher.includes(permission), true);
+    for (const role of ['principal', 'super_admin', 'student'] as const) assert.equal(ROLE_PERMISSIONS[role].includes(permission), false);
+  }
+});
+
+for (const action of ['assign', 'resolve', 'escalate'] as const) test(`Safety ${action} returns committed safe DTO matching persisted state`, async () => {
+  const item = await alert({description: 'Operational detail'});
+  const result = await safetyAction(item._id, {action, ...(action === 'assign' ? {assignedTo: String(teacher.id)} : {})});
+  assert.equal(result.status, 200);
+  assert.equal(result.data.success, true);
+  assert.equal(result.data.data, null); // Preserve the legacy action envelope.
+  const state = await SafetyAlert.findById(item._id).lean();
+  assert.ok(state);
+  const dto = result.data.alert;
+  assert.equal(dto.id, String(state._id));
+  assert.equal(dto.status, state.status);
+  assert.equal(dto.severity, state.severity);
+  assert.equal(dto.updatedAt, state.updatedAt.toISOString());
+  assert.equal(dto.resolvedAt, state.resolvedAt?.toISOString());
+  assert.equal(dto.history.length, 1);
+  assert.equal(state.history.length, 1);
+  assert.equal(dto.history[0].action, action);
+  assert.equal(dto.history[0].createdAt, state.history[0].createdAt.toISOString());
+  assert.equal(dto.history[0].performer.id, String(principal.id));
+  if (action === 'assign') {
+    assert.equal(dto.assignedTo.id, String(state.assignedTo));
+    assert.equal(dto.history[0].assignedOfficer.id, String(teacher.id));
+  }
+  const detail = await http(`/principal/safety-alerts/${item._id}`, 'GET', undefined);
+  assert.equal(detail.status, 200);
+  assert.deepEqual(dto, detail.data.data);
+  for (const field of ['token', 'password', 'email', 'branchId', 'performedBy', '__v', '$__', '_doc']) {
+    assert.equal(result.raw.includes(`"${field}"`), false);
+  }
+  const retry = await safetyAction(item._id, {action, ...(action === 'assign' ? {assignedTo: String(teacher.id)} : {})});
+  assert.equal(retry.status, 409);
+  assert.deepEqual(await SafetyAlert.findById(item._id).lean(), state);
+});
+
+test('Safety DTO lookup failure rolls back provisional mutation and history', async () => {
+  const item = await alert();
+  const beforeState = await SafetyAlert.findById(item._id).lean();
+  // Actor/assignee resolution uses findById; this failure is specifically the
+  // DTO identity projection that used to run after the mutation committed.
+  mock.method(User, 'find', () => {throw new Error('private-database-internals');});
+  const result = await safetyAction(item._id);
+  assert.equal(result.status, 500);
+  assert.equal(result.data.message, 'Principal write operation failed');
+  assert.deepEqual(await SafetyAlert.findById(item._id).lean(), beforeState);
 });

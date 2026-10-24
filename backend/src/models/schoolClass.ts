@@ -1,4 +1,4 @@
-import {Schema, model} from 'mongoose';
+import { Schema, model } from 'mongoose';
 
 export interface ISchoolClass {
   branchId: Schema.Types.ObjectId;
@@ -57,17 +57,14 @@ const schoolClassSchema = new Schema<ISchoolClass>(
 );
 
 schoolClassSchema.index(
-  {branchId: 1, code: 1, academicYear: 1},
-  {unique: true},
+  { branchId: 1, code: 1, academicYear: 1 },
+  { unique: true },
 );
 
 schoolClassSchema.index({branchId: 1, academicPeriodId: 1, code: 1}, {
   unique: true, name: 'class_period_code',
   partialFilterExpression: {academicPeriodId: {$type: 'objectId'}},
 });
-const SchoolClass = model<ISchoolClass>(
-  'SchoolClass',
-  schoolClassSchema,
-);
+const SchoolClass = model<ISchoolClass>('SchoolClass', schoolClassSchema);
 
 export default SchoolClass;

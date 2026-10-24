@@ -1,8 +1,8 @@
-import {Types} from 'mongoose';
-import Automation, {IAutomation} from '../models/automation';
+import { Types } from 'mongoose';
+import Automation, { IAutomation } from '../models/automation';
 
 export const getAutomations = async (): Promise<IAutomation[]> => {
-  return Automation.find().sort({createdAt: 1});
+  return Automation.find().sort({ createdAt: 1 });
 };
 
 export const toggleAutomationPause = async (
@@ -14,7 +14,7 @@ export const toggleAutomationPause = async (
     throw new Error('Invalid user ID');
   }
 
-  const automation = await Automation.findOne({key});
+  const automation = await Automation.findOne({ key });
   if (!automation) throw new Error('Automation key not found');
 
   automation.isPaused = isPaused;
