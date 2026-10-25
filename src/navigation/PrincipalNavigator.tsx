@@ -13,6 +13,7 @@ import PrincipalTaskDetailScreen from '../screens/principal/PrincipalTaskDetailS
 import AssignPrincipalTaskScreen from '../screens/principal/AssignPrincipalTaskScreen';
 import PrincipalSafetyOverviewScreen from '../screens/principal/PrincipalSafetyOverviewScreen';
 import PrincipalSafetyDetailScreen from '../screens/principal/PrincipalSafetyDetailScreen';
+import PrincipalResultsScreen from '../screens/principal/PrincipalResultsScreen';
 import PrincipalResultModerationScreen from '../screens/principal/PrincipalResultModerationScreen';
 import StudentEnrollmentScreen from '../screens/principal/StudentEnrollmentScreen';
 import AcademicSetupScreen from '../screens/admin/AcademicSetupScreen';
@@ -33,6 +34,7 @@ export type PrincipalStackParamList = {
   AssignTask: undefined;
   SafetyOverview: undefined;
   SafetyDetail: { alertId: string };
+  Results: undefined;
   ResultModeration: {approvalId: string};
 };
 
@@ -67,6 +69,7 @@ export default function PrincipalNavigator() {
         component={PrincipalSafetyDetailScreen}
       />
       <Stack.Screen name="AssignTeacher" component={TeacherAssignmentAdminScreen} options={{headerShown:false}} />
+      <Stack.Screen name="Results" component={PrincipalResultsScreen} options={{headerShown:true,title:'Results'}} />
       <Stack.Screen name="ResultModeration" component={PrincipalResultModerationScreen} options={{headerShown:true,title:'Marks moderation'}} />
     </Stack.Navigator>
   );

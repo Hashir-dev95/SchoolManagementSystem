@@ -139,7 +139,7 @@ export default function PrincipalWorkspaceScreen() {
             onAssignTeacher={() => navigation.navigate('AssignTeacher')}
           />
         ) : activeTab === 'approvals' ? (
-          <PrincipalApprovalsScreen onReview={openApproval} />
+          <PrincipalApprovalsScreen onReview={openApproval} onOpenResults={() => navigation.navigate('Results')} />
         ) : (
           <PrincipalInboxScreen onOpenNotice={openNotice} />
         )}

@@ -1,0 +1,28 @@
+✔ Principal options fix current branch and whitelist every DTO (9000.4378ms)
+✔ global Super Admin options and Teacher preselection derive compatible branch (623.0538ms)
+✔ teacher cannot read options/history or create/revoke (722.0883ms)
+✔ student cannot read options/history or create/revoke (663.1933ms)
+✔ missing session, permission, current role, inactive actor and revocation fail closed (742.5568ms)
+✔ Principal foreign branch/Teacher/history and cross-product class queries are concealed (686.2222ms)
+✔ current Principal branch change refreshes scope and rejects old Teacher context (616.6499ms)
+✔ inactive branches, Teachers and academic choices are excluded/rejected (660.7603ms)
+✔ strict lookup contract ?branchId=bad (726.9752ms)
+✔ strict lookup contract ?teacherId=bad (607.9419ms)
+✔ strict lookup contract ?classId=bad (605.4511ms)
+✔ strict lookup contract ?offset=-1 (668.0722ms)
+✔ strict lookup contract ?teacherId[$ne]=x (611.5664ms)
+✔ strict lookup contract ?role=super_admin (548.6618ms)
+✔ literal search and bounded pages do not leak unrelated/private users (574.6247ms)
+✔ history labels, state and revoke preserve audit confidentiality and stop authority (830.0026ms)
+✔ current assignments distinguish upcoming, expired and unavailable references (747.0119ms)
+✔ inactive Teacher history remains revocable without creating new authority (795.3066ms)
+✔ existing POST enforces mismatches, trusted IDs only, duplicates and Principal scope (773.8696ms)
+✔ full account-to-assignment-to-Teacher-login flow scopes roster, periods, attendance, notices and tasks (3498.4688ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 28199.28

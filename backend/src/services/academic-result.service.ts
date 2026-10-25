@@ -1,10 +1,8 @@
 import {createHash} from 'node:crypto';
 import mongoose, {type ClientSession} from 'mongoose';
 import ApprovalRequest from '../models/approvalRequest';
-import Branch from '../models/branch';
 import SchoolClass from '../models/schoolClass';
 import Section from '../models/section';
-import Session from '../models/session';
 import Student from '../models/student';
 import Subject from '../models/subject';
 import User from '../models/user';
@@ -19,7 +17,9 @@ import {ROLE_PERMISSIONS} from '../constants/rolePermissions';
 import {ApprovalAccessError, assertApprovalAuthority} from './approval-authority.policy';
 import {currentAcademicActor, getTeacherScope, requireActiveAcademicBranch, type TeacherAssignmentTuple} from './teacher-scope.service';
 import {communicationFence, exactTuple, withTeacherCommunication, type Identity} from './teacher-communication-access.service';
-import {verifyAccessToken, type JwtPayload} from './jwt.service';
+import {type JwtPayload} from './jwt.service';
+import {withPrincipalWriteAuthority} from './principal-write-access.service';
+import {StudentEnrollment} from '../models/studentEnrollment';
 import {enumField, objectBody, objectIdField, textField, RequestContractError} from '../utils/request-validation';
 
 type SourceType = 'homework_submission'|'quiz_attempt';
@@ -55,14 +55,14 @@ const validateDraft=(input:Record<string,unknown>,review:any)=>{const awarded=ma
   return{awardedMarks:awarded,maxMarks:max,sourceScore:review.totalScore,sourceMax:review.maxScore,overrideReason,teacherPrivateNote:optionalText(input.teacherPrivateNote,'Teacher private note',4000)};};
 const replay=(row:any,op:string,payloadHash:string)=>{const event=row.history.find((v:any)=>v.operationId===op);if(!event)return false;if(event.fingerprint!==payloadHash)throw conflict('Operation ID was reused');return true;};
 
-const sourceSummary=async(row:any)=>{const review:any=await TeacherReview.findById(row.sourceReviewId).select('state totalScore maxScore revision evidenceRevision').lean();return{type:row.assessmentSourceType,workId:String(row.sourceWorkId),publishedRevision:row.sourcePublishedRevision,evidenceId:String(row.sourceEvidenceId),evidenceRevision:row.sourceEvidenceRevision,reviewId:String(row.sourceReviewId),reviewRevision:row.sourceReviewRevision,reviewState:review?.state??'unavailable',score:review?.totalScore??null,maxScore:review?.maxScore??null};};
+const sourceSummary=async(row:any)=>{const review:any=await TeacherReview.findOne({_id:row.sourceReviewId,branchId:row.branchId}).select('state totalScore maxScore revision evidenceRevision').lean();return{type:row.assessmentSourceType,workId:String(row.sourceWorkId),publishedRevision:row.sourcePublishedRevision,evidenceId:String(row.sourceEvidenceId),evidenceRevision:row.sourceEvidenceRevision,reviewId:String(row.sourceReviewId),reviewRevision:row.sourceReviewRevision,reviewState:review?.state??'unavailable',score:review?.totalScore??null,maxScore:review?.maxScore??null};};
 const teacherDTO=async(row:any,names:Pick<TeacherAssignmentTuple,'className'|'sectionName'|'subjectName'>)=>({resultId:String(row._id),recordRevision:row.recordRevision,currentRevision:row.currentRevision,status:row.status,
   academic:{classId:String(row.classId),sectionId:String(row.sectionId),subjectId:String(row.subjectId),className:names.className,sectionName:names.sectionName,subjectName:names.subjectName,academicYear:row.academicYear},
   student:{studentId:String(row.studentId),fullName:row.studentName??'',admissionNumber:row.admissionNumber??''},assessmentTitle:row.assessmentTitle,source:await sourceSummary(row),
   revisions:row.revisions.map((v:any)=>({revision:v.revision,awardedMarks:v.awardedMarks,maxMarks:v.maxMarks,sourceScore:v.sourceScore,sourceMax:v.sourceMax,overrideReason:v.overrideReason??'',teacherPrivateNote:v.teacherPrivateNote??'',createdAt:v.createdAt.toISOString(),submittedAt:v.submittedAt?.toISOString()??null})),
   submittedRevision:row.submittedRevision??null,moderationHistory:row.moderationHistory.map((v:any)=>({resultRevision:v.resultRevision,action:v.action,note:v.note??'',createdAt:v.createdAt.toISOString()})),publishedRevision:row.publishedRevision??null,publishedAt:row.publishedAt?.toISOString()??null,
   history:row.history.map((v:any)=>({resultRevision:v.resultRevision,action:v.action,actorRole:v.actorRole,reason:v.reason??'',createdAt:v.createdAt.toISOString()}))});
-const attachStudentName=async(row:any)=>{const student:any=await Student.findById(row.studentId).select('userId admissionNumber').lean(),user:any=student?await User.findById(student.userId).select('fullName').lean():null;row.studentName=user?.fullName??'';row.admissionNumber=student?.admissionNumber??'';return row;};
+const attachStudentName=async(row:any)=>{const student:any=await Student.findOne().where('_id').equals(row.studentId).where('branchId').equals(row.branchId).select('userId admissionNumber').lean(),user:any=student?await User.findOne({_id:student.userId,branchId:row.branchId,role:'student'}).select('fullName').lean():null;row.studentName=user?.fullName??'';row.admissionNumber=student?.admissionNumber??'';return row;};
 
 export const listTeacherResults=async(identity:Identity,query:unknown)=>{const input=objectBody(query,['classId','sectionId','subjectId']),scope=await getTeacherScope(identity),tuple=exactTuple(scope,{classId:objectIdField(input.classId,'class ID'),sectionId:objectIdField(input.sectionId,'section ID'),subjectId:objectIdField(input.subjectId,'subject ID')});
   const rows:any[]=await AcademicResult.find({branchId:scope.branchId,classId:tuple.classId,sectionId:tuple.sectionId,subjectId:tuple.subjectId}).sort({updatedAt:-1}).limit(100).read('primary'),items=[];for(const row of rows)items.push(await teacherDTO(await attachStudentName(row),tuple));
@@ -86,19 +86,169 @@ export const mutateTeacherResult=async(identity:Identity,token:string,id:unknown
     }else{const draft=validateDraft(input,review);if(action==='create_revision'){if(row.status!=='returned_for_revision')throw conflict('Only a returned result can be revised');row.currentRevision+=1;row.revisions.push({revision:row.currentRevision,...draft,createdBy:initial.scope.actorId,createdAt:now});row.status='draft';}else{if(row.status!=='draft')throw conflict('Only a draft can be edited');Object.assign(currentResultRevision(row),draft);}}
     row.recordRevision+=1;row.history.push({resultRevision:row.currentRevision,action,actorId:initial.scope.actorId,actorRole:'teacher',reason:String(input.overrideReason??''),createdAt:now,operationId:op,fingerprint:payloadHash});await row.save({session});return teacherDTO(await attachStudentName(row),initial.tuple);});};
 
-const principalActor=async(identity:JwtPayload|undefined,manage=false)=>{const actor:any=await currentAcademicActor(identity);if(actor.role!=='principal'||!ROLE_PERMISSIONS.principal.includes(manage?PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE:PERMISSIONS.PRINCIPAL_APPROVALS_VIEW))throw new RequestContractError(403,'Result moderation is not permitted');const branchId=await requireActiveAcademicBranch(actor.branchId?.toString());assertApprovalAuthority(String(actor._id),branchId,{approvalType:'result'});return{actor,branchId};};
-const principalContext=async(identity:JwtPayload|undefined,approvalId:unknown,manage=false)=>{const principal=await principalActor(identity,manage),approval:any=await ApprovalRequest.findOne({_id:objectIdField(approvalId,'approval ID'),branchId:principal.branchId,entityType:'academic_result',approvalType:'result'}).read('primary');if(!approval)throw unavailable();const row:any=await AcademicResult.findOne({_id:approval.entityId,branchId:principal.branchId,approvalRequestId:approval._id}).read('primary');if(!row||String(row.teacherId)===String(principal.actor._id))throw unavailable();return{...principal,approval,row};};
-const principalDTO=async(ctx:Awaited<ReturnType<typeof principalContext>>)=>{const tuple={className:(await SchoolClass.findById(ctx.row.classId).select('name').lean())?.name??'',sectionName:(await Section.findById(ctx.row.sectionId).select('name').lean())?.name??'',subjectName:(await Subject.findById(ctx.row.subjectId).select('name').lean())?.name??''};return{approvalId:String(ctx.approval._id),approvalStatus:ctx.approval.status,canModerate:ctx.approval.status==='pending'&&['submitted_for_moderation','resubmitted_for_moderation'].includes(ctx.row.status),canPublish:ctx.approval.status==='approved'&&ctx.row.status==='moderated_approved',result:await teacherDTO(await attachStudentName(ctx.row),tuple)}};
-export const getPrincipalResult=async(identity:JwtPayload|undefined,id:unknown)=>principalDTO(await principalContext(identity,id));
-export const moderateResult=async(identity:JwtPayload|undefined,token:string,id:unknown,body:unknown)=>{const input=objectBody(body,['action','recordRevision','reason','clientOperationId']),action=enumField(input.action,'moderation action',['approve','return','reject']as const),expected=expectedRevision(input.recordRevision),note=optionalText(input.reason,'moderation reason',1000,action==='approve'?0:3),op=operationId(input.clientOperationId),initial=await principalContext(identity,id,true),payloadHash=hash({...input,approvalId:String(initial.approval._id),reason:note});
-  const tx=await mongoose.startSession();try{await tx.withTransaction(async()=>{const decoded=verifyAccessToken(token);if(decoded.userId!==identity?.userId||decoded.role!=='principal')throw new RequestContractError(401,'Authentication changed');const login=await Session.collection.updateMany({token,userId:initial.actor._id,role:'principal',isRevoked:false},{$inc:{__v:1}},{session:tx});if(!login.matchedCount)throw new RequestContractError(401,'Session is unavailable');for(const[collection,value]of[[User.collection.name,String(initial.actor._id)],[Branch.collection.name,initial.branchId],[AcademicResult.collection.name,String(initial.row._id)],[ApprovalRequest.collection.name,String(initial.approval._id)]])await communicationFence(tx,collection,value);
-    const current=await principalContext(identity,id,true),row:any=await AcademicResult.findById(current.row._id).session(tx),approval:any=await ApprovalRequest.findById(current.approval._id).session(tx);if(!row||!approval)throw unavailable();if(replay(row,op,payloadHash))return;if(row.recordRevision!==expected||approval.status!=='pending'||approval.resultRevision!==row.submittedRevision||!['submitted_for_moderation','resubmitted_for_moderation'].includes(row.status))throw conflict('Result is no longer awaiting moderation');
-    const now=new Date(),mapped=action==='approve'?'approved':action==='return'?'changes_requested':'rejected';row.status=action==='approve'?'moderated_approved':action==='return'?'returned_for_revision':'rejected';row.recordRevision+=1;row.moderationHistory.push({resultRevision:row.submittedRevision,action:action==='approve'?'approved':action==='return'?'returned':'rejected',note,actorId:current.actor._id,createdAt:now,operationId:op,fingerprint:payloadHash});row.history.push({resultRevision:row.submittedRevision,action:`moderation_${action}`,actorId:current.actor._id,actorRole:'principal',reason:note,createdAt:now,operationId:op,fingerprint:payloadHash});approval.status=mapped;approval.reviewedBy=current.actor._id;approval.reviewedAt=now;approval.history.push({action:mapped,performedBy:current.actor._id,reason:note,createdAt:now,authority:'direct'});await approval.save({session:tx});await row.save({session:tx});await principalContext(identity,id,true);});}finally{await tx.endSession();}return principalDTO(await principalContext(identity,id));};
+// Read authority and write authority share the existing role map and category policy.
+const principalActor = async (identity: JwtPayload | undefined, manage = false) => {
+  const actor = await currentAcademicActor(identity);
+  if (actor.role !== 'principal' || !ROLE_PERMISSIONS.principal.includes(PERMISSIONS.RESULTS_VIEW) ||
+      !ROLE_PERMISSIONS.principal.includes(manage ? PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE : PERMISSIONS.PRINCIPAL_APPROVALS_VIEW))
+    throw new RequestContractError(403, 'Result moderation is not permitted');
+  const branchId = await requireActiveAcademicBranch(actor.branchId?.toString());
+  assertApprovalAuthority(String(actor._id), branchId, {approvalType: 'result'});
+  return {actor, branchId};
+};
+const principalContext = async (identity: JwtPayload | undefined, approvalId: unknown, manage = false) => {
+  const principal = await principalActor(identity, manage);
+  const approval = await ApprovalRequest.findOne({_id: objectIdField(approvalId, 'approval ID'), branchId: principal.branchId, entityType: 'academic_result', approvalType: 'result'}).read('primary');
+  if (!approval) throw unavailable();
+  const row = await AcademicResult.findOne({_id: approval.entityId, branchId: principal.branchId, approvalRequestId: approval._id}).read('primary');
+  if (!row || String(row.teacherId) === String(principal.actor._id)) throw unavailable();
+  return {...principal, approval, row};
+};
+const resultAcademicContext = async (row: any, session?: ClientSession) => {
+  const [schoolClass, section, subject, teacher] = await Promise.all([
+    SchoolClass.findOne({_id: row.classId, branchId: row.branchId}).session(session ?? null).read('primary').lean(),
+    Section.findOne({_id: row.sectionId, branchId: row.branchId, classId: row.classId}).session(session ?? null).read('primary').lean(),
+    Subject.findOne({_id: row.subjectId, branchId: row.branchId}).session(session ?? null).read('primary').lean(),
+    User.findOne({_id: row.teacherId, branchId: row.branchId}).select('fullName').session(session ?? null).read('primary').lean(),
+  ]);
+  return {className: schoolClass?.name ?? '', sectionName: section?.name ?? '', subjectName: subject?.name ?? '', teacherName: teacher?.fullName ?? '',
+    valid: !!(schoolClass?.isActive && section?.isActive && subject?.isActive && schoolClass.academicYear === row.academicYear)};
+};
+const publishable = (row: any, approval: any) => approval.status === 'approved' && row.status === 'moderated_approved' &&
+  row.publishedRevision == null && row.publishedAt == null && approval.resultRevision === row.currentRevision && row.submittedRevision === row.currentRevision;
+const principalDTO = async (ctx: Awaited<ReturnType<typeof principalContext>>) => {
+  const academic = await resultAcademicContext(ctx.row);
+  const manage = ROLE_PERMISSIONS.principal.includes(PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE);
+  const result = await teacherDTO(await attachStudentName(ctx.row), academic);
+  // Teacher-only drafting notes are not required for Principal moderation.
+  const revisions = result.revisions.map((revision: any) => ({revision: revision.revision, awardedMarks: revision.awardedMarks, maxMarks: revision.maxMarks, sourceScore: revision.sourceScore, sourceMax: revision.sourceMax, overrideReason: revision.overrideReason, createdAt: revision.createdAt, submittedAt: revision.submittedAt}));
+  return {approvalId: String(ctx.approval._id), approvalStatus: ctx.approval.status, teacherName: academic.teacherName,
+    configurationIssue: academic.valid ? null : 'Academic configuration requires administrator review before this result can be changed.',
+    canModerate: manage && academic.valid && ctx.approval.status === 'pending' && ctx.approval.resultRevision === ctx.row.currentRevision &&
+      ctx.row.submittedRevision === ctx.row.currentRevision && ['submitted_for_moderation', 'resubmitted_for_moderation'].includes(ctx.row.status),
+    canPublish: manage && academic.valid && publishable(ctx.row, ctx.approval), result: {...result, revisions}};
+};
+export const getPrincipalResult = async (identity: JwtPayload | undefined, id: unknown) => principalDTO(await principalContext(identity, id));
 
-export const publishResult=async(identity:JwtPayload|undefined,token:string,id:unknown,body:unknown)=>{const input=objectBody(body,['recordRevision','clientOperationId']),expected=expectedRevision(input.recordRevision),op=operationId(input.clientOperationId),initial=await principalContext(identity,id,true),payloadHash=hash({...input,action:'publish',approvalId:String(initial.approval._id)}),tx=await mongoose.startSession();try{await tx.withTransaction(async()=>{const decoded=verifyAccessToken(token);if(decoded.userId!==identity?.userId||decoded.role!=='principal')throw new RequestContractError(401,'Authentication changed');const login=await Session.collection.updateMany({token,userId:initial.actor._id,role:'principal',isRevoked:false},{$inc:{__v:1}},{session:tx});if(!login.matchedCount)throw new RequestContractError(401,'Session is unavailable');for(const[collection,value]of[[User.collection.name,String(initial.actor._id)],[Branch.collection.name,initial.branchId],[AcademicResult.collection.name,String(initial.row._id)],[ApprovalRequest.collection.name,String(initial.approval._id)]])await communicationFence(tx,collection,value);const current=await principalContext(identity,id,true),row:any=await AcademicResult.findById(current.row._id).session(tx),approval:any=await ApprovalRequest.findById(current.approval._id).session(tx);if(!row||!approval)throw unavailable();if(replay(row,op,payloadHash))return;if(row.recordRevision!==expected||approval.resultRevision!==row.currentRevision||row.status!=='moderated_approved'||approval.status!=='approved'||row.submittedRevision!==row.currentRevision)throw conflict('Only the current moderated result can be published');const now=new Date();row.status='published';row.publishedRevision=row.currentRevision;row.publishedAt=now;row.publishedBy=current.actor._id;row.recordRevision+=1;row.history.push({resultRevision:row.currentRevision,action:'published',actorId:current.actor._id,actorRole:'principal',createdAt:now,operationId:op,fingerprint:payloadHash});await row.save({session:tx});});}finally{await tx.endSession();}return principalDTO(await principalContext(identity,id));};
+// A bounded, server-filtered queue. Approval linkage and academic context are
+// joined BEFORE pagination; the client never scans branch result history.
+export const listPrincipalResults = async (identity: JwtPayload | undefined, query: unknown) => {
+  const input = objectBody(query, ['state', 'search', 'offset', 'classId', 'sectionId', 'subjectId']);
+  const principal = await principalActor(identity);
+  const state = enumField(input.state ?? 'awaiting_publication', 'result queue', ['pending', 'awaiting_publication', 'published', 'returned', 'rejected'] as const);
+  const offset = input.offset === undefined ? 0 : typeof input.offset === 'string' && /^\d{1,6}$/.test(input.offset) ? Number(input.offset) : NaN;
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000) throw new RequestContractError(400, 'Invalid page offset');
+  const search = input.search === undefined ? '' : textField(input.search, 'search', 80).toLowerCase();
+  const states = {pending: ['submitted_for_moderation', 'resubmitted_for_moderation'], awaiting_publication: ['moderated_approved'], published: ['published'], returned: ['returned_for_revision'], rejected: ['rejected']};
+  const branchId = new mongoose.Types.ObjectId(principal.branchId);
+  const match: Record<string, unknown> = {branchId, status: {$in: states[state]}, teacherId: {$ne: principal.actor._id}};
+  for (const key of ['classId', 'sectionId', 'subjectId']) if (input[key] !== undefined) match[key] = new mongoose.Types.ObjectId(objectIdField(input[key], key));
+  if (state === 'awaiting_publication') Object.assign(match, {publishedRevision: null, publishedAt: null});
+  const pipeline: mongoose.PipelineStage[] = [{$match: match},
+    {$project: {branchId: 1, approvalRequestId: 1, classId: 1, sectionId: 1, subjectId: 1, teacherId: 1, recipientUserId: 1, academicYear: 1, assessmentTitle: 1, status: 1, currentRevision: 1, submittedRevision: 1, recordRevision: 1, publishedAt: 1, updatedAt: 1}},
+    {$lookup: {from: ApprovalRequest.collection.name, localField: 'approvalRequestId', foreignField: '_id', pipeline: [{$match: {branchId, entityType: 'academic_result', approvalType: 'result'}}], as: 'approval'}}, {$unwind: '$approval'},
+    {$match: {'approval.status': state === 'pending' ? 'pending' : state === 'returned' ? 'changes_requested' : state === 'rejected' ? 'rejected' : 'approved',
+      $expr: {$and: [{$eq: ['$approval.entityId', '$_id']}, {$eq: ['$approval.resultRevision', '$currentRevision']}, {$eq: ['$submittedRevision', '$currentRevision']}]}}},
+  ];
+  for (const [from, localField, as] of [[SchoolClass.collection.name, 'classId', 'schoolClass'], [Section.collection.name, 'sectionId', 'section'], [Subject.collection.name, 'subjectId', 'subject'], [User.collection.name, 'teacherId', 'teacher'], [User.collection.name, 'recipientUserId', 'student']])
+    pipeline.push({$lookup: {from, localField, foreignField: '_id', pipeline: [{$match: {branchId}}, {$project: {name: 1, fullName: 1, classId: 1, academicYear: 1, isActive: 1}}], as}}, {$set: {[as]: {$arrayElemAt: ['$' + as, 0]}}});
+  pipeline.push({$set: {validContext: {$and: [{$eq: ['$schoolClass.isActive', true]}, {$eq: ['$section.isActive', true]}, {$eq: ['$subject.isActive', true]}, {$eq: ['$section.classId', '$classId']}, {$eq: ['$schoolClass.academicYear', '$academicYear']}]}}});
+  if (search) pipeline.push({$match: {$expr: {$or: ['assessmentTitle', 'schoolClass.name', 'section.name', 'subject.name', 'teacher.fullName', 'student.fullName', 'academicYear'].map(field => ({$gte: [{$indexOfCP: [{$toLower: {$ifNull: ['$' + field, '']}}, search]}, 0]}))}}});
+  pipeline.push({$facet: {items: [{$match: {validContext: true}}, {$sort: {updatedAt: -1, _id: -1}}, {$skip: offset}, {$limit: 20},
+    {$project: {_id: 0, approvalId: {$toString: '$approvalRequestId'}, resultId: {$toString: '$_id'}, assessmentTitle: 1, status: 1, recordRevision: 1, academicYear: 1, className: '$schoolClass.name', sectionName: '$section.name', subjectName: '$subject.name', teacherName: {$ifNull: ['$teacher.fullName', '']}, studentName: {$ifNull: ['$student.fullName', '']}, publishedAt: 1}}],
+    count: [{$match: {validContext: true}}, {$count: 'total'}], configuration: [{$match: {validContext: {$ne: true}}}, {$count: 'total'}]}});
+  const [page] = await AcademicResult.aggregate(pipeline).read('primary');
+  const total = page.count[0]?.total ?? 0;
+  return {items: page.items, total, nextOffset: offset + page.items.length < total ? offset + page.items.length : null, configurationIssueCount: page.configuration[0]?.total ?? 0};
+};
 
-const studentActor=async(identity:JwtPayload|undefined)=>{const actor:any=await currentAcademicActor(identity);if(actor.role!=='student'||!ROLE_PERMISSIONS.student.includes(PERMISSIONS.RESULTS_VIEW))throw new RequestContractError(403,'Student results are unavailable');const branchId=await requireActiveAcademicBranch(actor.branchId?.toString()),student:any=await (Student as any).findOne({userId:actor._id,branchId,isActive:true}).read('primary');if(!student)throw unavailable();return{actor,branchId,student};};
-const studentDTO=async(row:any)=>{const revision=currentResultRevision(row),subject=await Subject.findById(row.subjectId).select('name').lean(),review:any=await TeacherReview.findOne({_id:row.sourceReviewId,state:'feedback_released'}).select('feedback releasedAt').lean();return{resultId:String(row._id),subject:{subjectId:String(row.subjectId),name:subject?.name??''},assessment:{type:row.assessmentSourceType==='homework_submission'?'homework':'quiz',title:row.assessmentTitle,publishedRevision:row.sourcePublishedRevision},awardedMarks:revision.awardedMarks,maxMarks:revision.maxMarks,percentage:Math.round(revision.awardedMarks/revision.maxMarks*10000)/100,publishedAt:row.publishedAt.toISOString(),releasedFeedback:review?{feedback:review.feedback??'',releasedAt:review.releasedAt?.toISOString()??null}:null};};
-export const listStudentResults=async(identity:JwtPayload|undefined)=>{const ctx=await studentActor(identity),rows:any[]=await AcademicResult.find({branchId:ctx.branchId,studentId:ctx.student._id,recipientUserId:ctx.actor._id,status:'published'}).sort({publishedAt:-1}).read('primary'),items=[];for(const row of rows)items.push(await studentDTO(row));return{items,total:items.length};};
-export const getStudentResult=async(identity:JwtPayload|undefined,id:unknown)=>{const ctx=await studentActor(identity),row:any=await AcademicResult.findOne({_id:objectIdField(id,'result ID'),branchId:ctx.branchId,studentId:ctx.student._id,recipientUserId:ctx.actor._id,status:'published'}).read('primary');if(!row)throw unavailable();return studentDTO(row);};
+// P-PR1 owns persisted actor/Branch/exact-session fencing. The result and
+// existing histories are provisional until those post-write fences succeed.
+const principalResultWrite = async (initial: Awaited<ReturnType<typeof principalContext>>, token: string, write: (session: ClientSession) => Promise<void>) =>
+  withPrincipalWriteAuthority({actorId: String(initial.actor._id), branchId: initial.branchId, token}, PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE, write, async session => {
+    // Validate the transaction's actual record, including on driver retry.
+    const row = await AcademicResult.findOne({_id: initial.row._id, branchId: initial.branchId, approvalRequestId: initial.approval._id}).session(session);
+    if (!row || String(row.teacherId) === String(initial.actor._id)) throw unavailable();
+    // Frozen evidence does not require the original Teacher assignment to
+    // remain active, but the linked academic tuple must remain valid.
+    for (const [collection, id] of [[SchoolClass.collection.name, row.classId], [Section.collection.name, row.sectionId], [Subject.collection.name, row.subjectId]])
+      await communicationFence(session, String(collection), String(id));
+    if (!(await resultAcademicContext(row, session)).valid) throw conflict('Academic configuration requires administrator review');
+    // Configuration grants are rechecked after the last asynchronous reference read.
+    assertApprovalAuthority(String(initial.actor._id), initial.branchId, {approvalType: 'result'});
+    if (!ROLE_PERMISSIONS.principal.includes(PERMISSIONS.RESULTS_VIEW) || !ROLE_PERMISSIONS.principal.includes(PERMISSIONS.PRINCIPAL_APPROVALS_VIEW))
+      throw new RequestContractError(403, 'Result moderation is not permitted');
+  });
+const writeRecords = async (initial: Awaited<ReturnType<typeof principalContext>>, session: ClientSession) => {
+  const row = await AcademicResult.findOne({_id: initial.row._id, branchId: initial.branchId, approvalRequestId: initial.approval._id}).session(session);
+  const approval = await ApprovalRequest.findOne({_id: initial.approval._id, branchId: initial.branchId, entityId: initial.row._id, entityType: 'academic_result', approvalType: 'result'}).session(session);
+  if (!row || !approval) throw unavailable();
+  return {row, approval};
+};
+export const moderateResult = async (identity: JwtPayload | undefined, token: string, id: unknown, body: unknown) => {
+  const input = objectBody(body, ['action', 'recordRevision', 'reason', 'clientOperationId']);
+  const action = enumField(input.action, 'moderation action', ['approve', 'return', 'reject'] as const), expected = expectedRevision(input.recordRevision);
+  const note = optionalText(input.reason, 'moderation reason', 1000, action === 'approve' ? 0 : 3), op = operationId(input.clientOperationId);
+  const initial = await principalContext(identity, id, true), payloadHash = hash({...input, approvalId: String(initial.approval._id), reason: note});
+  await principalResultWrite(initial, token, async session => {
+    const {row, approval} = await writeRecords(initial, session);
+    if (replay(row, op, payloadHash)) return;
+    if (row.recordRevision !== expected || approval.status !== 'pending' || approval.resultRevision !== row.submittedRevision || row.submittedRevision !== row.currentRevision ||
+        !['submitted_for_moderation', 'resubmitted_for_moderation'].includes(row.status)) throw conflict();
+    const now = new Date(), mapped = action === 'approve' ? 'approved' : action === 'return' ? 'changes_requested' : 'rejected';
+    row.status = action === 'approve' ? 'moderated_approved' : action === 'return' ? 'returned_for_revision' : 'rejected';
+    row.recordRevision += 1;
+    row.moderationHistory.push({resultRevision: row.submittedRevision!, action: action === 'approve' ? 'approved' : action === 'return' ? 'returned' : 'rejected', note, actorId: initial.actor._id, createdAt: now, operationId: op, fingerprint: payloadHash});
+    row.history.push({resultRevision: row.submittedRevision!, action: 'moderation_' + action, actorId: initial.actor._id, actorRole: 'principal', reason: note, createdAt: now, operationId: op, fingerprint: payloadHash});
+    approval.status = mapped; approval.reviewedBy = initial.actor._id as any; approval.reviewedAt = now;
+    approval.history.push({action: mapped, performedBy: initial.actor._id as any, reason: note, createdAt: now, authority: 'direct'});
+    await approval.save({session}); await row.save({session});
+  });
+  return principalDTO(await principalContext(identity, id));
+};
+export const publishResult = async (identity: JwtPayload | undefined, token: string, id: unknown, body: unknown) => {
+  const input = objectBody(body, ['recordRevision', 'clientOperationId']), expected = expectedRevision(input.recordRevision), op = operationId(input.clientOperationId);
+  const initial = await principalContext(identity, id, true), payloadHash = hash({...input, action: 'publish', approvalId: String(initial.approval._id)});
+  await principalResultWrite(initial, token, async session => {
+    const {row, approval} = await writeRecords(initial, session);
+    if (replay(row, op, payloadHash)) return;
+    if (row.recordRevision !== expected || !publishable(row, approval)) throw conflict();
+    // Serialize changes to the linked approval as well as the result document.
+    await communicationFence(session, ApprovalRequest.collection.name, String(approval._id));
+    const now = new Date(); row.status = 'published'; row.publishedRevision = row.currentRevision;
+    row.publishedAt = now; row.publishedBy = initial.actor._id; row.recordRevision += 1;
+    row.history.push({resultRevision: row.currentRevision, action: 'published', actorId: initial.actor._id, actorRole: 'principal', createdAt: now, operationId: op, fingerprint: payloadHash});
+    await row.save({session});
+  });
+  return principalDTO(await principalContext(identity, id));
+};
+
+const studentActor = async (identity: JwtPayload | undefined) => {
+  const actor = await currentAcademicActor(identity);
+  if (actor.role !== 'student' || !ROLE_PERMISSIONS.student.includes(PERMISSIONS.RESULTS_VIEW)) throw new RequestContractError(403, 'Student results are unavailable');
+  const branchId = await requireActiveAcademicBranch(actor.branchId?.toString());
+  const student = await Student.findOne({isActive: true}).where('userId').equals(actor._id).where('branchId').equals(branchId).read('primary');
+  if (!student) throw unavailable();
+  const managed = !!await StudentEnrollment.exists({studentId: student._id}).read('primary');
+  // Published results retain legitimate historical membership after promotion,
+  // transfer or withdrawal. A projection cannot grant a never-held placement.
+  const now = new Date();
+  const memberships = managed ? await StudentEnrollment.find({
+    effectiveFrom: {$type: 'date', $lte: now},
+    $or: [{status: 'active', effectiveTo: null}, {status: {$in: ['transferred', 'promoted', 'withdrawn']}, effectiveTo: {$type: 'date', $lte: now}, $expr: {$gte: ['$effectiveTo', '$effectiveFrom']}}],
+  }).where('studentId').equals(student._id).where('branchId').equals(branchId).select('classId sectionId').read('primary').lean() : [student];
+  const placements = memberships.map(row => ({classId: String(row.classId), sectionId: String(row.sectionId)}));
+  return {actor, branchId, student, placements};
+};
+const studentResultFilter = (ctx: Awaited<ReturnType<typeof studentActor>>) => ({branchId: ctx.branchId, studentId: ctx.student._id,
+  recipientUserId: ctx.actor._id, status: 'published' as const, publishedAt: {$type: 'date' as const},
+  $and: [
+    // Retain existing published legacy records without publication metadata;
+    // an explicit revision, when present, must still match the frozen marks.
+    {$or: [{publishedRevision: null}, {$expr: {$eq: ['$publishedRevision', '$currentRevision']}}]},
+    {$or: ctx.placements.length ? ctx.placements : [{classId: {$in: []}}]},
+  ]});
+const studentDTO=async(row:any)=>{const revision=currentResultRevision(row),subject=await Subject.findById(row.subjectId).select('name').lean(),review:any=await TeacherReview.findOne({_id:row.sourceReviewId,branchId:row.branchId,studentId:row.studentId,recipientUserId:row.recipientUserId,state:'feedback_released'}).select('feedback releasedAt').lean();return{resultId:String(row._id),subject:{subjectId:String(row.subjectId),name:subject?.name??''},assessment:{type:row.assessmentSourceType==='homework_submission'?'homework':'quiz',title:row.assessmentTitle,publishedRevision:row.sourcePublishedRevision},awardedMarks:revision.awardedMarks,maxMarks:revision.maxMarks,percentage:Math.round(revision.awardedMarks/revision.maxMarks*10000)/100,publishedAt:row.publishedAt.toISOString(),releasedFeedback:review?{feedback:review.feedback??'',releasedAt:review.releasedAt?.toISOString()??null}:null};};
+export const listStudentResults=async(identity:JwtPayload|undefined)=>{const ctx=await studentActor(identity),rows:any[]=await AcademicResult.find(studentResultFilter(ctx)).sort({publishedAt:-1}).read('primary'),items=[];for(const row of rows)items.push(await studentDTO(row));return{items,total:items.length};};
+export const getStudentResult=async(identity:JwtPayload|undefined,id:unknown)=>{const ctx=await studentActor(identity),row:any=await AcademicResult.findOne({...studentResultFilter(ctx),_id:objectIdField(id,'result ID')}).read('primary');if(!row)throw unavailable();return studentDTO(row);};
 export const ensureAcademicResultIndexes=()=>AcademicResult.createIndexes();

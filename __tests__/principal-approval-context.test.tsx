@@ -349,6 +349,7 @@ test('Principal navigator retains one stack with unique existing screens and no 
     'SafetyOverview',
     'SafetyDetail',
     'AssignTeacher',
+    'Results',
     'ResultModeration',
   ]);
   expect(new Set(names).size).toBe(names.length);
@@ -395,4 +396,10 @@ test('typed academic results use the marks moderation workflow', async () => {
   expect(mockNavigation.navigate).toHaveBeenCalledWith('ResultModeration', {
     approvalId: 'result-1',
   });
+});
+
+test('Approvals exposes the approved result return queue through the existing stack',async()=>{
+  const tree=await mount();await act(async()=>button(tree,'Open approvals').props.onPress());
+  await act(async()=>button(tree,'Results / Awaiting Publication').props.onPress());
+  expect(mockNavigation.navigate).toHaveBeenCalledWith('Results');
 });

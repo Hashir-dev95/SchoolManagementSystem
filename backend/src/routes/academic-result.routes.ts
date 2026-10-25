@@ -4,7 +4,7 @@ import {requireRole} from '../middleware/rbac.middleware';
 import {RequestContractError} from '../utils/request-validation';
 import {ApprovalAccessError} from '../services/approval-authority.policy';
 import {createTeacherResult,getPrincipalResult,getStudentResult,getTeacherResult,listStudentResults,listTeacherResults,
-  moderateResult,mutateTeacherResult,publishResult} from '../services/academic-result.service';
+  moderateResult,mutateTeacherResult,publishResult,listPrincipalResults} from '../services/academic-result.service';
 
 const token=(request:AuthenticatedRequest)=>request.headers.authorization!.slice(7);
 const handle=(action:(request:AuthenticatedRequest)=>Promise<unknown>)=>async(request:AuthenticatedRequest,response:Response)=>{try{
@@ -18,6 +18,7 @@ teacherResultRouter.get('/:resultId',handle(request=>{if(Object.keys(request.que
 teacherResultRouter.post('/:resultId',handle(request=>mutateTeacherResult(request.user,token(request),request.params.resultId,request.body)));
 
 export const principalResultRouter=Router();principalResultRouter.use(authenticateToken,requireRole('principal'));
+principalResultRouter.get('/',handle(request=>listPrincipalResults(request.user,request.query)));
 principalResultRouter.get('/:approvalId',handle(request=>{if(Object.keys(request.query).length)throw new RequestContractError(400,'Unsupported query fields');return getPrincipalResult(request.user,request.params.approvalId);}));
 principalResultRouter.post('/:approvalId/moderate',handle(request=>moderateResult(request.user,token(request),request.params.approvalId,request.body)));
 principalResultRouter.post('/:approvalId/publish',handle(request=>publishResult(request.user,token(request),request.params.approvalId,request.body)));

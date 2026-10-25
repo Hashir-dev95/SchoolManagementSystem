@@ -1,0 +1,1030 @@
+✖ opening a session creates no marks and returns exact private-safe roster keys (8302.0867ms)
+✖ concurrent lazy opening resolves exactly one concrete occurrence session (12.3894ms)
+✖ same weekly definition on another date has a different session identity (0.3327ms)
+✖ pending queue is workflow only and performs no attendance writes (0.2561ms)
+✖ partial draft retains all missing marks as unmarked; retry never manufactures absences (0.3661ms)
+✖ incomplete submit rejects without records or audit or automatic absences (0.2149ms)
+✖ draft can explicitly clear a mark; unmarked is represented by no record (0.2231ms)
+✖ complete explicit finalization is immutable and replay-safe (0.2161ms)
+✖ concurrent same-key submits persist one transition and audit (0.3074ms)
+✖ concurrent distinct submissions have one winner and a truthful conflict (0.2834ms)
+✖ changed payload under reused operation ID conflicts (0.2663ms)
+✖ later intentional draft uses new revision and operation identity (0.2004ms)
+✖ another Teacher in the same assigned tuple cannot access original responsibility (0.15ms)
+✖ foreign Teacher and guessed session IDs are concealed (0.1416ms)
+✖ existing same-branch other-class and foreign student IDs cannot be injected (0.1424ms)
+✖ substitute authority is occurrence-specific and does not grant general roster access (0.1426ms)
+✖ roster movement creates review conflict without changing attendance (0.129ms)
+✖ new trusted enrollment invalidates the roster fingerprint (0.1209ms)
+✖ stale revision cannot overwrite a newer draft (0.1204ms)
+✖ empty roster does not generate absence records and cannot finalize (0.1236ms)
+✖ school-date rollover does not auto-mark or auto-submit (0.1346ms)
+✖ future occurrence cannot create attendance and draft schedules remain hidden (0.1556ms)
+✖ cross-product subject/section responsibility is denied by shared occurrence resolver (0.1533ms)
+✖ branch change after initial authorization causes zero attendance write (0.1184ms)
+✖ inactive Teacher after initial authorization causes zero attendance write (0.1172ms)
+✖ inactive Branch after initial authorization causes zero attendance write (0.1178ms)
+✖ attendance view permission removal after initial authorization causes zero attendance write (0.1174ms)
+✖ role change after initial authorization causes zero attendance write (0.2207ms)
+✖ assignment revoke after initial authorization causes zero attendance write (0.1321ms)
+✖ version retirement after initial authorization causes zero attendance write (0.1204ms)
+✖ new winning revision after initial authorization causes zero attendance write (1.5558ms)
+✖ inactive class after initial authorization causes zero attendance write (0.1525ms)
+✖ inactive section after initial authorization causes zero attendance write (0.1251ms)
+✖ inactive subject after initial authorization causes zero attendance write (0.1253ms)
+✖ session revoke after initial authorization causes zero attendance write (0.1238ms)
+✖ permission removal after initial authorization causes zero attendance write (0.1269ms)
+✖ substitute withdrawal before final persistence causes zero attendance writes (0.1359ms)
+✖ permission invalidation after staging domain writes rolls back records, audit and fences (0.1175ms)
+✖ roster change at final persistence boundary is rejected (0.167ms)
+✖ malformed IDs, unknown fields and invalid statuses are sanitized and write nothing (0.1178ms)
+✖ actual unique indexes protect occurrence, row and operation identities (0.1234ms)
+✖ foreign timetable occurrence is concealed even with valid IDs (0.1232ms)
+✖ same operation identity from separate actors cannot expose or deduplicate another actor audit (0.1647ms)
+✖ real concurrent student movement is fenced until the valid attendance write commits (0.1267ms)
+✖ real concurrent timetable retirement waits for fenced attendance commit (0.1176ms)
+✖ three explicit draft marks out of thirty never turn the other twenty-seven into absences (0.1732ms)
+✖ Teacher view and manage permissions never broaden Principal or Super Admin attendance authority (0.132ms)
+✖ Teacher period attendance does not reinterpret or modify legacy daily summaries (0.1379ms)
+✖ Principal cannot reach Teacher attendance even with mistakenly granted operational permissions (0.1184ms)
+✖ submitted history pins the old version after an approved replacement; draft history stays operational (0.1554ms)
+✖ historical substitute read is record-specific and explicit substitute revocation still denies it (0.3296ms)
+ℹ tests 51
+ℹ suites 0
+ℹ pass 0
+ℹ fail 51
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 14462.4752
+
+✖ failing tests:
+
+test at backend\tests\teacher-attendance.security.test.ts:2:12203
+✖ opening a session creates no marks and returns exact private-safe roster keys (8302.0867ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:12969
+✖ concurrent lazy opening resolves exactly one concrete occurrence session (12.3894ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:13395
+✖ same weekly definition on another date has a different session identity (0.3327ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:13713
+✖ pending queue is workflow only and performs no attendance writes (0.2561ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:14299
+✖ partial draft retains all missing marks as unmarked; retry never manufactures absences (0.3661ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:15089
+✖ incomplete submit rejects without records or audit or automatic absences (0.2149ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:15438
+✖ draft can explicitly clear a mark; unmarked is represented by no record (0.2231ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:16045
+✖ complete explicit finalization is immutable and replay-safe (0.2161ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:16737
+✖ concurrent same-key submits persist one transition and audit (0.3074ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:17235
+✖ concurrent distinct submissions have one winner and a truthful conflict (0.2834ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:17681
+✖ changed payload under reused operation ID conflicts (0.2663ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:18015
+✖ later intentional draft uses new revision and operation identity (0.2004ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:18488
+✖ another Teacher in the same assigned tuple cannot access original responsibility (0.15ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:18740
+✖ foreign Teacher and guessed session IDs are concealed (0.1416ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:19078
+✖ existing same-branch other-class and foreign student IDs cannot be injected (0.1424ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:19781
+✖ substitute authority is occurrence-specific and does not grant general roster access (0.1426ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:20566
+✖ roster movement creates review conflict without changing attendance (0.129ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:21041
+✖ new trusted enrollment invalidates the roster fingerprint (0.1209ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:21525
+✖ stale revision cannot overwrite a newer draft (0.1204ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:21912
+✖ empty roster does not generate absence records and cannot finalize (0.1236ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:22259
+✖ school-date rollover does not auto-mark or auto-submit (0.1346ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:22564
+✖ future occurrence cannot create attendance and draft schedules remain hidden (0.1556ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:23008
+✖ cross-product subject/section responsibility is denied by shared occurrence resolver (0.1533ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:25039
+✖ branch change after initial authorization causes zero attendance write (0.1184ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:25039
+✖ inactive Teacher after initial authorization causes zero attendance write (0.1172ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:25039
+✖ inactive Branch after initial authorization causes zero attendance write (0.1178ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:25039
+✖ attendance view permission removal after initial authorization causes zero attendance write (0.1174ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:25039
+✖ role change after initial authorization causes zero attendance write (0.2207ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:25039
+✖ assignment revoke after initial authorization causes zero attendance write (0.1321ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:25039
+✖ version retirement after initial authorization causes zero attendance write (0.1204ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:25039
+✖ new winning revision after initial authorization causes zero attendance write (1.5558ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:25039
+✖ inactive class after initial authorization causes zero attendance write (0.1525ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:25039
+✖ inactive section after initial authorization causes zero attendance write (0.1251ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:25039
+✖ inactive subject after initial authorization causes zero attendance write (0.1253ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:25039
+✖ session revoke after initial authorization causes zero attendance write (0.1238ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:25039
+✖ permission removal after initial authorization causes zero attendance write (0.1269ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:25564
+✖ substitute withdrawal before final persistence causes zero attendance writes (0.1359ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:26184
+✖ permission invalidation after staging domain writes rolls back records, audit and fences (0.1175ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:27046
+✖ roster change at final persistence boundary is rejected (0.167ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:27642
+✖ malformed IDs, unknown fields and invalid statuses are sanitized and write nothing (0.1178ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:28394
+✖ actual unique indexes protect occurrence, row and operation identities (0.1234ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:29080
+✖ foreign timetable occurrence is concealed even with valid IDs (0.1232ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:30387
+✖ same operation identity from separate actors cannot expose or deduplicate another actor audit (0.1647ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:30909
+✖ real concurrent student movement is fenced until the valid attendance write commits (0.1267ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:31843
+✖ real concurrent timetable retirement waits for fenced attendance commit (0.1176ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:32978
+✖ three explicit draft marks out of thirty never turn the other twenty-seven into absences (0.1732ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:33941
+✖ Teacher view and manage permissions never broaden Principal or Super Admin attendance authority (0.132ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:34819
+✖ Teacher period attendance does not reinterpret or modify legacy daily summaries (0.1379ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:35579
+✖ Principal cannot reach Teacher attendance even with mistakenly granted operational permissions (0.1184ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:36042
+✖ submitted history pins the old version after an approved replacement; draft history stays operational (0.1554ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }
+
+test at backend\tests\teacher-attendance.security.test.ts:2:37691
+✖ historical substitute read is record-specific and explicit substitute revocation still denies it (0.3296ms)
+  Error [MongoServerError]: available disk space of 504180736 bytes is less than required minimum of 524288000
+      at Connection.sendCommand (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:563:17)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Connection.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\cmap\connection.ts:636:22)
+      at async Server.command (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\sdam\server.ts:351:21)
+      at async executeOperationWithRetries (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:289:24)
+      at async executeOperation (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+      at async Collection.createIndex (D:\SchoolManagementSystem\backend\node_modules\mongodb\src\collection.ts:640:21) {
+    errorLabelSet: Set(0) {},
+    errorResponse: { ok: 0, errmsg: 'available disk space of 504180736 bytes is less than required minimum of 524288000', code: 14031, codeName: 'OutOfDiskSpace', '$clusterTime': { clusterTime: [Object], signature: [Object] }, operationTime: { high: 1792868128, low: 7, unsigned: true } },
+    ok: 0,
+    code: 14031,
+    codeName: 'OutOfDiskSpace',
+    '$clusterTime': { clusterTime: { high: 1792868129, low: 5, unsigned: true }, signature: { hash: [Object], keyId: 0 } },
+    operationTime: { high: 1792868128, low: 7, unsigned: true }
+  }

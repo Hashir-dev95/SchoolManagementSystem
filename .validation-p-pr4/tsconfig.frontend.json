@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.json",
+  "include": [
+    "../src/screens/principal/PrincipalResultModerationScreen.tsx",
+    "../src/screens/principal/PrincipalResultsScreen.tsx",
+    "../src/services/principal/resultModerationService.ts",
+    "../src/navigation/PrincipalNavigator.tsx",
+    "../__tests__/principal-results.test.tsx",
+    "../__tests__/marks.test.tsx",
+    "../__tests__/result-service.test.ts"
+  ],
+  "exclude": [
+    "../backend",
+    "../node_modules"
+  ]
+}

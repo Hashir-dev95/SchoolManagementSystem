@@ -1,0 +1,44 @@
+✔ mapping auth and role policy are enforced by API and service permissions (10889.7342ms)
+✔ Principal creates exact period/Class/Subject identity; DTO exposes safe summaries only (472.5181ms)
+✔ foreign Branch/Class/Subject/period and injected authority cannot establish a mapping (676.5564ms)
+✔ Super Admin can manage an explicit target Branch without widening Principal scope (470.1256ms)
+✔ inactive Class, Subject and non-active period reject new mappings (586.3522ms)
+✔ duplicate and concurrent duplicate mapping have one identity and deterministic 409 (498.4121ms)
+✔ database unique index also rejects duplicate writers without the service fence (487.1365ms)
+✔ safe deactivation retains history, stale revision fails, reactivation reuses identity (666.7023ms)
+✔ options exclude foreign, inactive and previously mapped Subjects; inactive rows use reactivation (652.9783ms)
+✔ new TeacherAssignment requires exact active mapping; legacy assignment reads do not (703.3955ms)
+✔ mapping for another Class or foreign Branch is insufficient (695.4223ms)
+✔ active mapping blocks parent Subject deactivation (500.777ms)
+✔ new timetable requires mapping even for a legacy assignment; approval rechecks it (712.5742ms)
+✔ approved timetable history remains readable without retroactive mapping requirements (745.9213ms)
+✔ published Syllabus blocks deactivation; retired history remains readable (882.0279ms)
+✔ draft syllabus update/publication rechecks inactive mapping; retirement remains available (583.4764ms)
+✔ current/future approved timetable independently guards mapping after assignment revocation (702.6569ms)
+✔ legacy Class without authoritative period cannot receive new mapping or assignment (508.9066ms)
+✔ two Node processes: mapping vs assignment, assignment first (676.8903ms)
+✔ two Node processes: mapping vs assignment, deactivation first (567.5825ms)
+✔ current Principal Branch, inactive account and changed role cannot retain curriculum authority (769.7972ms)
+✔ legacy published Syllabus remains readable without a mapping or period migration (464.4571ms)
+✔ two Node processes: Syllabus publication vs mapping, publication first (595.1962ms)
+✔ two Node processes: Syllabus publication vs mapping, deactivation first (538.0529ms)
+✔ guessed mapping identities cannot cross Branch, Class or period lifecycle boundaries (672.382ms)
+✔ parent lifecycle blocks all new operational writes while mapping history remains visible (850.0078ms)
+✔ legacy assignments expose revoke only; extension, copying and replacement cannot bypass mapping (522.7213ms)
+✔ imported legacy draft timetable and syllabus cannot acquire current authority without mapping (627.3532ms)
+✔ two Node processes: timetable create vs mapping, timetable first (625.9774ms)
+✔ two Node processes: timetable create vs mapping, deactivation first (682.6675ms)
+✔ two Node processes: timetable approval vs mapping, timetable first (693.1782ms)
+✔ two Node processes: timetable approval vs mapping, deactivation first (695.3966ms)
+✔ two Node processes: Syllabus create vs mapping, syllabus first (639.3697ms)
+✔ two Node processes: Syllabus create vs mapping, deactivation first (613.4458ms)
+✔ two Node processes: Syllabus update vs mapping, syllabus first (628.2084ms)
+✔ two Node processes: Syllabus update vs mapping, deactivation first (720.5738ms)
+ℹ tests 36
+ℹ suites 0
+ℹ pass 36
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 37022.0209

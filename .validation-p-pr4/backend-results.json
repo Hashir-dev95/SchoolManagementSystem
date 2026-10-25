@@ -1,0 +1,65 @@
+[
+  {
+    "suite": "principal-commit-authority",
+    "exit": 0,
+    "pass": 70,
+    "fail": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "principal-authorization",
+    "exit": 0,
+    "pass": 50,
+    "fail": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "principal-write",
+    "exit": 0,
+    "pass": 53,
+    "fail": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "approval-authority",
+    "exit": 0,
+    "pass": 47,
+    "fail": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "student-admission",
+    "exit": 0,
+    "pass": 50,
+    "fail": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "student-enrollment",
+    "exit": 0,
+    "pass": 58,
+    "fail": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "academic-setup",
+    "exit": 0,
+    "pass": 57,
+    "fail": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "class-subject",
+    "exit": 0,
+    "pass": 36,
+    "fail": 0,
+    "skipped": 0
+  },
+  {
+    "suite": "teacher-assignment-admin",
+    "exit": 0,
+    "pass": 20,
+    "fail": 0,
+    "skipped": 0
+  }
+]

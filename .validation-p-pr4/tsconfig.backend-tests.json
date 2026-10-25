@@ -1,0 +1,14 @@
+{
+  "extends": "../backend/tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true
+  },
+  "include": [
+    "../backend/tests/academic-result.security.test.ts"
+  ],
+  "exclude": [
+    "../node_modules",
+    "../backend/node_modules"
+  ]
+}
