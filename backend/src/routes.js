@@ -24,6 +24,7 @@ const {
 } = require('./invoiceStatus');
 const { lockInvoice, invoiceReservedCents } = require('./invoiceReservations');
 const { createFinancePayrollRouter, initializeFinancePayrollIndexes } = require('./financePayrollRoutes');
+const { createFinanceWorkspaceRouter, initializeFinanceWorkspaceIndexes } = require('./financeWorkspaceRoutes');
 const {
   createChatRouter,
   initializeChatIndexes,
@@ -145,6 +146,7 @@ router.use('/chat', createChatRouter());
 router.use('/applications', applicationReviewRoutes);
 router.use('/finance', requireFinanceContext);
 router.use('/finance/payroll', createFinancePayrollRouter());
+router.use('/finance', createFinanceWorkspaceRouter());
 router.use(
   '/finance/me/notifications',
   createUserNotificationRouter('finance'),
@@ -735,11 +737,15 @@ router.get('/finance/invoices', async (req, res, next) => {
       });
     }
     const query = String(req.query.q || '').trim();
+    const grade = String(req.query.grade || '').trim();
+    const gradeValues = /^\d+$/.test(grade) ? [grade, Number(grade)] : [grade];
     if (query.length > 100) {
       return res
         .status(400)
         .json({ success: false, error: 'Search query is too long.' });
     }
+    if (grade.length > 40)
+      return res.status(400).json({ success: false, error: 'Grade filter is too long.' });
     const match = {
       branchId: req.financeContext.branchFilter,
       ...financeInvoiceStatusMatch(status),
@@ -806,6 +812,7 @@ router.get('/finance/invoices', async (req, res, next) => {
             as: 'studentRecord',
           },
         },
+        ...(grade ? [{ $match: { 'studentRecord.grade': { $in: gradeValues } } }] : []),
         ...(pattern
           ? [
               {
@@ -836,6 +843,8 @@ router.get('/finance/invoices', async (req, res, next) => {
             student: {
               $ifNull: ['$studentRecord.fullName', '$studentRecord.name'],
             },
+            grade: '$studentRecord.grade',
+            section: '$studentRecord.section',
           },
         },
         { $project: { studentRecord: 0, methodPayments: 0 } },
@@ -1954,6 +1963,7 @@ router.initializeFinanceIndexes = async function initializeFinanceIndexes() {
     ensurePaymentReferenceIndex(payments),
   ]);
   await initializeFinancePayrollIndexes();
+  await initializeFinanceWorkspaceIndexes();
 };
 router.initializeChatIndexes = initializeChatIndexes;
 router.setChatRealtimePublisher = setChatRealtimePublisher;

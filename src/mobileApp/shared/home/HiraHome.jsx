@@ -149,7 +149,7 @@ export default function HiraHome({
   }, [float, reducedMotion]);
   const content = copy[role];
   const profileName =
-    records?.profile?.fullName || user?.fullName || user?.name;
+    records?.profile?.fullName || records?.profile?.name || user?.fullName || user?.name;
   const greeting =
     role === 'Parent'
       ? `Hello${
@@ -176,6 +176,171 @@ export default function HiraHome({
       )}%`
     : '—';
   const result = list(records?.results)[0];
+  if (role === 'Student') {
+    const name = profileName?.split(' ')[0] || 'there';
+    const studentProfile = records?.profile || {};
+    const profileInitials = String(profileName || 'Student')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map(part => part[0])
+      .join('')
+      .toUpperCase();
+    const incompleteHomework = homework.find(item => {
+      const status = String(item.latestSubmission?.status || item.status || '').toLowerCase();
+      return !['submitted', 'reviewed', 'graded', 'complete', 'completed'].includes(status);
+    });
+    const nextHomework = incompleteHomework || homework[0];
+    const resultLabel = result?.grade || result?.score || '—';
+    const shortcuts = [
+      { label: 'Timetable', icon: 'calendar', tint: '#E8EDFF' },
+      { label: 'Homework', icon: 'homework', tint: '#FFF0D8' },
+      { label: 'Results', icon: 'graduation', tint: '#F1E9FF' },
+      { label: 'Attendance', icon: 'calendar-check', tint: '#E5F4EB' },
+    ];
+    return (
+      <ScrollView
+        contentContainerStyle={studentStyles.page}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={load} tintColor={t.primary} />
+        }
+      >
+        <View style={studentStyles.topline}>
+          <View style={studentStyles.greetingCopy}>
+            <Text style={studentStyles.eyebrow}>YOUR LEARNING SPACE</Text>
+            <Text style={studentStyles.greeting}>Hey, {name}!</Text>
+            <Text style={studentStyles.subtitle}>Ready to make today count?</Text>
+          </View>
+          <View style={studentStyles.avatar}>
+            <PageIcon name="graduation" size={26} color="#FFFFFF" />
+          </View>
+        </View>
+        {error ? (
+          <View style={s.error}>
+            <Text style={s.errorText}>{error}</Text>
+            <Action onPress={load}>Try again</Action>
+          </View>
+        ) : null}
+        <View style={studentStyles.hero}>
+          <View style={studentStyles.heroOrb} />
+          <Text style={studentStyles.heroEyebrow}>ONE STEP AT A TIME</Text>
+          <Text style={studentStyles.heroTitle}>Big goals start with{ '\n' }small wins.</Text>
+          <Text style={studentStyles.heroDescription}>
+            {records?.profile?.grade
+              ? `${records.profile.grade}${records.profile.section ? ` · ${records.profile.section}` : ''} is yours to shine in.`
+              : 'Your classes, your progress, your next adventure.'}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open my timetable"
+            onPress={() => onNavigate('Timetable')}
+            style={({ pressed }) => [studentStyles.heroButton, pressed && { opacity: 0.82 }]}
+          >
+            <Text style={studentStyles.heroButtonText}>View my day</Text>
+            <PageIcon name="chevron" size={15} color="#34366D" />
+          </Pressable>
+          <PageIcon name="star" size={25} color="#FFE39A" style={studentStyles.heroStar} />
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open student profile"
+          onPress={() => onNavigate('Profile')}
+          style={({ pressed }) => [studentStyles.profileCard, pressed && { opacity: 0.88 }]}
+        >
+          <View style={studentStyles.profileTop}>
+            <View style={studentStyles.profileAvatar}>
+              <Text style={studentStyles.profileInitials}>{profileInitials}</Text>
+            </View>
+            <View style={studentStyles.profileCopy}>
+              <Text style={studentStyles.profileEyebrow}>MY STUDENT PROFILE</Text>
+              <Text numberOfLines={1} style={studentStyles.profileName}>{profileName || 'Student'}</Text>
+              <Text style={studentStyles.profileMeta}>
+                {studentProfile.grade
+                  ? `${studentProfile.grade}${studentProfile.section ? ` · Section ${studentProfile.section}` : ''}`
+                  : 'Your school profile'}
+              </Text>
+            </View>
+            <View style={studentStyles.profileArrow}>
+              <PageIcon name="chevron" size={15} color="#555CC0" />
+            </View>
+          </View>
+          <View style={studentStyles.profileDivider} />
+          <View style={studentStyles.profileDetails}>
+            {[
+              ['STUDENT ID', studentProfile.id],
+              ['CLASS', studentProfile.classId || studentProfile.grade],
+              ['SECTION', studentProfile.section],
+              ['STATUS', studentProfile.status],
+            ].map(([label, value]) => (
+              <View key={label} style={studentStyles.profileDetail}>
+                <Text style={studentStyles.detailLabel}>{label}</Text>
+                <Text numberOfLines={1} style={studentStyles.detailValue}>{value || '—'}</Text>
+              </View>
+            ))}
+          </View>
+          <Text style={studentStyles.profileFooter}>View full profile</Text>
+        </Pressable>
+        <View style={studentStyles.stats}>
+          <Pressable accessibilityRole="button" onPress={() => onNavigate('Attendance')} style={studentStyles.statCard}>
+            <View style={[studentStyles.statIcon, { backgroundColor: '#E5F4EB' }]}><PageIcon name="calendar-check" size={19} /></View>
+            <Text style={studentStyles.statValue}>{records ? attendancePercent : '—'}</Text>
+            <Text style={studentStyles.statLabel}>Attendance</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => onNavigate('Homework')} style={studentStyles.statCard}>
+            <View style={[studentStyles.statIcon, { backgroundColor: '#FFF0D8' }]}><PageIcon name="homework" size={19} /></View>
+            <Text style={studentStyles.statValue}>{records ? String(homework.length) : '—'}</Text>
+            <Text style={studentStyles.statLabel}>Assignments</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => onNavigate('Results')} style={studentStyles.statCard}>
+            <View style={[studentStyles.statIcon, { backgroundColor: '#F1E9FF' }]}><PageIcon name="graduation" size={19} /></View>
+            <Text style={studentStyles.statValue}>{resultLabel}</Text>
+            <Text style={studentStyles.statLabel}>Latest result</Text>
+          </Pressable>
+        </View>
+        <View style={studentStyles.sectionHeading}>
+          <Text style={studentStyles.sectionTitle}>Your next step</Text>
+          <Pressable accessibilityRole="button" onPress={() => onNavigate('Homework')}>
+            <Text style={studentStyles.seeAll}>All homework</Text>
+          </Pressable>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={nextHomework ? `Open ${nextHomework.title || nextHomework.subject || 'homework'}` : 'Open homework'}
+          onPress={() => onNavigate('Homework')}
+          style={({ pressed }) => [studentStyles.homeworkCard, pressed && { opacity: 0.85 }]}
+        >
+          <View style={studentStyles.homeworkIcon}><PageIcon name="homework" size={23} /></View>
+          <View style={studentStyles.homeworkCopy}>
+            <Text style={studentStyles.homeworkEyebrow}>{nextHomework ? nextHomework.subject || 'ASSIGNMENT' : 'READY WHEN YOU ARE'}</Text>
+            <Text style={studentStyles.homeworkTitle}>{nextHomework ? nextHomework.title || nextHomework.subject || 'Your assignment' : 'No assignments waiting'}</Text>
+            <Text style={studentStyles.homeworkDetail}>
+              {nextHomework
+                ? nextHomework.dueDate ? `Due ${nextHomework.dueDate}` : 'Pick up where you left off'
+                : 'Take a little time to explore your classes.'}
+            </Text>
+          </View>
+          <PageIcon name="chevron" size={16} color={t.primary} />
+        </Pressable>
+        <Text style={studentStyles.sectionTitle}>Quick links</Text>
+        <View style={studentStyles.shortcuts}>
+          {shortcuts.map(item => (
+            <Pressable
+              key={item.label}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${item.label}`}
+              onPress={() => onNavigate(item.label)}
+              style={({ pressed }) => [studentStyles.shortcut, pressed && { opacity: 0.8 }]}
+            >
+              <View style={[studentStyles.shortcutIcon, { backgroundColor: item.tint }]}><PageIcon name={item.icon} size={21} /></View>
+              <Text style={studentStyles.shortcutLabel}>{item.label}</Text>
+              <PageIcon name="chevron" size={13} color="#989CB2" />
+            </Pressable>
+          ))}
+        </View>
+        {previewOnly ? <Text style={s.preview}>Design preview · sample records</Text> : null}
+      </ScrollView>
+    );
+  }
   return (
     <ScrollView
       contentContainerStyle={s.content}
@@ -567,4 +732,55 @@ const s = StyleSheet.create({
   },
   errorText: { color: '#A13B42', fontSize: 13, lineHeight: 20 },
   preview: { color: t.muted, fontSize: 10, textAlign: 'center', marginTop: 18 },
+});
+
+const studentStyles = StyleSheet.create({
+  page: { paddingHorizontal: 18, paddingTop: 20, paddingBottom: 30, gap: 18, backgroundColor: '#F8F8FC' },
+  topline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  greetingCopy: { flex: 1 },
+  eyebrow: { color: '#777BA0', fontSize: 9, fontWeight: '800', letterSpacing: 1.6 },
+  greeting: { color: '#282C5D', fontSize: 27, lineHeight: 33, fontWeight: '900', marginTop: 4 },
+  subtitle: { color: '#7E8198', fontSize: 13, marginTop: 3 },
+  avatar: { width: 48, height: 48, borderRadius: 17, backgroundColor: '#6268C8', alignItems: 'center', justifyContent: 'center' },
+  hero: { minHeight: 218, borderRadius: 25, padding: 22, overflow: 'hidden', backgroundColor: '#343875', justifyContent: 'center' },
+  heroOrb: { position: 'absolute', width: 200, height: 200, borderRadius: 100, right: -57, top: -68, backgroundColor: '#FFFFFF12', borderWidth: 1, borderColor: '#FFFFFF20' },
+  heroEyebrow: { color: '#C9CDFE', fontSize: 9, fontWeight: '800', letterSpacing: 1.6 },
+  heroTitle: { color: '#FFFFFF', fontSize: 25, lineHeight: 31, fontWeight: '900', marginTop: 9 },
+  heroDescription: { color: '#D7D9F0', fontSize: 12, lineHeight: 18, marginTop: 7, maxWidth: '82%' },
+  heroButton: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FFE6A6', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, marginTop: 15 },
+  heroButtonText: { color: '#34366D', fontSize: 12, fontWeight: '800' },
+  heroStar: { position: 'absolute', right: 27, bottom: 29 },
+  profileCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E6E7F3', borderRadius: 21, padding: 15, shadowColor: '#35396C', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.07, shadowRadius: 12, elevation: 2 },
+  profileTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  profileAvatar: { width: 58, height: 58, borderRadius: 19, backgroundColor: '#555CC0', borderWidth: 4, borderColor: '#ECECFF', alignItems: 'center', justifyContent: 'center' },
+  profileInitials: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
+  profileCopy: { flex: 1, minWidth: 0 },
+  profileEyebrow: { color: '#777BA0', fontSize: 8, fontWeight: '900', letterSpacing: 1.4 },
+  profileName: { color: '#292D59', fontSize: 16, fontWeight: '900', marginTop: 4 },
+  profileMeta: { color: '#747891', fontSize: 11, marginTop: 4 },
+  profileArrow: { width: 31, height: 31, borderRadius: 11, backgroundColor: '#F0F0FF', alignItems: 'center', justifyContent: 'center' },
+  profileDivider: { height: 1, backgroundColor: '#EFF0F6', marginVertical: 14 },
+  profileDetails: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 14 },
+  profileDetail: { width: '50%', paddingRight: 8 },
+  detailLabel: { color: '#9295AA', fontSize: 8, fontWeight: '800', letterSpacing: 1 },
+  detailValue: { color: '#34385F', fontSize: 12, fontWeight: '800', marginTop: 4 },
+  profileFooter: { color: '#555CC0', fontSize: 10, fontWeight: '800', textAlign: 'right', marginTop: 13 },
+  stats: { flexDirection: 'row', gap: 9 },
+  statCard: { flex: 1, minWidth: 0, minHeight: 117, padding: 12, borderRadius: 19, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#ECECF4' },
+  statIcon: { width: 31, height: 31, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  statValue: { color: '#30345F', fontSize: 18, fontWeight: '900', marginTop: 9 },
+  statLabel: { color: '#818399', fontSize: 10, marginTop: 3 },
+  sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  sectionTitle: { color: '#2B2F59', fontSize: 17, fontWeight: '900' },
+  seeAll: { color: '#555CC0', fontSize: 11, fontWeight: '800' },
+  homeworkCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#ECECF4', borderRadius: 19, padding: 14 },
+  homeworkIcon: { width: 43, height: 43, borderRadius: 14, backgroundColor: '#FFF0D8', alignItems: 'center', justifyContent: 'center' },
+  homeworkCopy: { flex: 1, minWidth: 0 },
+  homeworkEyebrow: { color: '#8889A2', fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+  homeworkTitle: { color: '#30345F', fontSize: 14, fontWeight: '800', marginTop: 4 },
+  homeworkDetail: { color: '#88899C', fontSize: 11, marginTop: 4 },
+  shortcuts: { gap: 9 },
+  shortcut: { flexDirection: 'row', alignItems: 'center', gap: 11, minHeight: 58, paddingHorizontal: 12, borderRadius: 16, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#ECECF4' },
+  shortcutIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  shortcutLabel: { color: '#3D416A', fontSize: 12, fontWeight: '700', flex: 1 },
 });

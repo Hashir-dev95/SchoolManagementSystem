@@ -44,6 +44,7 @@ const colors = {
 function Section({ title, activePage, children, empty, error, onRetry }) {
   const sectionPage = {
     Profile: 'Profile',
+    'Student details': 'Profile',
     Timetable: 'Timetable',
     Attendance: 'Attendance',
     Homework: 'Homework',
@@ -102,6 +103,66 @@ function Record({ title, lines = [], status, feedback }) {
           <Text style={styles.feedbackText}>{feedback}</Text>
         </View>
       ) : null}
+    </View>
+  );
+}
+
+function StudentProfileCard({ profile }) {
+  const name = profile?.fullName || profile?.name || 'Student';
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(part => part[0])
+    .join('')
+    .toUpperCase();
+  const details = [
+    ['Student ID', profile?.id],
+    ['Grade', profile?.grade],
+    ['Section', profile?.section],
+    ['Class', profile?.classId],
+    ['Status', profile?.status],
+  ].filter(([, value]) => value != null && String(value).trim());
+  return (
+    <View style={styles.profileCard}>
+      <View style={styles.profileBanner}>
+        <View style={styles.profileBannerOrb} />
+        <View style={styles.profileIdentity}>
+          <View style={styles.profileAvatar}>
+            <Text style={styles.profileInitials}>{initials || 'S'}</Text>
+          </View>
+          <View style={styles.profileIdentityCopy}>
+            <Text style={styles.profileEyebrow}>STUDENT PROFILE</Text>
+            <Text style={styles.profileName}>{name}</Text>
+            <Text style={styles.profileClass}>
+              {[profile?.grade, profile?.section && `Section ${profile.section}`]
+                .filter(Boolean)
+                .join('  ·  ') || 'School learner'}
+            </Text>
+          </View>
+        </View>
+        {profile?.status ? (
+          <View style={styles.profileStatus}>
+            <View style={styles.profileStatusDot} />
+            <Text style={styles.profileStatusText}>{String(profile.status)}</Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={styles.profileDetails}>
+        {details.length ? details.map(([label, value]) => (
+          <View key={label} style={styles.profileDetail}>
+            <Text style={styles.profileDetailLabel}>{label}</Text>
+            <Text style={styles.profileDetailValue}>{String(value)}</Text>
+          </View>
+        )) : (
+          <Text style={styles.empty}>Your school has not added profile details yet.</Text>
+        )}
+      </View>
+      <View style={styles.profileNote}>
+        <Text style={styles.profileNoteText}>
+          These details come from your school record. Contact your school if anything needs to be corrected.
+        </Text>
+      </View>
     </View>
   );
 }
@@ -434,8 +495,12 @@ export default function StudentDashboard({
           )
         }
       >
-        <Text style={styles.eyebrow}>STUDENT PORTAL</Text>
-        <Text style={styles.heading}>{profileName}</Text>
+        <Text style={styles.eyebrow}>
+          {page === 'Profile' ? 'YOUR SCHOOL IDENTITY' : 'STUDENT PORTAL'}
+        </Text>
+        <Text style={styles.heading}>
+          {page === 'Profile' ? 'My profile' : profileName}
+        </Text>
         {page === 'Homework' ? (
           <SchoolPageHero
             title="Practice for a brighter tomorrow"
@@ -451,7 +516,9 @@ export default function StudentDashboard({
           />
         ) : null}
         <Text style={styles.subtitle}>
-          {records.profile
+          {page === 'Profile'
+            ? 'Your student details, all in one place.'
+            : records.profile
             ? [
                 records.profile.id,
                 records.profile.grade,
@@ -534,23 +601,12 @@ export default function StudentDashboard({
           <>
             <Section
               activePage={page}
-              title="Profile"
+              title={page === 'Profile' ? 'Student details' : 'Profile'}
               empty="Your Student profile is not available."
               error={resourceErrors.profile}
               onRetry={() => loadDashboard(dateRange)}
             >
-              {records.profile ? (
-                <Record
-                  title={records.profile.fullName || records.profile.name || 'Student'}
-                  lines={[
-                    records.profile.id && `Student ID: ${records.profile.id}`,
-                    records.profile.grade && `Grade: ${records.profile.grade}`,
-                    records.profile.section && `Section: ${records.profile.section}`,
-                    records.profile.classId && `Class: ${records.profile.classId}`,
-                    records.profile.status && `Status: ${records.profile.status}`,
-                  ].filter(Boolean)}
-                />
-              ) : null}
+              {records.profile ? <StudentProfileCard profile={records.profile} /> : null}
             </Section>
             <Section
               activePage={page}
@@ -982,6 +1038,25 @@ const styles = StyleSheet.create({
     marginTop: 25,
     marginBottom: 10,
   },
+  profileCard: { backgroundColor: '#FFFEFA', borderRadius: 23, overflow: 'hidden', borderWidth: 1, borderColor: colors.line, marginBottom: 14 },
+  profileBanner: { backgroundColor: '#414A9E', padding: 20, overflow: 'hidden' },
+  profileBannerOrb: { position: 'absolute', width: 170, height: 170, borderRadius: 85, right: -40, top: -88, backgroundColor: '#FFFFFF14', borderWidth: 1, borderColor: '#FFFFFF24' },
+  profileIdentity: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  profileAvatar: { width: 68, height: 68, borderRadius: 23, backgroundColor: '#F9E7B7', borderWidth: 4, borderColor: '#FFFFFF48', alignItems: 'center', justifyContent: 'center' },
+  profileInitials: { color: '#414A9E', fontSize: 23, fontWeight: '900' },
+  profileIdentityCopy: { flex: 1, minWidth: 0 },
+  profileEyebrow: { color: '#D8DCFF', fontSize: 9, fontWeight: '800', letterSpacing: 1.5 },
+  profileName: { color: '#FFFFFF', fontSize: 19, lineHeight: 24, fontWeight: '900', marginTop: 5 },
+  profileClass: { color: '#E0E2F8', fontSize: 12, marginTop: 4 },
+  profileStatus: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 16, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#FFFFFF1C', borderRadius: 20 },
+  profileStatusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#A8E2BF' },
+  profileStatusText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700', textTransform: 'capitalize' },
+  profileDetails: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 17, paddingTop: 8 },
+  profileDetail: { width: '50%', paddingVertical: 13, paddingRight: 8, borderBottomWidth: 1, borderBottomColor: '#F0EDE6' },
+  profileDetailLabel: { color: colors.muted, fontSize: 10, fontWeight: '700' },
+  profileDetailValue: { color: colors.ink, fontSize: 13, fontWeight: '800', marginTop: 5 },
+  profileNote: { margin: 15, marginTop: 10, backgroundColor: '#F1F2FF', borderRadius: 13, padding: 12 },
+  profileNoteText: { color: '#62678D', fontSize: 11, lineHeight: 17 },
   loading: {
     flexDirection: 'row',
     alignItems: 'center',

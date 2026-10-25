@@ -36,6 +36,7 @@ import ReferenceNotifications from '../shared/notifications/ReferenceNotificatio
 import RoleNavigationHub from '../navigation/RoleNavigationHub';
 import FeaturePage from '../features/FeaturePage';
 import TeacherApplicationsPage from '../TeacherApplicationsPage';
+import StudentFeesPage from '../roles/student/StudentFeesPage';
 import { features, staffFeatures } from '../features/featureScreens';
 import {
   theme as t,
@@ -504,6 +505,12 @@ export default function MobileApp({
           />
         ) : contentPage === 'Applications' && role === 'Teacher' ? (
           <TeacherApplicationsPage />
+        ) : role === 'Student' && contentPage === 'Student Fees' ? (
+          <StudentFeesPage
+            key={`student-fees-${user?.id || 'preview'}-${previewOnly ? 'preview' : 'live'}`}
+            previewOnly={previewOnly}
+            onNavigate={navigate}
+          />
         ) : contentPage === 'Teachers DLP' &&
           ['Teacher', 'Principal', 'Super Admin'].includes(role) ? (
           <RoleDashboard

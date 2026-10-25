@@ -9,4 +9,5 @@ module.exports = {
   transformIgnorePatterns: [
     'node_modules/(?!((@)?react-native|@react-native(-community)?|@react-navigation|@react-native-documents)/)',
   ],
+  testPathIgnorePatterns: ['/node_modules/', '/build/local-backups/'],
 };

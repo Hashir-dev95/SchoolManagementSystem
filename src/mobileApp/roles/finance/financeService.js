@@ -84,6 +84,19 @@ export const financeApi = {
   approveSalary: salaryId => request(`/finance/payroll/salaries/${encodeURIComponent(salaryId)}/approve`, { method: 'POST' }),
   recordSalaryPayout: (salaryId, payout) => request(`/finance/payroll/salaries/${encodeURIComponent(salaryId)}/payouts`, { method: 'POST', body: JSON.stringify(payout) }),
   getPayslip: salaryId => request(`/finance/payroll/salaries/${encodeURIComponent(salaryId)}/payslip`),
+  getExtraCharges: () => request('/finance/extra-charges'),
+  createExtraCharge: charge => request('/finance/extra-charges', { method: 'POST', body: JSON.stringify(charge) }),
+  applyExtraCharge: chargeId => request(`/finance/extra-charges/${encodeURIComponent(chargeId)}/apply`, { method: 'POST' }),
+  getExpenses: () => request('/finance/expenses'),
+  getWorkspace: () => request('/finance/workspace'),
+  getMonthlyReport: () => request('/finance/reports/monthly'),
+  createExpense: async (expense, bill) => {
+    if (!bill) return request('/finance/expenses', { method: 'POST', body: JSON.stringify(expense) });
+    const body = new FormData();
+    Object.entries(expense).forEach(([key, value]) => body.append(key, String(value ?? '')));
+    body.append('bill', { uri: bill.uri, name: bill.name, type: bill.type });
+    return request('/finance/expenses', { method: 'POST', body });
+  },
 };
 
 async function notificationRequest(path, options = {}) {

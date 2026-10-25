@@ -23,7 +23,7 @@ function createFinancePayrollRouter() {
       const data = await getDatabase().collection('users').find({
         branchId: req.financeContext.branchFilter,
         role: { $nin: ['student', 'parent'] }, status: { $ne: 'inactive' },
-      }, { projection: { password: 0, passwordHash: 0, sessions: 0 } }).limit(500).toArray();
+      }, { projection: { _id: 1, id: 1, fullName: 1, name: 1, role: 1, branchId: 1, status: 1 } }).limit(500).toArray();
       return res.json({ success: true, data });
     } catch (error) { return next(error); }
   });

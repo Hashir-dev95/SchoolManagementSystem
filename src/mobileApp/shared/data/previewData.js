@@ -82,6 +82,21 @@ export const studentPreview = {
       latestSubmission: { status: 'Not submitted' },
     },
   ],
+  fees: [
+    {
+      id: 'PREVIEW-FEE-01',
+      invoiceNumber: 'DEMO-2026-01',
+      description: 'October tuition',
+      amount: 12000,
+      currency: 'PKR',
+      dueDate: '2026-10-25',
+      status: 'partially_paid',
+      confirmedPaidAmount: 4000,
+      pendingAmount: 1000,
+      balanceDue: 8000,
+      availableBalance: 7000,
+    },
+  ],
   applications: [],
 };
 

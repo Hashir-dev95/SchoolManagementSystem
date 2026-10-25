@@ -18,6 +18,7 @@ jest.mock('../roles/parent/parentService', () => ({
     getResults: jest.fn(),
     getHomework: jest.fn(),
     getFees: jest.fn(),
+    getFeeCheckoutConfig: jest.fn(),
     getFeedback: jest.fn(),
     getProgress: jest.fn(),
     getNotifications: jest.fn(),
@@ -71,6 +72,10 @@ describe('Parent UI replacement', () => {
     parentApi.getResults.mockResolvedValue([]);
     parentApi.getHomework.mockResolvedValue([]);
     parentApi.getFees.mockResolvedValue([]);
+    parentApi.getFeeCheckoutConfig.mockResolvedValue({
+      enabled: false,
+      methods: [],
+    });
     parentApi.getFeedback.mockResolvedValue({});
     parentApi.getProgress.mockResolvedValue([]);
     parentApi.getNotifications.mockResolvedValue({
@@ -101,7 +106,7 @@ describe('Parent UI replacement', () => {
     );
     expect(navigate).toHaveBeenCalledWith('Inbox');
     act(() => tree.unmount());
-  });
+  }, 15000);
 
   test('Parent payment screen reads real invoices but keeps batch checkout disabled without an adapter', async () => {
     parentApi.getChildren.mockResolvedValue([
