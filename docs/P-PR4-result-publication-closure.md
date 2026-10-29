@@ -1,102 +1,143 @@
-# P-PR4 — Principal result moderation and publication
+# P-PR4 continuation and closure audit
 
-Workspace: D:\SchoolManagementSystem; branch: feture. Implementation and re-audit: 24–25 October 2026 (Asia/Karachi).
+Workspace: `D:\SchoolManagementSystem`; branch: `feture`. Completion pass: 25 October 2026 (Asia/Karachi).
 
 ## A. Verdict
 
-Final validation in progress. This draft is updated only after the required regression run completes.
+**P-PR4 COMPLETE — RESULT PUBLICATION WORKFLOW CLOSED**
 
-## B. Original root causes and reproduction
+## B. Existing P-PR4 state found
 
-The original Principal result router exposes only detail, moderation and publication by approval ID. The general approval inbox returns pending requests. Approval moves a result to moderated_approved and its linked approval to approved, so navigating away removes the only normal discovery path even though publication is still pending. No queue endpoint existed.
+This PC already contained the implementation in the tracked worktree before this completion pass. It was inspected directly, rather than reconstructed from the older report.
 
-The original detail screen keeps a complete mutation response in local current state and renders current ?? resource.data. Once populated, that object wins over every later authoritative refresh. Its old canPublish survives a published or unavailable server response.
+| Classification | Observed implementation | Decision |
+| --- | --- | --- |
+| Already correct | Principal Results destination, Approvals entry, five server-filtered queues, bounded pagination and server search | KEEP |
+| Already correct | Existing result routes/service/model, separate moderation/publication, linked approval and revision checks | KEEP |
+| Already correct | P-PR1 transaction authority fences, academic-reference fencing, single existing result history | KEEP |
+| Already correct | Server-resource-only detail ownership, auth/record remount boundary, refresh generation handling | KEEP |
+| Already correct | Hira confirmation/feedback, native stack headers/Back, enrollment-aware Student visibility rules | KEEP |
+| Partial | Tests did not explicitly assert non-publishable capabilities and correct queue membership for all non-approved states; direct queue/detail denial for several persisted actor changes was implicit | COMPLETE with permanent assertions and four read-security tests |
+| Partial | Stale-state tests covered publication and actor/token changes, but not unchanged status/revision capability removal, late older refresh, or permission context change with the same token | COMPLETE with three permanent component tests |
+| Missing | Final independent regression evidence and completed closure report | COMPLETE in this pass |
+| Broken | Student result DTO resolved Subject names by ID without Branch scoping; a corrupt legacy foreign reference exposed a foreign Subject name | FIX the existing lookup; permanent failing-then-passing regression |
+| Duplicate/unnecessary | No second result domain, result queue route, or alert framework found | None added |
 
-The isolated original-router inventory fails the queue assertion (reproduced-route.log). The isolated original-screen renderer fails the permanent refresh assertion by retaining Publish Result (reproduced-stale-state.json/log). Application files were never replaced for these reproductions. Early setup/compiler failures and superseded runs are retained separately; they are not current acceptance failures or counted as passing evidence.
+The initial unrelated modifications were `backend/src/controllers/principal-task.controller.ts` and `src/services/api/apiClient.ts`, alongside existing untracked PC files/directories. This pass did not edit those files.
 
-## C. Existing state machine preserved
+## C. Remaining root causes
 
-- Teacher draft -> submitted_for_moderation (initial revision) or resubmitted_for_moderation (later revisions).
-- Principal approve -> moderated_approved; the linked approval becomes approved. This remains unpublished and Student-invisible.
-- Principal return -> returned_for_revision; the linked approval becomes changes_requested. Teacher explicitly creates a new revision, edits the resulting draft and resubmits.
-- Principal reject -> rejected, retained and terminal under the existing contract.
-- Principal explicit publication -> published, with publishedRevision, publishedAt and publishedBy set on the current approved revision.
+The historical discoverability defect was the pending-only approval inbox: approving removed the result from its only visible entry point. The historical stale-state defect was a local complete `current` result winning over newer `resource.data`.
 
-recordRevision protects mutations; currentRevision identifies immutable mark revisions. Approval.resultRevision and submittedRevision must match the current revision before publication. No state renaming, auto-publication or unpublication action was introduced.
+Both primary fixes were already present here. Fresh permanent tests prove the current return journey and removal of obsolete capabilities. The remaining closure gaps were explicit edge-case coverage, an unfinished validation/report, and one DTO isolation flaw discovered during final review. The new corrupt-reference regression first failed with `FOREIGN PRIVATE Subject` in the Student DTO. The existing Subject lookup now includes the result's Branch, preventing foreign contextual name resolution without changing publication or historical enrollment eligibility. Prior reports/logs were not counted as fresh passing evidence.
 
-## D. Canonical return queue
+## D. Final result state machine
 
-Approvals -> Results / Awaiting Publication -> existing Result Review -> Publish Result confirmation. Results defaults to Awaiting Publication and also provides Pending Review, Published, Changes Requested and Rejected groups. The existing native stack owns Results and ResultModeration, so Back returns to the previous destination. Focus/refresh reloads the queue.
+`draft` -> `submitted_for_moderation` -> Principal decision:
 
-GET /principal/results accepts state, search, offset and optional Class/Section/Subject IDs. The server derives the persisted Principal and active own Branch, checks result/approval read grants and existing result-category authority, joins the exact approval and academic tuple before pagination, and returns at most 20 summaries with total/nextOffset. Search runs on the server across assessment, academic names/year and contextual Teacher/Student names. It never scans all results in the frontend. Invalid/inactive academic references produce an explicit configuration count/message rather than a fabricated empty-success explanation. Foreign Branch references are not populated into contextual names.
+- Approve -> `moderated_approved`; linked approval is `approved`; still Student-invisible.
+- Return -> `returned_for_revision`; linked approval is `changes_requested`; Teacher explicitly creates a new draft revision and submits as `resubmitted_for_moderation`.
+- Reject -> `rejected`, terminal under the existing contract.
+- Explicit publication of the approved current revision -> `published`, setting `publishedRevision`, `publishedAt`, and `publishedBy`.
 
-## E. Publication authority and safe DTO
+`recordRevision` protects writes. `currentRevision` identifies the marks revision; approval and submitted revisions must align. Approval does not auto-publish. Teacher publication authority was not added.
 
-Mutation entry revalidates the persisted active Principal, own active Branch, Results view and approval-management permission and the existing configured result-category grant. Publication reads the linked result/approval in a transaction, checks recordRevision, approved moderation, unpublished metadata and aligned current/submitted/approval revisions, and serializes the linked approval plus result.
+## E. Return queue architecture
 
-Both Principal result mutations reuse withPrincipalWriteAuthority from P-PR1. Target/history writes remain provisional until conditional Branch/User/exact-Session fences and final token/permission/category-policy checks succeed. Class, Section and Subject references are fenced and checked in the same transaction. Authority changes after the provisional save roll back the entire result and approval documents, including timestamps/version/history. No second identity, permission, session, result or logging model was added.
+Approvals -> Results / Awaiting Publication -> existing Result Review -> explicit Publish confirmation. Results defaults to Awaiting Publication and also exposes Pending Review, Published, Changes Requested and Rejected.
 
-Detail capabilities include the actual management grant, valid academic context and authoritative state/revision alignment. Queue summaries are explicit projections. Principal detail omits Teacher-only drafting notes; Student DTOs retain their existing minimal marks/released-feedback projection. Session and policy internals, operation IDs/fingerprints and foreign contextual identity data are not exposed.
+`GET /principal/results` derives the active persisted Principal and own active Branch, checks Results/approval-view permissions and configured result-category authority, validates exact approval linkage and academic context, then paginates in MongoDB. It accepts state, search, offset and optional Class/Section/Subject IDs. Pages contain at most 20 projected summaries plus total/nextOffset. Search is server-side across assessment, academic context, Teacher/Student names and year. Invalid academic references produce an explicit configuration count. Foreign Branch results/context are concealed.
 
-## F. Authoritative frontend ownership
+## F. Publication authority
 
-The existing server resource is the only complete record owner. Local state contains only the reason input, confirmation, request lock and feedback. Mutation responses are never stored as a second full record: every outcome waits for an authoritative GET. Actions are unavailable while a mutation/refetch runs; a failed refresh leaves no actionable stale record. Record/authenticated-actor changes remount the resource boundary. Refresh/revision changes clear temporary moderation/confirmation state. Generation handling in the existing resource rejects late responses after blur/unmount. Mounted lifecycle handling also supports repeated effect setup/cleanup.
+The mutation revalidates persisted active Principal identity, own active Branch, result/approval permissions and configured result-category grant. Inside the transaction it rereads exact result/approval linkage, expected record revision, approved state, absence of prior publication and alignment of approval/submitted/current revisions. It fences the approval and writes the result/publication event once.
 
-The permanent original-bug test first gets Publish from a moderation response, then refreshes to published/non-publishable server data and verifies Publish is absent. Additional tests cover changed actor/record/revision, failed refresh/retry, conflict and authority loss.
+The existing `withPrincipalWriteAuthority` performs conditional Branch/User/exact-session fences after provisional writes, then checks token validity and management permission before commit. Class/Section/Subject are fenced and validated inside the same transaction, and category/view grants are rechecked. Branch transfer, role demotion, account disable, session revocation, permission removal and Branch deactivation all roll back the complete result/approval documents. Tests compare full persisted documents, including timestamps/version/history. Invalid academic references also roll back. Replica-set transactions are required; unsupported deployments fail safely.
 
-## G. Concurrency and history
+DTOs use explicit projections: Principal detail strips Teacher-only drafting notes; result history omits operation fingerprints/IDs; Student responses expose marks and released feedback only. No session/policy internals or unrelated Student data are added.
 
-Two independently authorized Principals publish the same approved revision: one succeeds and the other receives 409; latest detail is published/cannot-publish. Exactly one recordRevision transition and one published history event persist. An identical operation retry is idempotent; a different duplicate or changed operation payload conflicts. Stale moderation and publication cannot overwrite each other.
+## G. Authoritative stale-state ownership
 
-The existing result history records draft/submission/revision, moderation_approve/moderation_return/moderation_reject and published separately. The existing moderation and approval histories remain in place. There is no parallel audit log.
+`useTeacherResource` owns the only complete Principal detail record. Local state holds reason input, confirmation, busy/lock state and feedback. Mutation DTOs never become a competing local result. Every mutation outcome awaits authoritative refetch; refresh immediately clears old data/actions; failed refresh leaves no stale actionable result. Generations reject older responses. Record/auth context changes remount the resource; authoritative data changes reset temporary reason/confirmation state.
 
-## H. Student visibility and Teacher regression
+Permanent tests cover the original mutation-DTO shadowing reproduction; published/non-publishable refresh; capability removal with unchanged approved status/revision; out-of-order refresh completion; record/token changes; permission-context change with the same token; revised marks; refresh failure/retry; conflict and permission loss.
 
-Approved/unpublished results are absent from Student list and concealed by detail. Published results require the active persisted Student identity, active own Branch, exact Student/recipient IDs and legitimate Class/Section membership. Managed enrollment history takes precedence over compatibility projections; valid historical membership preserves published marks after promotion, transfer or withdrawal. A never-held tuple or foreign Branch cannot grant access. Legacy Student placement and legacy published records without publication-revision metadata retain compatibility; an explicit publication revision must match currentRevision.
+## H. Concurrency proof
 
-The unchanged StudentEnrollment regression caught an overly strict current-placement implementation during P-PR4. The result reader was corrected to preserve the existing published-history contract; enrollment implementation and its assertions were not changed. Teacher submitted/approved/published status, moderation feedback and private notes remain available under existing Teacher authority. Teacher gains no Principal publication power.
+Two independently authorized Principals publishing the same revision produce one HTTP 200 and one HTTP 409, one recordRevision increment and one `published` history event. Latest detail is published with `canPublish=false`. Identical operation retries are idempotent; different duplicate operations conflict. Stale publication/moderation cannot overwrite current data. Transaction-retry tests validate actual references rather than stale initial reads.
 
-## I. UI/UX and navigation
+## I. Student visibility proof
 
-Mobile-oriented scrollable Hira cards show assessment, Student, Class/Section/Subject, Teacher, academic year and clear queue grouping; details show frozen evidence, marks, revision/moderation/event history and publication state. Search/pagination remain bounded. Loading, different empty groups, search misses, error/retry, permission loss and academic configuration have distinct feedback. Publication requires an explicit confirmation explaining Student visibility. Success, stale conflict and authority loss use safe business feedback; raw revision/database errors are not shown. The component integration test performs approve -> leave -> no longer pending -> return queue -> reopen -> confirm -> publish -> obsolete capability disappears.
+Approved/unpublished results are absent from Student list and return 404 from Student detail. Published results require active persisted Student identity, active own Branch, matching Student/recipient IDs and legitimate Class/Section membership. Managed StudentEnrollment records take precedence over compatibility placement fields. Valid historical membership preserves published history after withdrawal/promotion/transfer under the existing contract; never-held placement and foreign Branch access remain denied. Existing legacy publication compatibility remains intact.
 
-## J. Hira reuse and validation limits
+## J. UI/UX re-audit
 
-Reuses DashboardShell, ScreenHeading, SectionCard, Button, StatusBadge, AdminDialog, AdminFeedback, formStyles and the existing theme. No new component/alert library, color palette, table UI, navigation paradigm or localization architecture was added. Text follows the repository's current English convention. Validation covers implementation, automated server/component interaction and layout/component review. No physical Android/iOS device or emulator visual certification or production deployment is claimed.
+Reviewed actual queue/detail components, services, workspace wiring, navigator, resource hook, shared dialog, Button and DashboardShell implementations. Cards use vertical wrapping text for long academic/Teacher names and a scrolling mobile layout, with details carrying evidence/history. Native stack headers preserve Back; returning to a focused queue reloads it. Integration tests perform approve -> leave -> rediscover -> reopen -> confirmation -> publish -> obsolete action disappears.
 
-## K. Files changed
+Queues distinguish loading, each status-specific empty state, search misses, permission failure, backend error/retry and academic configuration problems. Confirmation explains eligible Student visibility and Class/Section/Subject; Cancel does not mutate. Server-confirmed success uses Result Published feedback. Conflict/authority loss use safe Hira feedback and refetch, with stale actions removed. No optimistic publication occurs.
+
+Validation includes source/layout review and rendered component interaction tests. A physical-device/emulator visual certification was not performed; no production deployment was attempted.
+
+## K. Hira theme reuse
+
+Preserved DashboardShell, ScreenHeading, SectionCard/Card, Button, StatusBadge, AdminDialog, AdminFeedback, formStyles, semantic theme colors and existing spacing/typography/safe-area patterns. No theme, UI library, table layout, navigation paradigm or alert framework was introduced.
+
+## L. Files changed in this completion pass
 
 | File | Reason |
 | --- | --- |
-| backend/src/services/academic-result.service.ts | Canonical queue, authoritative capabilities, P-PR1 mutation fences, scoped DTOs and enrollment-aware published reads |
-| backend/src/routes/academic-result.routes.ts | Add focused Principal list route within the existing result API |
-| src/services/principal/resultModerationService.ts | Typed queue/filter and safe detail contract |
-| src/screens/principal/PrincipalResultsScreen.tsx | New bounded results queue; reuse existing detail |
-| src/screens/principal/PrincipalResultModerationScreen.tsx | Remove duplicated record ownership; explicit Hira confirmation, refresh, history and feedback |
-| src/screens/principal/PrincipalApprovalsScreen.tsx | Discoverable Results / Awaiting Publication entry |
-| src/screens/principal/PrincipalWorkspaceScreen.tsx | Connect that entry to the existing stack |
-| src/navigation/PrincipalNavigator.tsx | Register Results with native Back/header |
-| backend/tests/academic-result.security.test.ts | Permanent queue/publication/authority-race/concurrency/Student/Teacher regressions |
-| __tests__/marks.test.tsx | Detail/publication/stale-state tests and complete Principal return journey |
-| __tests__/principal-results.test.tsx | Queue loading/empty/error/retry/filter/pagination/authority/navigation tests |
-| __tests__/result-service.test.ts | Queue request encoding contract |
-| __tests__/principal-approval-context.test.tsx | Updated route inventory and Approvals return entry assertion |
-| docs/P-PR4-result-publication-closure.md | Closure architecture, evidence, counts and preservation |
+| `backend/src/services/academic-result.service.ts` | Scope Student result Subject-name resolution to the result's Branch |
+| `backend/tests/academic-result.security.test.ts` | Four persisted actor/session/role queue+detail denial tests; explicit capability/queue assertions for pending/returned/rejected results; foreign Subject DTO regression |
+| `__tests__/marks.test.tsx` | Three stale-state tests: unchanged-state capability removal, older refresh completing late, same-token permission-context replacement |
+| `docs/P-PR4-result-publication-closure.md` | Replace unfinished historical draft with current-PC audit, exact fresh evidence and final closure decision |
+| `.validation-p-pr4-completion/run-backend.cjs` | Fresh regression runner without the prior runner's cached-pass reuse |
+| `.validation-p-pr4-completion/*.log` and `*.json` | Fresh test/compiler/lint evidence; no production artifacts |
 
-.validation-p-pr4 contains only validation fixtures, isolated original copies, configs/runners, logs, structured results and owned temporary test artifacts. package-lock.json and yarn.lock were already dirty and were not edited by this task.
+Existing P-PR4 production architecture was reviewed and retained: backend academic result service/routes/model; Principal results service/queue/detail/Approvals/workspace/navigation; shared resource hook; Student visibility and existing enrollment/authority helpers. Only the narrow Subject lookup needed a production correction; no rewrite was necessary.
 
-## L. Exact final test results
+The fresh runner reuses the existing validation-only Mongo launch helper and owned temporary directory. Its helper also creates diagnostic `mongo-<pid>.log` files under `.validation-p-pr4`. Application code, production DB configuration and test assertions were not weakened for the host.
 
-Pending final structured summary.
+## M. Exact test counts
 
-## M. Broader regression
+Final backend run: **966 PASS, 0 FAIL, 0 skipped across 22 suites**. Final full frontend run: **668 PASS, 0 FAIL, 0 skipped across 60 suites**. The final result-security subset is **86 PASS, 0 FAIL**. StudentEnrollment was also rerun after the DTO fix: **58 PASS, 0 FAIL**. Focused/rerun counts are subsets and are not added to full-run totals.
 
-Pending final suite table. P-PR1/P-PR2/P-PR3 implementations and their security contracts were not redesigned. Full backend TypeScript, scoped frontend and new backend-test TypeScript, scoped ESLint and git diff --check are required for closure. All database tests use owned temporary instances. Validation runtime settings bound compiler/Mongo memory, run cross-process suites from backend, and place temporary databases on D: because C: has insufficient free space. No production database/deployment configuration or existing assertions were altered to accommodate the host.
+Earlier non-acceptance attempts: the restricted sandbox prevented Node Windows user-profile lookup before backend assertions; the rerun uses normal local execution and owned temporary replica sets. The first full frontend run had one 5-second staff self-service timeout (664 PASS, 1 FAIL); that unchanged suite passed on isolated rerun and the final full run passed all 668 tests. No timeout/expectation changes were made.
 
-## N. Deferred Principal work
+## N. Broader regression
 
-P-PR5 onward only: attendance oversight, substitution UI, Teacher directory, notice redesign, Branch reports and broader information architecture. None started.
+All required suites passed. P-PR1 commit authority, P-PR2 Safety/release and P-PR3 admission/profile remain green. No closed-phase implementation was redesigned. Principal/navigation and all academic frontend suites are included in the 60-suite frontend run.
 
-## O. Worktree preservation
+| Backend suite | PASS | FAIL |
+| --- | ---: | ---: |
+| principal-commit-authority | 70 | 0 |
+| principal-authorization | 50 | 0 |
+| principal-write | 53 | 0 |
+| approval-authority | 47 | 0 |
+| student-admission | 50 | 0 |
+| student-enrollment | 58 | 0 |
+| academic-setup | 57 | 0 |
+| class-subject | 36 | 0 |
+| teacher-assignment-admin | 20 | 0 |
+| teacher-timetable | 91 | 0 |
+| teacher-attendance | 51 | 0 |
+| attendance-amendment | 49 | 0 |
+| academic-foundation | 15 | 0 |
+| academic | 35 | 0 |
+| academic-work | 16 | 0 |
+| academic-evidence | 13 | 0 |
+| lesson-delivery | 30 | 0 |
+| catch-up | 30 | 0 |
+| teacher-provisioning | 28 | 0 |
+| teacher-communications | 42 | 0 |
+| staff-self-service | 39 | 0 |
+| academic-result | 86 | 0 |
 
-No reset, restore, clean, staging, commit or push. Existing unrelated lockfile work remains untouched. The shared P-PR1 helper and closed-phase domain implementations remain unchanged. Branch remains feture. Final index/dirty-file verification is recorded with the structured evidence.
+Full backend TypeScript, scoped frontend TypeScript, scoped backend-test TypeScript, scoped ESLint and git diff --check all exited 0. Structured evidence: .validation-p-pr4-completion/backend-results.json, frontend-final.json and static-results.json. The final index inspection found no staged files. Full backend TypeScript, scoped frontend TypeScript, scoped backend-test TypeScript, scoped ESLint and `git diff --check` are also recorded in the fresh validation directory. Required coverage includes P-PR1 commit authority, P-PR2 Safety/release, P-PR3 admission/profile, Principal authorization/writes, approval authority, result/Student visibility, StudentEnrollment, Academic Setup, ClassSubject, TeacherAssignment and Timetable plus relevant academic/navigation suites.
+
+## O. Remaining Principal gaps
+
+P-PR5 onward only: attendance oversight, substitution UI, Teacher directory, task-recipient redesign, notice redesign, Branch reports and broad Principal information architecture. None started.
+
+## P. Worktree preservation
+
+No reset, restore, clean, staging, broad staging, commit, push or force operation was performed. Existing unrelated PC/laptop work was not edited by this pass. Branch remains `feture`. Validation evidence is isolated from production code. No second result/history/alert system was created.

@@ -182,6 +182,8 @@ export default function TimetableAdminScreen() {
   );
 }
 function TimetableBranches({ token }: { token: string }) {
+  const {user} = useAuth();
+  const navigation = useNavigation<NavigationProp<{Substitutions: undefined}>>();
   const [selected, setSelected] = useState('');
   const [dirty, setDirty] = useState(false),
     [saving, setSaving] = useState(false),
@@ -210,6 +212,7 @@ function TimetableBranches({ token }: { token: string }) {
           title="Timetable Scheduling"
           subtitle="Academic administration · weekly schedules and publication"
         />
+        {user?.role === 'principal' && <Button title="Substitutions" onPress={() => navigation.navigate('Substitutions')} disabled={dirty || saving} />}
         {resource.loading ? (
           <ActivityIndicator accessibilityLabel="Loading timetable branches" />
         ) : null}

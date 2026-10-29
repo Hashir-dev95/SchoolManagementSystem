@@ -1,4 +1,5 @@
 import { Router, type Response } from 'express';
+import {substitutionOverview, substitutionCandidates, mutateSubstitution} from '../services/principal-substitution.service';
 import {
   authenticateToken,
   type AuthenticatedRequest,
@@ -115,19 +116,28 @@ timetableAdminRouter.get('/options', handle(req => {
   query(req, ['branchId', 'teacherId', 'classId', 'sectionId', 'subjectId', 'offset']);
   return timetableOptions(req.user, req.query);
 }));
+
+timetableAdminRouter.get('/occurrences', handle(req => {
+  query(req, ['date', 'offset']);
+  return substitutionOverview(req.user, req.query);
+}));
+timetableAdminRouter.get('/occurrences/:id/candidates', handle(req => {
+  query(req, ['date', 'offset', 'search']);
+  return substitutionCandidates(req.user, req.params.id, req.query);
+}));
+timetableAdminRouter.post('/occurrences/:id/substitute', handle(req => {
+  query(req, []);
+  return mutateSubstitution(req.user, req.headers.authorization?.slice(7), req.params.id, req.body);
+}));
+timetableAdminRouter.post('/occurrences/:id/cancel-substitute', handle(req => {
+  query(req, []);
+  return mutateSubstitution(req.user, req.headers.authorization?.slice(7), req.params.id, req.body, true);
+}));
 timetableAdminRouter.get('/versions', handle(req => {
   query(req, ['branchId', 'offset']);
   return listTimetableVersions(req.user, req.query);
 }));
 
-timetableAdminRouter.get('/options', handle(req => {
-  query(req, ['branchId', 'teacherId', 'offset']);
-  return timetableOptions(req.user, req.query);
-}));
-timetableAdminRouter.get('/versions', handle(req => {
-  query(req, ['branchId', 'offset']);
-  return listTimetableVersions(req.user, req.query);
-}));
 timetableAdminRouter.post(
   '/versions',
   handle(req => {
@@ -139,7 +149,7 @@ timetableAdminRouter.post(
   '/substitutes',
   handle(req => {
     query(req, []);
-    return createSubstitute(req.user, req.body);
+    return createSubstitute(req.user, req.body, req.headers.authorization?.slice(7));
   }, 201),
 );
 timetableAdminRouter.post(
@@ -155,7 +165,7 @@ timetableAdminRouter.post(
   handle(req => {
     query(req, []);
     objectBody(req.body, []);
-    return approveSubstitute(req.user, req.params.id);
+    return approveSubstitute(req.user, req.params.id, req.headers.authorization?.slice(7));
   }),
 );
 timetableAdminRouter.post(
@@ -163,7 +173,7 @@ timetableAdminRouter.post(
   handle(req => {
     query(req, []);
     objectBody(req.body, []);
-    return retireSchedule(req.user, req.params.id, false);
+    return retireSchedule(req.user, req.params.id, false, req.headers.authorization?.slice(7));
   }),
 );
 timetableAdminRouter.post(
@@ -171,6 +181,6 @@ timetableAdminRouter.post(
   handle(req => {
     query(req, []);
     objectBody(req.body, []);
-    return retireSchedule(req.user, req.params.id, true);
+    return retireSchedule(req.user, req.params.id, true, req.headers.authorization?.slice(7));
   }),
 );

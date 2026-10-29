@@ -1,4 +1,5 @@
 import { apiClient } from '../api/apiClient';
+import type {AttendanceSummary} from './attendanceOversightService';
 
 export interface PrincipalRequester {
   _id: string;
@@ -84,14 +85,7 @@ export interface PrincipalDashboardData {
     isActive: boolean;
   };
   students: { total: number; active: number };
-  attendance: {
-    totalMarked: number;
-    present: number;
-    absent: number;
-    late: number;
-    leave: number;
-    attendancePercentage: number;
-  };
+  attendance: AttendanceSummary | null;
   feeSummary: {
     totalInvoices: number;
     totalAmount: number;

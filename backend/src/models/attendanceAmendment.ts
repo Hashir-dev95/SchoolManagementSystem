@@ -77,6 +77,7 @@ correction.index(
   { branchId: 1, requestedBy: 1, clientOperationId: 1 },
   { unique: true },
 );
+correction.index({branchId:1,attendanceSessionId:1,state:1,createdAt:-1}, {name:'session_correction_oversight'});
 correction.index(
   { attendanceSessionId: 1, studentId: 1, state: 1 },
   {
@@ -108,6 +109,7 @@ leave.index(
   { unique: true },
 );
 leave.index({ branchId: 1, studentId: 1, state: 1, fromDate: 1, untilDate: 1 });
+leave.index({branchId:1,attendanceSessionId:1,state:1,createdAt:-1}, {name:'session_leave_oversight'});
 // Delivery intents only: no Catch-up module, outbound delivery or automatic
 // student absence inference. Dispatchers must use the effective-state guard.
 const intent = new Schema(

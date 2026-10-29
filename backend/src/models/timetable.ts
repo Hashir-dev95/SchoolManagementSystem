@@ -76,6 +76,7 @@ const periodSchema = new Schema(
   { timestamps: true },
 );
 periodSchema.index({roomId: 1}, {sparse: true});
+periodSchema.index({branchId:1,timetableVersionId:1,dayOfWeek:1,startTime:1}, {name:'branch_attendance_calendar'});
 periodSchema.index({
   branchId: 1,
   timetableVersionId: 1,
@@ -88,6 +89,7 @@ const substituteSchema = new Schema(
     periodId: ref('TimetablePeriod'),
     originalTeacherId: ref('User'),
     substituteTeacherId: ref('User'),
+    reason: {type: String, enum: ['Teacher absent', 'Approved leave', 'Emergency', 'Official duty', 'Schedule adjustment', 'Other'], immutable: true},
     date: day,
     startTime: clock,
     endTime: clock,
@@ -110,6 +112,7 @@ const substituteSchema = new Schema(
   { timestamps: true },
 );
 substituteSchema.index({roomId: 1}, {sparse: true});
+substituteSchema.index({branchId: 1, date: 1, periodId: 1, status: 1}, {name: 'branch_substitution_calendar'});
 substituteSchema.index(
   { periodId: 1, date: 1 },
   {

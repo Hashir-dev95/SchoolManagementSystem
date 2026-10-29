@@ -1,3 +1,4 @@
+import {operationalTimetableVersions, effectiveTimetableOccurrence} from './timetable-occurrence.service';
 import mongoose, { Types, type ClientSession } from 'mongoose';
 import User from '../models/user';
 import Branch from '../models/branch';
@@ -75,52 +76,7 @@ export const getTeacherTimetable = async (
   const dates = Array.from({ length: week ? 7 : 1 }, (_, index) =>
     addScheduleDays(start, index),
   );
-  type Version = {
-    _id: Types.ObjectId;
-    versionNumber: number;
-    effectiveFrom: string;
-    effectiveUntil: string;
-  };
-  // One indexed match and bounded facets: at most one revision per requested
-  // day reaches application memory, regardless of administrative history.
-  const [selected] = await TimetableVersion.aggregate<
-    Record<string, Version[]>
-  >([
-    {
-      $match: {
-        branchId: new Types.ObjectId(scope.branchId),
-        status: 'approved',
-        effectiveFrom: { $lte: dates[dates.length - 1] },
-        effectiveUntil: { $gt: start },
-      },
-    },
-    {
-      $facet: Object.fromEntries(
-        dates.map(date => [
-          date,
-          [
-            {
-              $match: {
-                effectiveFrom: { $lte: date },
-                effectiveUntil: { $gt: date },
-              },
-            },
-            { $sort: { versionNumber: -1 } },
-            { $limit: 1 },
-            {
-              $project: {
-                _id: 1,
-                versionNumber: 1,
-                effectiveFrom: 1,
-                effectiveUntil: 1,
-              },
-            },
-          ],
-        ]),
-      ),
-    },
-  ]).read('primary');
-  const effective = new Map(dates.map(date => [date, selected?.[date]?.[0]]));
+  const effective = await operationalTimetableVersions(scope.branchId, dates);
   const versionIds = [
     ...new Set(
       [...effective.values()]
@@ -212,9 +168,10 @@ export const getTeacherTimetable = async (
         sub = subjectMap.get(String(period.subjectId));
       if (!c || !s || !sub || String(s.classId) !== String(c._id)) continue;
       const replacement = replacements.get(`${period._id}/${date}`);
+      const occurrence = effectiveTimetableOccurrence(period, replacement);
       const isSubstitute =
         replacement !== undefined &&
-        String(replacement.substituteTeacherId) === scope.actorId;
+        occurrence.teacherId === scope.actorId;
       // An approved replacement removes the original operational occurrence.
       if (replacement && !isSubstitute) continue;
       if (
@@ -237,9 +194,9 @@ export const getTeacherTimetable = async (
       rows.push({
         periodId: String(period._id),
         date,
-        startTime: replacement?.startTime ?? period.startTime,
-        endTime: replacement?.endTime ?? period.endTime,
-        room: replacement?.room ?? period.room,
+        startTime: occurrence.startTime,
+        endTime: occurrence.endTime,
+        room: occurrence.room,
         classId: String(c._id),
         className: c.name,
         sectionId: String(s._id),
@@ -411,7 +368,16 @@ export const mutateOccurrence = async <T = TeacherPeriodDTO>(
         )
           throw missing();
         requireAction(permission);
+        // Historical visibility is retained, but temporary duty cannot create
+        // attendance or delivery evidence on a different school date.
+        const boundedDuty = current.isSubstitute && [
+          PERMISSIONS.TEACHER_ATTENDANCE_VIEW,
+          PERMISSIONS.TEACHER_ATTENDANCE_MANAGE,
+          PERMISSIONS.TEACHER_LESSONS_MANAGE,
+        ].some(value => value === permission);
+        if (boundedDuty && current.date !== schoolToday()) throw missing();
         const result = await write(session, current, currentScope.branchId);
+        if (boundedDuty && current.date !== schoolToday()) throw missing();
         requireAction(permission);
         const finalScope = await getTeacherScope(identity);
         if (

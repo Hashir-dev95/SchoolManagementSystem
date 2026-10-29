@@ -8,6 +8,7 @@ import branchRoutes from './routes/branch.routes';
 import authRoutes from './routes/auth.routes';
 import adminRoutes from './routes/admin.routes';
 import principalRoutes from './routes/principal.routes';
+import principalAttendanceRoutes from './routes/principal-attendance.routes';
 import bootstrapRoutes from './routes/bootstrap.routes';
 import approvalRequestRoutes from './routes/approval-request.routes';
 
@@ -49,6 +50,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/principal', principalRoutes);
+app.use('/api/principal/attendance', principalAttendanceRoutes);
 app.use('/api/bootstrap', bootstrapRoutes);
 // Sanitize bootstrap JSON parser errors: Express's default development error
 // response can include the submitted credential body and a stack trace.

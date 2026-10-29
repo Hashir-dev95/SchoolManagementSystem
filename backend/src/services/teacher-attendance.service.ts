@@ -221,6 +221,7 @@ const detail = async (
     submittedAt: attendance.submittedAt?.toISOString() ?? null,
     canSave:
       attendance.state !== 'submitted' &&
+      (!period.isSubstitute || period.date === schoolToday()) &&
       ROLE_PERMISSIONS.teacher.includes(PERMISSIONS.TEACHER_ATTENDANCE_MANAGE),
     students: rows.map(s => ({
       studentId: s.studentId,

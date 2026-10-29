@@ -1,5 +1,10 @@
+import PrincipalSubstitutionsScreen from '../screens/principal/PrincipalSubstitutionsScreen';
 import RoomsScreen from '../screens/admin/RoomsScreen';
 import PrincipalAttendanceReviewScreen from '../screens/principal/PrincipalAttendanceReviewScreen';
+import PrincipalAttendanceScreen from '../screens/principal/PrincipalAttendanceScreen';
+import PrincipalAttendanceSessionScreen from '../screens/principal/PrincipalAttendanceSessionScreen';
+import PrincipalAttendancePatternsScreen from '../screens/principal/PrincipalAttendancePatternsScreen';
+import type {AttendanceView} from '../services/principal/attendanceOversightService';
 import React from 'react';
 import TeacherAssignmentAdminScreen from '../screens/admin/TeacherAssignmentAdminScreen';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -22,11 +27,15 @@ import TimetableAdminScreen from '../screens/admin/TimetableAdminScreen';
 export type PrincipalStackParamList = {
   Rooms: undefined;
   TimetableAdmin: undefined;
+  Substitutions: undefined;
   StudentsEnrollment: undefined;
   AcademicSetup: undefined;
   AssignTeacher: {teacherId?: string} | undefined;
   PrincipalWorkspace: undefined;
   AttendanceReview: { approvalId: string };
+  Attendance: undefined;
+  AttendanceSession: {periodId:string;date:string;mode?:AttendanceView};
+  AttendancePatterns: {from?:string;until?:string;classId?:string;sectionId?:string;subjectId?:string;teacherId?:string} | undefined;
   ApprovalDetail: { request: ApprovalRequest };
   NoticeDetail: { noticeId: string };
   Tasks: undefined;
@@ -44,6 +53,7 @@ export default function PrincipalNavigator() {
   return (
     <Stack.Navigator initialRouteName="PrincipalWorkspace" screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Rooms" component={RoomsScreen} options={{headerShown: true, title: 'Rooms', headerStyle: {backgroundColor: '#fbf9f4'}, headerTintColor: '#23595a', headerShadowVisible: false}} />
+      <Stack.Screen name="Substitutions" component={PrincipalSubstitutionsScreen} options={{headerShown: true, title: 'Substitutions'}} />
       <Stack.Screen name="TimetableAdmin" component={TimetableAdminScreen} options={{headerShown: true, title: 'Timetable Scheduling'}} />
       <Stack.Screen name="StudentsEnrollment" component={StudentEnrollmentScreen} options={{headerShown: true, title: 'Students & Enrollment', headerStyle: {backgroundColor: '#fbf9f4'}, headerTintColor: '#23595a', headerShadowVisible: false}} />
       <Stack.Screen name="AcademicSetup" component={AcademicSetupScreen} options={{headerShown: true, title: 'Academic Setup', headerStyle: {backgroundColor: '#fbf9f4'}, headerTintColor: '#23595a', headerShadowVisible: false}} />
@@ -54,6 +64,7 @@ export default function PrincipalNavigator() {
       <Stack.Screen
         name="AttendanceReview"
         component={PrincipalAttendanceReviewScreen}
+        options={{headerShown:true,title:'Attendance Review'}}
       />
       <Stack.Screen name="ApprovalDetail" component={ApprovalDetailScreen} />
       <Stack.Screen name="NoticeDetail" component={NoticeDetailScreen} />
@@ -71,6 +82,9 @@ export default function PrincipalNavigator() {
       <Stack.Screen name="AssignTeacher" component={TeacherAssignmentAdminScreen} options={{headerShown:false}} />
       <Stack.Screen name="Results" component={PrincipalResultsScreen} options={{headerShown:true,title:'Results'}} />
       <Stack.Screen name="ResultModeration" component={PrincipalResultModerationScreen} options={{headerShown:true,title:'Marks moderation'}} />
+      <Stack.Screen name="Attendance" component={PrincipalAttendanceScreen} options={{headerShown:true,title:'Attendance'}} />
+      <Stack.Screen name="AttendanceSession" component={PrincipalAttendanceSessionScreen} options={{headerShown:true,title:'Attendance Session'}} />
+      <Stack.Screen name="AttendancePatterns" component={PrincipalAttendancePatternsScreen} options={{headerShown:true,title:'Absence & Late Patterns'}} />
     </Stack.Navigator>
   );
 }

@@ -17,7 +17,7 @@ import {
 } from '../../components/hiraDashboard/DashboardShell';
 import { usePrincipalDashboardData } from '../../hooks/usePrincipalDashboardData';
 import { colors, typography } from '../../theme/hiraDashboard';
-import {TeacherAssignmentEntry} from '../admin/TeacherAssignmentEntry';
+import { TeacherAssignmentEntry } from '../admin/TeacherAssignmentEntry';
 
 interface PrincipalDashboardScreenProps {
   onOpenApprovals: () => void;
@@ -25,6 +25,7 @@ interface PrincipalDashboardScreenProps {
   onOpenTasks: () => void;
   onOpenSafety: () => void;
   onAssignTeacher?: () => void;
+  onOpenAttendance?: () => void;
 }
 
 export default function PrincipalDashboardScreen({
@@ -33,14 +34,21 @@ export default function PrincipalDashboardScreen({
   onOpenTasks,
   onOpenSafety,
   onAssignTeacher,
+  onOpenAttendance,
 }: PrincipalDashboardScreenProps) {
   const { data, loading, error, reload } = usePrincipalDashboardData();
-  const today = new Date().toLocaleDateString('en-PK', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+  const today = data?.attendance
+    ? new Date(data.attendance.date + 'T12:00:00Z').toLocaleDateString(
+        'en-PK',
+        {
+          timeZone: 'UTC',
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        },
+      )
+    : 'School operations';
 
   return (
     <DashboardShell safeArea={false}>
@@ -58,7 +66,46 @@ export default function PrincipalDashboardScreen({
           onPress={onOpenSafety}
         />
       </SectionCard>
-      {onAssignTeacher ? <TeacherAssignmentEntry onAssign={onAssignTeacher} /> : null}
+      {onAssignTeacher ? (
+        <TeacherAssignmentEntry onAssign={onAssignTeacher} />
+      ) : null}
+      <SectionCard title="Attendance Today">
+        {data?.attendance ? (
+          <>
+            <Text style={styles.note}>
+              {data.attendance.date} · {data.attendance.timezone}
+            </Text>
+            <Text style={styles.note}>
+              Expected sessions: {data.attendance.expected} · Submitted:{' '}
+              {data.attendance.submitted}
+            </Text>
+            <Text style={styles.note}>
+              Unmarked: {data.attendance.unmarked} · In progress:{' '}
+              {data.attendance.inProgress} · Needs attention:{' '}
+              {data.attendance.needsAttention}
+            </Text>
+            <Text style={styles.note}>
+              Attention flags can overlap session states. Unmarked is not
+              absent.
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.note}>
+            {loading
+              ? 'Loading attendance overview...'
+              : error
+              ? 'Attendance could not be loaded. Retry the overview.'
+              : 'Attendance overview is unavailable for your account or active Branch.'}
+          </Text>
+        )}
+        {onOpenAttendance ? (
+          <Button
+            title="Open Attendance"
+            variant="secondary"
+            onPress={onOpenAttendance}
+          />
+        ) : null}
+      </SectionCard>
       <SectionCard title="Tasks">
         <Text style={styles.note}>
           {data?.tasks
@@ -93,9 +140,14 @@ export default function PrincipalDashboardScreen({
             <StatCard
               accentIndex={1}
               icon="✓"
-              label="Attendance"
-              value={`${data.attendance.attendancePercentage}%`}
-              foot="Present and late today"
+              label="Attendance submitted"
+              value={data.attendance?.submitted ?? 'Unavailable'}
+              foot={
+                data.attendance
+                  ? `${data.attendance.expected} expected sessions`
+                  : 'Active Branch and attendance permission required'
+              }
+              onPress={onOpenAttendance}
             />
             <StatCard
               accentIndex={2}
@@ -116,7 +168,8 @@ export default function PrincipalDashboardScreen({
             <Card style={styles.unavailableCard}>
               <Text style={styles.note}>
                 {data.students.active} active of {data.students.total} students
-                · {data.attendance.totalMarked} attendance records today ·{' '}
+                · {data.attendance?.submitted ?? 'Unavailable'} attendance
+                submissions ·{' '}
                 {data.feeSummary.paidAmount.toLocaleString('en-PK')} collected
               </Text>
             </Card>

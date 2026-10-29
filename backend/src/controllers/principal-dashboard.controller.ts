@@ -8,6 +8,7 @@ export const getPrincipalDashboardController = async (
   req: BranchScopedRequest,
   res: Response,
 ): Promise<void> => {
+  res.setHeader('Cache-Control','no-store');
   try {
     if (!req.user) {
       res.status(401).json({success: false, message: 'Authentication required'});

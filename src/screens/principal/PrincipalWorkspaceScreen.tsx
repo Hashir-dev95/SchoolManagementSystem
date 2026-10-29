@@ -83,6 +83,7 @@ export default function PrincipalWorkspaceScreen() {
   };
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
+  const showAttendance = 'attendance sessions physical oversight'.includes(normalizedQuery) && hasPermission(user?.role,PERMISSIONS.ATTENDANCE_VIEW);
   const showTimetable = 'manage timetable scheduling academic management'.includes(normalizedQuery) && hasPermission(user?.role, PERMISSIONS.TIMETABLE_MANAGE);
   const showRooms = 'rooms physical classroom lab'.includes(normalizedQuery) && hasPermission(user?.role, PERMISSIONS.ACADEMIC_ROOMS_VIEW);
   const showAcademicSetup = 'academic setup'.includes(normalizedQuery) && hasPermission(user?.role, PERMISSIONS.ACADEMIC_CLASSES_VIEW);
@@ -137,6 +138,7 @@ export default function PrincipalWorkspaceScreen() {
             onOpenTasks={() => navigation.navigate('Tasks')}
             onOpenSafety={() => navigation.navigate('SafetyOverview')}
             onAssignTeacher={() => navigation.navigate('AssignTeacher')}
+            onOpenAttendance={() => navigation.navigate('Attendance')}
           />
         ) : activeTab === 'approvals' ? (
           <PrincipalApprovalsScreen onReview={openApproval} onOpenResults={() => navigation.navigate('Results')} />
@@ -234,7 +236,7 @@ export default function PrincipalWorkspaceScreen() {
               style={styles.drawerList}
               keyboardShouldPersistTaps="handled"
             >
-              {visibleTabs.length === 0 && !('students enrollment'.includes(normalizedQuery) && hasPermission(user?.role, PERMISSIONS.ENROLLMENT_VIEW)) && !showAcademicSetup && !showTimetable && !showRooms ? (
+              {visibleTabs.length === 0 && !('students enrollment'.includes(normalizedQuery) && hasPermission(user?.role, PERMISSIONS.ENROLLMENT_VIEW)) && !showAcademicSetup && !showTimetable && !showRooms && !showAttendance ? (
                 <Text style={styles.noMatches}>
                   No pages match your search.
                 </Text>
@@ -280,6 +282,7 @@ export default function PrincipalWorkspaceScreen() {
                 ))
               )}
               {'students enrollment'.includes(normalizedQuery) && hasPermission(user?.role, PERMISSIONS.ENROLLMENT_VIEW) ? <View><Text style={styles.groupTitle}>STUDENT ADMINISTRATION</Text><Pressable accessibilityRole="button" accessibilityLabel="Students & Enrollment" style={styles.drawerRow} onPress={() => {setDrawerOpen(false); setQuery(''); navigation.navigate('StudentsEnrollment');}}><Text style={styles.drawerIcon}>▤</Text><Text style={styles.drawerLabel}>Students & Enrollment</Text></Pressable></View> : null}
+              {showAttendance?<Pressable accessibilityRole="button" accessibilityLabel="Attendance" style={styles.drawerRow} onPress={()=>{setDrawerOpen(false);setQuery('');navigation.navigate('Attendance');}}><Text style={styles.drawerIcon}>✓</Text><Text style={styles.drawerLabel}>Attendance</Text></Pressable>:null}
               {showAcademicSetup || showTimetable || showRooms ? <View><Text style={styles.groupTitle}>ACADEMIC ADMINISTRATION</Text>{showRooms ? <Pressable accessibilityRole="button" accessibilityLabel="Rooms" style={styles.drawerRow} onPress={() => {setDrawerOpen(false); setQuery(''); navigation.navigate('Rooms');}}><Text style={styles.drawerIcon}>▤</Text><Text style={styles.drawerLabel}>Rooms</Text></Pressable> : null}{showAcademicSetup ? <Pressable accessibilityRole="button" accessibilityLabel="Academic Setup" style={styles.drawerRow} onPress={() => {setDrawerOpen(false); setQuery(''); navigation.navigate('AcademicSetup');}}><Text style={styles.drawerIcon}>▤</Text><Text style={styles.drawerLabel}>Academic Setup</Text></Pressable> : null}{showTimetable ? <Pressable accessibilityRole="button" accessibilityLabel="Manage Timetable" style={styles.drawerRow} onPress={() => {setDrawerOpen(false); setQuery(''); navigation.navigate('TimetableAdmin');}}><Text style={styles.drawerIcon}>▦</Text><Text style={styles.drawerLabel}>Manage Timetable</Text></Pressable> : null}</View> : null}
             </ScrollView>
 

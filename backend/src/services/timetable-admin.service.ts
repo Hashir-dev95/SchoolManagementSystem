@@ -1,3 +1,5 @@
+import {withPrincipalWriteAuthority} from './principal-write-access.service';
+import {effectiveTimetableOccurrence, operationalTimetableVersions} from './timetable-occurrence.service';
 import Room from '../models/room';
 import {
   TimetableVersion,
@@ -426,7 +428,7 @@ export const listTimetableVersions = async (
   };
 };
 
-const requireRoom = async (
+export const requireRoom = async (
   branchId: string,
   roomId: unknown,
   session?: ClientSession
@@ -558,7 +560,7 @@ const validateResponsibilities = async (
     }
 };
 
-const validateReplacement = async (
+export const validateReplacement = async (
   branchId: string,
   period: {
     _id: unknown;
@@ -574,17 +576,10 @@ const validateReplacement = async (
   },
   teacherId: string,
   date: string,
-  session: ClientSession
+  session?: ClientSession,
+  restoringOriginal = false
 ) => {
-  const winner = await TimetableVersion.findOne({
-    branchId,
-    status: 'approved',
-    effectiveFrom: { $lte: date },
-    effectiveUntil: { $gt: date },
-  })
-    .sort({ versionNumber: -1 })
-    .session(session)
-    .lean();
+  const winner = (await operationalTimetableVersions(branchId, [date], session)).get(date);
   if (
     String(winner?._id) !== String(period.timetableVersionId) ||
     period.dayOfWeek !== scheduleWeekday(date)
@@ -603,6 +598,12 @@ const validateReplacement = async (
     ],
     session
   );
+  if (!restoringOriginal && teacherId === String(period.teacherId))
+    throw new RequestContractError(409, 'Choose a different replacement Teacher');
+  if (!session) {
+    if (!(await User.exists({role: 'teacher', isActive: true}).where('_id').equals(teacherId).where('branchId').equals(branchId))) throw missing();
+    return;
+  }
   const target = await User.collection.updateOne(
     {
       _id: new Types.ObjectId(teacherId),
@@ -764,15 +765,16 @@ export const approveTimetableVersion = async (
   return { versionId: String(updated._id), status: updated.status };
 };
 // Publication and catalog writers serialize on Branch, including room overrides.
-const validateSubstituteRoom = async (
+export const validateSubstituteRoom = async (
   branchId: string,
-  period: { _id: unknown; timetableVersionId: unknown; dayOfWeek: number },
+  period: { _id: unknown; timetableVersionId: unknown; dayOfWeek: number; sectionId: unknown },
   replacement: {
     roomId?: unknown;
     room: string;
     startTime: string;
     endTime: string;
     date: string;
+    substituteTeacherId?: unknown;
   },
   session: ClientSession
 ) => {
@@ -792,29 +794,41 @@ const validateSubstituteRoom = async (
     .lean();
   for (const base of periods) {
     if (String(base._id) === String(period._id)) continue;
-    const other =
-      overrides.find((row) => String(row.periodId) === String(base._id)) ??
-      base;
+    const other = effectiveTimetableOccurrence(base,
+      overrides.find((row) => String(row.periodId) === String(base._id)));
     const sameRoom =
       other.roomId && replacement.roomId
         ? String(other.roomId) === String(replacement.roomId)
         : other.room.trim().toLowerCase() ===
           replacement.room.trim().toLowerCase();
+    const sameTeacher = replacement.substituteTeacherId !== undefined &&
+      other.teacherId === String(replacement.substituteTeacherId);
+    const sameSection = String(base.sectionId) === String(period.sectionId);
     if (
-      sameRoom &&
+      (sameRoom || sameTeacher || sameSection) &&
       replacement.startTime < other.endTime &&
       other.startTime < replacement.endTime
     )
       throw new RequestContractError(
         409,
-        'Room conflict: another scheduled period occupies this Room during the substitution'
+        sameRoom ? 'Room conflict: another scheduled period occupies this Room during the substitution' : sameSection ? 'Class/Section conflict: another lesson overlaps this time' : 'Teacher unavailable: another lesson overlaps this time'
       );
   }
 };
 
+export async function withSubstitutionWrite<T>(identity: JwtPayload | undefined, branchId: string, token: string | undefined, write: (session: ClientSession) => Promise<T>) {
+  if (identity?.role !== 'principal') return withAcademicCatalogLock(branchId, write);
+  return withPrincipalWriteAuthority({actorId: identity.userId, branchId, token}, PERMISSIONS.TIMETABLE_MANAGE, async session => {
+    const locked = await Branch.collection.updateOne({_id: new Types.ObjectId(branchId), isActive: true}, {$inc: {__v: 1}}, {session});
+    if (!locked.matchedCount) throw missing();
+    return write(session);
+  });
+}
+
 export const createSubstitute = async (
   identity: JwtPayload | undefined,
-  body: unknown
+  body: unknown,
+  token?: string
 ) => {
   const actor = await actorFor(identity),
     input = objectBody(body, [
@@ -861,7 +875,7 @@ export const createSubstitute = async (
       subjectId: String(period.subjectId),
     },
   ]);
-  return withAcademicCatalogLock(branchId, async (session) => {
+  return withSubstitutionWrite(identity, branchId, token, async (session) => {
     await mutationActor(identity, branchId, session);
     await validateReplacement(
       branchId,
@@ -874,7 +888,7 @@ export const createSubstitute = async (
     await validateSubstituteRoom(
       branchId,
       period,
-      { ...clock, ...resolvedRoom, date },
+      { ...clock, ...resolvedRoom, date, substituteTeacherId },
       session
     );
     const [substitute] = await SubstituteAssignment.create(
@@ -897,7 +911,8 @@ export const createSubstitute = async (
 };
 export const approveSubstitute = async (
   identity: JwtPayload | undefined,
-  id: unknown
+  id: unknown,
+  token?: string
 ) => {
   const actor = await actorFor(identity),
     substituteId = objectIdField(id, 'substitute ID');
@@ -958,9 +973,8 @@ export const approveSubstitute = async (
     }
   );
   try {
-    const updated = await withTimetablePublication(
-      branchId,
-      String(period._id),
+    const updated = await withSubstitutionWrite(
+      identity, branchId, token,
       async (session) => {
         await mutationActor(identity, branchId, session);
         await validateReplacement(
@@ -996,13 +1010,14 @@ export const approveSubstitute = async (
 export const retireSchedule = async (
   identity: JwtPayload | undefined,
   id: unknown,
-  substitute: boolean
+  substitute: boolean,
+  token?: string
 ) => {
   const actor = await actorFor(identity),
     objectId = objectIdField(id, 'schedule ID');
   const record = substitute
     ? await SubstituteAssignment.findById(objectId)
-        .select('_id branchId status periodId')
+        .select('_id branchId status periodId date')
         .lean()
     : await TimetableVersion.findById(objectId)
         .select('_id branchId status')
@@ -1012,11 +1027,22 @@ export const retireSchedule = async (
   const update = {
     $set: { status: 'retired', retiredBy: actor._id, retiredAt: new Date() },
   };
-  const result = await withTimetablePublication(
-    String(record.branchId),
-    undefined,
+  const result = await withSubstitutionWrite(
+    identity, String(record.branchId), token,
     async (session) => {
       await mutationActor(identity, String(record.branchId), session);
+      if (substitute && 'periodId' in record && 'date' in record) {
+        const period = await TimetablePeriod.findOne({_id: record.periodId, branchId: record.branchId}).session(session).lean();
+        if (!period) throw missing();
+        const date = String(record.date);
+        const winner = (await operationalTimetableVersions(String(record.branchId), [date], session)).get(date);
+        // Revoking an obsolete historical record restores no operational slot.
+        // Keep this existing administrative revocation path available.
+        if (String(winner?._id) === String(period.timetableVersionId)) {
+          await validateReplacement(String(record.branchId), period, String(period.teacherId), date, session, true);
+          await validateSubstituteRoom(String(record.branchId), period, {...period, date, substituteTeacherId: period.teacherId}, session);
+        }
+      }
       return substitute
         ? await SubstituteAssignment.updateOne(
             { _id: record._id, status: 'approved' },

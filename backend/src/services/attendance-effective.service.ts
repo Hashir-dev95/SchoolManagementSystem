@@ -1,4 +1,4 @@
-﻿import type { ClientSession } from 'mongoose';
+import mongoose, { type ClientSession, type PipelineStage } from 'mongoose';
 import {
   AttendanceCorrection,
   AttendanceDownstreamIntent,
@@ -6,48 +6,102 @@ import {
 import {
   AttendanceSession,
   PeriodAttendanceRecord,
+  type PeriodAttendanceStatus,
 } from '../models/periodAttendance';
-// The only effective-status projection. Original records are never updated.
+
+// The same effective-status projection serves Teacher review, oversight and
+// bounded pattern aggregation. Original marks are never rewritten.
+export function effectiveAttendanceStages(branchId: string): PipelineStage.FacetPipelineStage[] {
+  return [
+    {
+      $lookup: {
+        from: AttendanceCorrection.collection.name,
+        let: {
+          session: '$attendanceSessionId',
+          student: '$studentId',
+          original: '$status',
+          revision: '$revision',
+        },
+        pipeline: [
+          {
+            $match: {
+              branchId: new mongoose.Types.ObjectId(branchId),
+              state: 'approved',
+              $expr: {
+                $and: [
+                  { $eq: ['$attendanceSessionId', '$$session'] },
+                  { $eq: ['$studentId', '$$student'] },
+                  { $eq: ['$originalStatus', '$$original'] },
+                  { $eq: ['$submittedRevision', '$$revision'] },
+                ],
+              },
+            },
+          },
+          { $sort: { approvedVersion: -1 } },
+          { $limit: 1 },
+          { $project: { requestedStatus: 1, approvedVersion: 1 } },
+        ],
+        as: '_effectiveCorrection',
+      },
+    },
+    {
+      $set: {
+        originalStatus: '$status',
+        status: {
+          $ifNull: [
+            { $arrayElemAt: ['$_effectiveCorrection.requestedStatus', 0] },
+            '$status',
+          ],
+        },
+        effectiveRevision: {
+          $ifNull: [
+            { $arrayElemAt: ['$_effectiveCorrection.approvedVersion', 0] },
+            0,
+          ],
+        },
+      },
+    },
+    { $unset: '_effectiveCorrection' },
+  ];
+}
 export const effectiveAttendance = async (
   branchId: string,
   sessionId: string,
   transaction?: ClientSession,
 ) => {
-  const originals = await PeriodAttendanceRecord.find({
-    branchId,
-    attendanceSessionId: sessionId,
-  })
-    .session(transaction ?? null)
-    .select('studentId status revision')
-    .lean();
-  const corrections = await AttendanceCorrection.find({
-    branchId,
-    attendanceSessionId: sessionId,
-    state: 'approved',
-  })
-    .session(transaction ?? null)
-    .sort({ approvedVersion: -1 })
-    .select(
-      'studentId originalStatus requestedStatus submittedRevision approvedVersion',
-    )
-    .lean();
+  const rows = await PeriodAttendanceRecord.aggregate<{
+    studentId: mongoose.Types.ObjectId;
+    originalStatus: PeriodAttendanceStatus;
+    status: PeriodAttendanceStatus;
+    effectiveRevision: number;
+  }>([
+    {
+      $match: {
+        branchId: new mongoose.Types.ObjectId(branchId),
+        attendanceSessionId: new mongoose.Types.ObjectId(sessionId),
+      },
+    },
+    ...effectiveAttendanceStages(branchId),
+    {
+      $project: {
+        studentId: 1,
+        originalStatus: 1,
+        status: 1,
+        effectiveRevision: 1,
+      },
+    },
+  ])
+    .read('primary')
+    .session(transaction ?? null);
   return new Map(
-    originals.map(r => {
-      const correction = corrections.find(
-        c =>
-          String(c.studentId) === String(r.studentId) &&
-          c.originalStatus === r.status &&
-          c.submittedRevision === r.revision,
-      );
-      return [
-        String(r.studentId),
-        {
-          originalStatus: r.status,
-          status: correction?.requestedStatus ?? r.status,
-          effectiveRevision: correction?.approvedVersion ?? 0,
-        },
-      ];
-    }),
+    rows.map(row => [
+      String(row.studentId),
+      {
+        originalStatus: row.originalStatus,
+        status: row.status,
+        effectiveRevision: row.effectiveRevision,
+      },
+    ]),
   );
 };
 // Trusted integration boundary. No public endpoint can enqueue, approve or send

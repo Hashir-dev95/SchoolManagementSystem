@@ -113,7 +113,8 @@ export const getDeliveryContext = async (
     teacherName: ctx.academic.teacherName,
     period: ctx.period ?? null,
     today: schoolDateTime().date,
-    canRecord: ctx.plan.state === 'approved' && !!ctx.plan.approvedRevision,
+    canRecord: ctx.plan.state === 'approved' && !!ctx.plan.approvedRevision &&
+      (!ctx.period?.isSubstitute || ctx.period.date === schoolDateTime().date),
     delivery: row ? deliveryDTO(row) : null,
     coverage: await resolveCoverage(
       ctx.academic.syllabus,

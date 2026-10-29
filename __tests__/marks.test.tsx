@@ -22,8 +22,12 @@ jest.mock('@react-navigation/native', () => {
   };
 });
 let mockAccessToken = 'token';
+let mockUser = {
+  id: 'principal-1',
+  permissions: ['results:view', 'approvals:manage'],
+};
 jest.mock('../src/context/AuthContext', () => ({
-  useAuth: () => ({ accessToken: mockAccessToken }),
+  useAuth: () => ({ accessToken: mockAccessToken, user: mockUser }),
 }));
 jest.mock('../src/services/teacher/resultService', () => ({
   resultService: {
@@ -157,6 +161,10 @@ const input = async (
 
 beforeEach(() => {
   mockAccessToken = 'token';
+  mockUser = {
+    id: 'principal-1',
+    permissions: ['results:view', 'approvals:manage'],
+  };
   jest.clearAllMocks();
   teacherService.list.mockResolvedValue({
     sources: [source],
@@ -397,6 +405,84 @@ const publishedDetail = () => ({
     publishedAt: '2026-10-24T10:00:00Z',
     publishedRevision: 1,
   },
+});
+
+test('authoritative capability removal hides Publish even when approved status and revision are unchanged', async () => {
+  principalService.detail
+    .mockResolvedValueOnce(approvedDetail())
+    .mockResolvedValue({
+      ...approvedDetail(),
+      canPublish: false,
+    });
+  const tree = await mount(
+    <PrincipalResultModerationScreen
+      {...({ route: { params: { approvalId: 'approval-1' } } } as any)}
+    />,
+  );
+  expect(tree.root.findAllByType(Button).map(n => n.props.title)).toContain(
+    'Publish Result',
+  );
+  await act(async () => tree.root.findByType(DashboardShell).props.onRefresh());
+  expect(content(tree)).toContain('Unpublished');
+  expect(tree.root.findAllByType(Button).map(n => n.props.title)).not.toContain(
+    'Publish Result',
+  );
+});
+
+test('refresh immediately hides Publish and ignores an older response arriving after the latest refresh', async () => {
+  let resolveOlder!: (value: ReturnType<typeof approvedDetail>) => void;
+  principalService.detail
+    .mockResolvedValueOnce(approvedDetail())
+    .mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveOlder = resolve;
+        }),
+    )
+    .mockResolvedValueOnce(publishedDetail());
+  const tree = await mount(
+    <PrincipalResultModerationScreen
+      {...({ route: { params: { approvalId: 'approval-1' } } } as any)}
+    />,
+  );
+  let older!: Promise<void>;
+  await act(async () => {
+    older = tree.root.findByType(DashboardShell).props.onRefresh();
+  });
+  expect(content(tree)).toContain('Loading result');
+  expect(tree.root.findAllByType(Button).map(n => n.props.title)).not.toContain(
+    'Publish Result',
+  );
+  await act(async () => tree.root.findByType(DashboardShell).props.onRefresh());
+  await act(async () => {
+    resolveOlder(approvedDetail());
+    await older;
+  });
+  expect(content(tree)).toContain('Published:');
+  expect(tree.root.findAllByType(Button).map(n => n.props.title)).not.toContain(
+    'Publish Result',
+  );
+});
+
+test('permission context changes with the same token reset the resource and close publication confirmation', async () => {
+  principalService.detail
+    .mockResolvedValueOnce(approvedDetail())
+    .mockResolvedValue({ ...approvedDetail(), canPublish: false });
+  const element = () => (
+    <PrincipalResultModerationScreen
+      {...({ route: { params: { approvalId: 'approval-1' } } } as any)}
+    />
+  );
+  const tree = await mount(element());
+  await press(tree, 'Publish Result');
+  mockUser = { ...mockUser, permissions: ['results:view'] };
+  await act(async () => tree.update(element()));
+  expect(principalService.detail).toHaveBeenCalledTimes(2);
+  expect(content(tree)).not.toContain('This result will become visible');
+  expect(tree.root.findAllByType(Button).map(n => n.props.title)).not.toContain(
+    'Publish Result',
+  );
+  expect(principalService.publish).not.toHaveBeenCalled();
 });
 test('publication confirmation cancel does not mutate and success refresh removes capability', async () => {
   principalService.detail.mockResolvedValue(approvedDetail());

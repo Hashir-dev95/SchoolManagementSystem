@@ -2051,6 +2051,21 @@ test('Room substitution conflicts with another effective scheduled period', asyn
   assert.match(result.message, /Room conflict/);
 });
 
+test('P-PR6 legacy substitute cannot double-book a Teacher even in a different Room', async () => {
+  await TimetablePeriod.create({
+    ...slot({teacherId: teacherB.id, classId: class10, sectionId: section10A,
+      roomId: roomIds.get('Another room'), startTime: '10:00', endTime: '11:00'}),
+    branchId: branchA, timetableVersionId: versionId,
+  });
+  const result = await http('/timetables/substitutes', principal, 'POST', {
+    periodId, substituteTeacherId: String(teacherB.id), date: nowDate,
+    startTime: '10:15', endTime: '10:45', roomId: roomIds.get('Approved revised room'),
+  });
+  assert.equal(result.status, 409);
+  assert.match(result.message, /Teacher unavailable/);
+  assert.equal(await SubstituteAssignment.countDocuments(), 0);
+});
+
 test('Room collision imported into immutable draft cannot pass concurrent approvals', async () => {
   const a = slot({
     classId: String(class9),

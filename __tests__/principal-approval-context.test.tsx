@@ -336,6 +336,7 @@ test('Principal navigator retains one stack with unique existing screens and no 
   );
   expect(names).toEqual([
     'Rooms',
+    'Substitutions',
     'TimetableAdmin',
     'StudentsEnrollment',
     'AcademicSetup',
@@ -351,6 +352,9 @@ test('Principal navigator retains one stack with unique existing screens and no 
     'AssignTeacher',
     'Results',
     'ResultModeration',
+    'Attendance',
+    'AttendanceSession',
+    'AttendancePatterns',
   ]);
   expect(new Set(names).size).toBe(names.length);
   expect(contents(tree)).not.toContain('NavigationContainer');

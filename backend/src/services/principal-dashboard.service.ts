@@ -13,7 +13,7 @@ import {
   APPROVAL_TYPES,
   ApprovalType,
 } from '../models/approvalRequest';
-import { getBranchAttendanceSummary } from './attendance.service';
+import { principalAttendanceSummary } from './principal-attendance.service';
 import { getBranchFeeSummary } from './fee.service';
 import { getBranchSafetyAlertSummary } from './safety-alert.service';
 import { getBranchSchoolNotices } from './school-notice.service';
@@ -43,7 +43,7 @@ export interface PrincipalDashboardData {
     active: number;
   };
 
-  attendance: Awaited<ReturnType<typeof getBranchAttendanceSummary>>;
+  attendance: Awaited<ReturnType<typeof principalAttendanceSummary>> | null;
 
   tasks: Awaited<ReturnType<typeof getBranchPrincipalTasks>>;
 
@@ -100,7 +100,10 @@ export const getPrincipalDashboard = async (
     throw new Error('Branch not found');
   }
 
-  const attendanceSummaryPromise = getBranchAttendanceSummary(branchId);
+  // Dashboard permission alone does not grant attendance visibility. No legacy
+  // daily marks or incomplete Student percentages compete with period sessions.
+  const attendanceSummaryPromise = branch.isActive && ROLE_PERMISSIONS.principal.includes(PERMISSIONS.ATTENDANCE_VIEW)
+    ? principalAttendanceSummary({userId:actorId,role:'principal'}) : Promise.resolve(null);
   const feeSummaryPromise = getBranchFeeSummary(branchId);
   const safetyAlertSummaryPromise = getBranchSafetyAlertSummary(branchId);
 

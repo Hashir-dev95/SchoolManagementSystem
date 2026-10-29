@@ -147,11 +147,28 @@ test('invalid academic references are explicit configuration problems and cannot
   const read=await http('/principal/results/'+id,principal);assert.equal(read.json.data.canPublish,false);assert.ok(read.json.data.configurationIssue);
   assert.equal((await publishApproved(id,detail)).status,409);assert.equal((await AcademicResult.findById(detail.result.resultId))!.status,'moderated_approved');
 });
-for(const decision of ['pending','return','reject'])test(decision+' result cannot publish',async()=>{
+for(const decision of ['pending','return','reject'] as const)test(decision+' result cannot publish',async()=>{
   const {value,request}=await submitted();let current=value;
   if(decision!=='pending')current=(await decide(String(request!._id),{action:decision,reason:'Review evidence',recordRevision:value.recordRevision,clientOperationId:'decision_result_operation_01'})).json.data.result;
+  const read=await http('/principal/results/'+String(request!._id),principal);
+  assert.equal(read.status,200);assert.equal(read.json.data.canPublish,false);
+  const queue=await http('/principal/results?state='+({pending:'pending',return:'returned',reject:'rejected'}[decision]),principal);
+  assert.equal(queue.status,200);assert.equal(queue.json.data.total,1);
+  assert.equal((await http('/principal/results?state=awaiting_publication',principal)).json.data.total,0);
   assert.equal((await publish(String(request!._id),{recordRevision:current.recordRevision,clientOperationId:'invalid_publish_operation_01'})).status,409);
   assert.equal((await AcademicResult.findById(value.resultId))!.history.filter(v=>v.action==='published').length,0);
+});
+
+for(const change of ['disabled','demoted','revoked','teacher'])test('result queue and detail reject '+change+' actor',async()=>{
+  const {id}=await approved();let person=principal;
+  if(change==='disabled')await User.updateOne({_id:principal.id},{$set:{isActive:false}});
+  if(change==='demoted')await User.updateOne({_id:principal.id},{$set:{role:'teacher'}});
+  if(change==='revoked')await Session.updateMany({token:principal.token},{$set:{isRevoked:true}});
+  if(change==='teacher')person=teacher;
+  for(const path of ['/principal/results','/principal/results/'+id]){
+    const response=await http(path,person);assert.equal(response.status,change==='teacher'?403:401,JSON.stringify(response.json));
+    assert.equal(response.json.data,undefined);
+  }
 });
 test('stale revision cannot publish approved result or overwrite newer moderation',async()=>{
   const {id,detail}=await approved();assert.equal((await publish(id,{recordRevision:detail.result.recordRevision-1,clientOperationId:'stale_publish_operation_01'})).status,409);
@@ -221,6 +238,17 @@ test('eligible managed enrollment retains its own published history after withdr
 test('foreign Branch Student is denied even with the correct recipient token',async()=>{
   const {id,detail}=await approved();await publishApproved(id,detail);await User.updateOne({_id:learner.id},{$set:{branchId:foreign}});
   assert.equal((await http('/student/results/'+detail.result.resultId,learner)).status,404);
+});
+
+test('Student result DTO never resolves a foreign Branch Subject name from a corrupt reference',async()=>{
+  const {id,detail}=await approved();await publishApproved(id,detail);
+  const foreignSubject=await Subject.create({branchId:foreign,name:'FOREIGN PRIVATE Subject'});
+  // Native corruption bypasses immutable refs, as a legacy import could do.
+  await AcademicResult.collection.updateOne({_id:new mongoose.Types.ObjectId(detail.result.resultId)},{$set:{subjectId:foreignSubject._id}});
+  const response=await http('/student/results/'+detail.result.resultId,learner);
+  assert.equal(response.status,200,JSON.stringify(response.json));
+  assert.equal(response.json.data.subject.name,'');
+  assert.equal(JSON.stringify((await http('/student/results',learner)).json).includes('FOREIGN PRIVATE'),false);
 });
 
 test('Principal detail excludes Teacher-only notes while Teacher status and feedback remain available',async()=>{

@@ -275,9 +275,10 @@ test('dashboard isolates all aggregate families and ignores a spoofed GET JSON b
   assert.deepEqual(data.students, {total: 1, active: 1});
   assert.deepEqual(data.classes, {total: 1, active: 1});
   assert.deepEqual(data.sections, {total: 1, active: 1});
-  assert.equal(data.attendance.totalMarked, 1);
-  assert.equal(data.attendance.present, 1);
-  assert.equal(data.attendance.absent, 0);
+  // Legacy daily rows do not establish a canonical expected period/session.
+  assert.equal(data.attendance.expected, 0);
+  assert.equal(data.attendance.submitted, 0);
+  assert.equal(data.attendance.attendancePercentage, undefined);
   assert.equal(data.feeSummary.totalAmount, 25);
   assert.equal(data.feeSummary.paidAmount, 5);
   assert.equal(data.feeSummary.outstandingAmount, 20);
@@ -316,7 +317,9 @@ const assertNonDisclosingApprovals = (dashboard: Awaited<ReturnType<typeof http>
   }});
   // Other existing dashboard cards remain available under dashboard permission.
   assert.equal(dashboard.data.data.branch.id, String(branchA));
-  assert.equal(dashboard.data.data.attendance.totalMarked, 1);
+  if (ROLE_PERMISSIONS.principal.includes(PERMISSIONS.ATTENDANCE_VIEW)) {
+    assert.equal(dashboard.data.data.attendance.expected, 0);
+  } else assert.equal(dashboard.data.data.attendance, null);
   assert.equal(dashboard.data.data.feeSummary.totalAmount, 25);
   assert.equal(dashboard.data.data.safetyAlerts.total, 1);
   assert.equal(dashboard.data.data.notices.length, 1);

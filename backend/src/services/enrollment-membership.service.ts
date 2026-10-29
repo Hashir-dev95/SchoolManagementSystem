@@ -14,10 +14,28 @@ export function enrollmentMembership(
   classId: string,
   sectionId: string,
   date?: string,
-): PipelineStage[] {
-  const branch = new mongoose.Types.ObjectId(branchId),
-    cls = new mongoose.Types.ObjectId(classId),
-    section = new mongoose.Types.ObjectId(sectionId);
+): PipelineStage.FacetPipelineStage[] {
+  return membershipPipeline(
+    branchId,
+    new mongoose.Types.ObjectId(classId),
+    new mongoose.Types.ObjectId(sectionId),
+    date,
+  );
+}
+// Trusted parent-period bindings reuse exactly the same eligibility predicate.
+export function enrollmentMembershipForOccurrence(
+  branchId: string,
+  date: string,
+): PipelineStage.FacetPipelineStage[] {
+  return membershipPipeline(branchId, '$$class', '$$section', date);
+}
+function membershipPipeline(
+  branchId: string,
+  cls: mongoose.Types.ObjectId | string,
+  section: mongoose.Types.ObjectId | string,
+  date?: string,
+): PipelineStage.FacetPipelineStage[] {
+  const branch = new mongoose.Types.ObjectId(branchId);
   const historical = !!date && date < schoolToday();
   const at = new Date();
   const civil = (field: string) => ({
@@ -41,7 +59,7 @@ export function enrollmentMembership(
       $lookup: {
         from: SchoolClass.collection.name,
         pipeline: [
-          { $match: { _id: cls, branchId: branch } },
+          { $match: { branchId: branch, $expr: { $eq: ['$_id', cls] } } },
           { $project: { academicPeriodId: 1 } },
         ],
         as: '_enrollmentClass',

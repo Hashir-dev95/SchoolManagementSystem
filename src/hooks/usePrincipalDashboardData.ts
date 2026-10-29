@@ -6,7 +6,9 @@ import { principalService } from '../services/principal/principalService';
 import { PrincipalDashboardData } from '../services/principal/principalService';
 
 export const usePrincipalDashboardData = () => {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
+  const authorityKey = JSON.stringify([accessToken, user]);
+  const [owner, setOwner] = useState<string | null>(null);
   const [data, setData] = useState<PrincipalDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -14,6 +16,7 @@ export const usePrincipalDashboardData = () => {
 
   const reload = useCallback(async () => {
     const current = ++generation.current;
+    setData(null);
     if (!accessToken) {
       setError('Your session is unavailable. Please sign in again.');
       setLoading(false);
@@ -24,7 +27,10 @@ export const usePrincipalDashboardData = () => {
     setError(null);
     try {
       const response = await principalService.getDashboard(accessToken);
-      if (current === generation.current) setData(response.data);
+      if (current === generation.current) {
+        setData(response.data);
+        setOwner(authorityKey);
+      }
     } catch (requestError: unknown) {
       if (current === generation.current)
         setError(
@@ -35,7 +41,7 @@ export const usePrincipalDashboardData = () => {
     } finally {
       if (current === generation.current) setLoading(false);
     }
-  }, [accessToken]);
+  }, [accessToken, authorityKey]);
 
   useFocusEffect(
     useCallback(() => {
@@ -46,5 +52,5 @@ export const usePrincipalDashboardData = () => {
     }, [reload]),
   );
 
-  return { data, loading, error, reload };
+  return { data: owner === authorityKey ? data : null, loading, error, reload };
 };
