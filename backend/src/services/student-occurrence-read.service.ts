@@ -10,6 +10,7 @@ import {
 import {
   resolveStudentSelf,
   studentSelfForbidden,
+  type StudentReadScope,
 } from './student-self-scope.service';
 import {
   operationalTimetableVersions,
@@ -25,11 +26,7 @@ import {
 import type { JwtPayload } from './jwt.service';
 import { RequestContractError } from '../utils/request-validation';
 
-async function occurrences(
-  identity: JwtPayload | undefined,
-  dateValue: unknown,
-) {
-  const ctx = await resolveStudentSelf(identity);
+async function occurrences(ctx: StudentReadScope, dateValue: unknown) {
   const date =
     dateValue === undefined ? schoolToday() : scheduleDate(dateValue);
   if (date < schoolDateTime(ctx.enrollment.effectiveFrom).date) {
@@ -124,14 +121,30 @@ export async function getStudentTimetable(
   identity: JwtPayload | undefined,
   dateValue?: unknown,
 ) {
-  const { date, items } = await occurrences(identity, dateValue);
+  return readStudentTimetable(await resolveStudentSelf(identity), dateValue);
+}
+/** Internal reader; authorize the actual Student or verified Parent before calling. */
+export async function readStudentTimetable(
+  ctx: StudentReadScope,
+  dateValue?: unknown,
+) {
+  const { date, items } = await occurrences(ctx, dateValue);
   return { date, items };
 }
 export async function getStudentPhysicalAttendance(
   identity: JwtPayload | undefined,
   dateValue?: unknown,
 ) {
-  const { ctx, date, items } = await occurrences(identity, dateValue);
+  return readStudentPhysicalAttendance(
+    await resolveStudentSelf(identity),
+    dateValue,
+  );
+}
+export async function readStudentPhysicalAttendance(
+  scope: StudentReadScope,
+  dateValue?: unknown,
+) {
+  const { ctx, date, items } = await occurrences(scope, dateValue);
   const records = [];
   for (const item of items) {
     const session = await AttendanceSession.findOne({

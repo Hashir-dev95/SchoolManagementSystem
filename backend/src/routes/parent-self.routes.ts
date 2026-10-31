@@ -13,6 +13,10 @@ import {
 import { studentEnrollmentDTO } from '../services/student-self-scope.service';
 import { RequestContractError } from '../utils/request-validation';
 import User from '../models/user';
+import {
+  readStudentTimetable,
+  readStudentPhysicalAttendance,
+} from '../services/student-occurrence-read.service';
 
 export const parentRead =
   (
@@ -79,6 +83,28 @@ router.get(
     studentEnrollmentDTO(
       (await verifiedChild(request.user, request.params.studentId)).scope,
     ),
+  ),
+);
+router.get(
+  '/children/:studentId/timetable',
+  parentRead(
+    async request =>
+      readStudentTimetable(
+        (await verifiedChild(request.user, request.params.studentId)).scope,
+        request.query.date,
+      ),
+    ['date'],
+  ),
+);
+router.get(
+  '/children/:studentId/attendance',
+  parentRead(
+    async request =>
+      readStudentPhysicalAttendance(
+        (await verifiedChild(request.user, request.params.studentId)).scope,
+        request.query.date,
+      ),
+    ['date'],
   ),
 );
 export default router;
