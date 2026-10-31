@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://192.168.1.25:5000/api';
+const API_BASE_URL = 'http://192.168.137.1:5000/api';
 const DEFAULT_TIMEOUT_MS = 10000;
 
 export class ApiError extends Error {
