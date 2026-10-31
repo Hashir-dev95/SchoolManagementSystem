@@ -29,7 +29,10 @@ export async function put(
   return record as any;
 }
 export async function http(path: string, token = state.token, body?: unknown) {
-  const response = await fetch(base + '/api/student/me' + path, {
+  return apiHttp('/student/me' + path, token, body);
+}
+export async function apiHttp(path: string, token: string, body?: unknown) {
+  const response = await fetch(base + '/api' + path, {
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),

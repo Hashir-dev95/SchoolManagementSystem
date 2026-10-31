@@ -3,6 +3,7 @@ import { PERMISSIONS } from './permissions';
 import type { Permission } from './permissions';
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
+  [USER_ROLES.PARENT]: [], // Child reads require a verified relationship, not Student/staff grants.
   // Principal safety grants do not broaden the existing administrative role.
   [USER_ROLES.SUPER_ADMIN]: Object.values(PERMISSIONS).filter(permission =>
     !permission.startsWith('liveLesson.') &&

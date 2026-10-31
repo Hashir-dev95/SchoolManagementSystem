@@ -5,6 +5,7 @@ export const USER_ROLES = {
   PRINCIPAL: 'principal',
   TEACHER: 'teacher',
   STUDENT: 'student',
+  PARENT: 'parent',
 } as const;
 
 export type UserRole = (typeof USER_ROLES)[keyof typeof USER_ROLES];

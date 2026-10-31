@@ -55,6 +55,7 @@ export const PERMISSIONS = {
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
+  [USER_ROLES.PARENT]: [],
   [USER_ROLES.SUPER_ADMIN]: [
     PERMISSIONS.ACADEMIC_ROOMS_VIEW, PERMISSIONS.ACADEMIC_ROOMS_MANAGE,
     PERMISSIONS.TIMETABLE_MANAGE,

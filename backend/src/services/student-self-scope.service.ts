@@ -30,6 +30,25 @@ export async function resolveStudentSelf(identity: JwtPayload | undefined) {
   const branchId = await requireActiveAcademicBranch(
     actor.branchId?.toString(),
   );
+  return resolveStudentReadScope(String(actor._id), branchId);
+}
+
+/** Internal read boundary: callers must first authorize the real actor/relationship. */
+export async function resolveStudentReadScope(
+  userId: string,
+  expectedBranchId: string,
+) {
+  const branchId = await requireActiveAcademicBranch(expectedBranchId);
+  const actor = await User.findOne({ role: 'student', isActive: true })
+    .where('_id')
+    .equals(userId)
+    .where('branchId')
+    .equals(branchId)
+    .read('primary')
+    .lean();
+  if (!actor) {
+    throw studentSelfForbidden();
+  }
   const student = await Student.findOne({ isActive: true })
     .where('userId')
     .equals(actor._id)
@@ -116,6 +135,12 @@ export async function resolveStudentSelf(identity: JwtPayload | undefined) {
 
 export async function getStudentSelf(identity: JwtPayload | undefined) {
   const ctx = await resolveStudentSelf(identity);
+  return studentProfileDTO(ctx);
+}
+export type StudentReadScope = Awaited<
+  ReturnType<typeof resolveStudentReadScope>
+>;
+export function studentProfileDTO(ctx: StudentReadScope) {
   return {
     studentId: String(ctx.student._id),
     fullName: ctx.user.fullName,
@@ -125,6 +150,9 @@ export async function getStudentSelf(identity: JwtPayload | undefined) {
 }
 export async function getStudentEnrollment(identity: JwtPayload | undefined) {
   const ctx = await resolveStudentSelf(identity);
+  return studentEnrollmentDTO(ctx);
+}
+export function studentEnrollmentDTO(ctx: StudentReadScope) {
   return {
     enrollmentId: String(ctx.enrollment._id),
     status: ctx.enrollment.status,
