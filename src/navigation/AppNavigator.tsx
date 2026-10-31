@@ -9,6 +9,7 @@ import SuperAdminNavigator from './SuperAdminNavigator';
 import PrincipalNavigator from './PrincipalNavigator';
 import TeacherNavigator from './TeacherNavigator';
 import StudentNavigator from './StudentNavigator';
+import ParentNavigator from './ParentNavigator';
 import DeveloperPreview from '../devPreview/DeveloperPreview';
 const RoleNavigator = () => {
   const { user } = useAuth();
@@ -26,6 +27,8 @@ const RoleNavigator = () => {
       return <TeacherNavigator />;
     case USER_ROLES.STUDENT:
       return <StudentNavigator />;
+    case USER_ROLES.PARENT:
+      return <ParentNavigator />;
 
     default:
       return <AuthNavigator />;

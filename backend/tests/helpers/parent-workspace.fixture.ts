@@ -56,5 +56,18 @@ beforeEach(async () => {
     status: 'active',
     effectiveFrom: new Date(Date.now() - 86400000),
   });
-  parentState = { parent, otherParent, verifier, token, link };
+  const otherToken = generateAccessToken(String(otherParent._id), 'parent');
+  await registerSession(String(otherParent._id), otherToken, 'parent');
+  await ParentStudentLink.create({
+    parentUserId: otherParent._id,
+    studentId: state.otherStudent._id,
+    branchId: state.branch._id,
+    relationship: 'mother',
+    status: 'verified',
+    isActive: true,
+    createdBy: verifier._id,
+    verifiedBy: verifier._id,
+    verifiedAt: new Date(),
+  });
+  parentState = { parent, otherParent, verifier, token, otherToken, link };
 });

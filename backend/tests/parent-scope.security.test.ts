@@ -50,6 +50,15 @@ test('Parent can select each independently verified child', async () => {
 });
 test('another Parent child and valid foreign ObjectId are forbidden', async () => {
   assert.equal(
+    (
+      await parentHttp(
+        `/children/${state.otherStudent._id}`,
+        parentState.otherToken,
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
     (await parentHttp(`/children/${state.otherStudent._id}`)).status,
     403,
   );
