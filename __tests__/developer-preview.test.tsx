@@ -1,0 +1,171 @@
+import React from 'react';
+import { Text } from 'react-native';
+import Renderer, { act } from 'react-test-renderer';
+import DeveloperPreview from '../src/devPreview/DeveloperPreview';
+import { AuthProvider, useAuth } from '../src/context/AuthContext';
+import { apiClient, ApiError } from '../src/services/api/apiClient';
+import { authService } from '../src/services/auth/authService';
+import type { User } from '../src/types/auth';
+
+jest.mock(
+  '../src/navigation/SuperAdminNavigator',
+  () => () => 'Canonical Super Admin',
+);
+jest.mock(
+  '../src/navigation/PrincipalNavigator',
+  () => () => 'Canonical Principal',
+);
+jest.mock(
+  '../src/navigation/TeacherNavigator',
+  () => () => 'Canonical Teacher',
+);
+jest.mock('../src/services/auth/authService', () => ({
+  authService: { logout: jest.fn() },
+}));
+jest.mock('react-native-safe-area-context', () => ({
+  SafeAreaView: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+let auth!: ReturnType<typeof useAuth>;
+let tree: Renderer.ReactTestRenderer;
+const actualUser: User = {
+  id: 'real-session-user',
+  fullName: 'Test learner',
+  email: 'test@example.invalid',
+  role: 'student',
+  branchId: 'own-branch',
+};
+const development = __DEV__;
+const runtime = globalThis as typeof globalThis & { __DEV__: boolean };
+function Probe() {
+  auth = useAuth();
+  return <Text>Normal canonical app</Text>;
+}
+async function press(label: string) {
+  const button = tree.root.findAll(
+    node =>
+      node.props.accessibilityLabel === label &&
+      typeof node.props.onPress === 'function',
+  )[0];
+  if (!button) {
+    throw new Error(`Missing button ${label}: ${output()}`);
+  }
+  await act(async () => button!.props.onPress());
+}
+function output() {
+  return JSON.stringify(tree.toJSON());
+}
+async function signIn() {
+  await act(async () => auth.login(actualUser, 'real-test-token'));
+}
+
+beforeEach(async () => {
+  jest.clearAllMocks();
+  runtime.__DEV__ = true;
+  jest
+    .spyOn(globalThis, 'fetch')
+    .mockRejectedValue(new Error('Unexpected network request'));
+  await act(async () => {
+    tree = Renderer.create(
+      <AuthProvider>
+        <DeveloperPreview>
+          <Probe />
+        </DeveloperPreview>
+      </AuthProvider>,
+    );
+  });
+});
+afterEach(async () => {
+  await act(async () => tree.unmount());
+  runtime.__DEV__ = development;
+  jest.restoreAllMocks();
+});
+
+test('signed-out users keep the canonical path and cannot open preview', () => {
+  expect(output()).toContain('Normal canonical app');
+  expect(output()).not.toContain('Open Developer Preview');
+});
+test('a user without a token cannot open preview', async () => {
+  await act(async () => auth.login(actualUser, ''));
+  expect(output()).not.toContain('Open Developer Preview');
+});
+test.each(['Super Admin', 'Principal', 'Teacher'])(
+  '%s selects the existing canonical navigator without changing the real session',
+  async role => {
+    await signIn();
+    await press('Open Developer Preview');
+    await press(role);
+    expect(output()).toContain(`Canonical ${role}`);
+    expect(auth.user).toBe(actualUser);
+    expect(auth.accessToken).toBe('real-test-token');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    await press('Exit Developer Preview');
+    expect(output()).toContain('Normal canonical app');
+  },
+);
+test.each(['Student', 'Parent', 'Finance'])(
+  '%s renders only sample UI, supports local navigation and makes no requests',
+  async role => {
+    await signIn();
+    await press('Open Developer Preview');
+    await press(role);
+    expect(output()).toContain(`${role} preview · FICTIONAL SAMPLE DATA`);
+    if (role === 'Student') {
+      await press('Homework');
+      expect(output()).toContain('Fractions practice');
+    } else if (role === 'Parent') {
+      await press('Sara Khan');
+      expect(output()).toContain('English · Reading practice');
+    } else {
+      await press('Fees & challans');
+      expect(output()).toContain('DEMO-2026-01');
+    }
+    expect(auth.user).toBe(actualUser);
+    expect(auth.accessToken).toBe('real-test-token');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    await press('Back to preview roles');
+    expect(output()).toContain('Developer Preview');
+    expect(output()).not.toContain('FICTIONAL SAMPLE DATA');
+  },
+);
+test('logout removes preview and a later login cannot inherit the selected role', async () => {
+  await signIn();
+  await press('Open Developer Preview');
+  await press('Finance');
+  await act(async () => auth.logout());
+  expect(output()).not.toContain('FICTIONAL SAMPLE DATA');
+  expect(output()).not.toContain('Open Developer Preview');
+  await signIn();
+  expect(output()).toContain('Normal canonical app');
+  expect(output()).not.toContain('FICTIONAL SAMPLE DATA');
+  expect(authService.logout).toHaveBeenCalledWith('real-test-token');
+});
+test('production guard prevents switching even with a real authenticated session', async () => {
+  runtime.__DEV__ = false;
+  await signIn();
+  expect(output()).toContain('Normal canonical app');
+  expect(output()).not.toContain('Open Developer Preview');
+});
+test('selecting a privileged UI does not change API authorization or swallow a 403', async () => {
+  await signIn();
+  await press('Open Developer Preview');
+  await press('Super Admin');
+  jest.mocked(globalThis.fetch).mockResolvedValueOnce({
+    ok: false,
+    status: 403,
+    json: async () => ({ message: 'Forbidden' }),
+  } as Response);
+  await expect(
+    apiClient.request('/admin/dashboard', { token: auth.accessToken! }),
+  ).rejects.toEqual(new ApiError(403, 'Forbidden'));
+  expect(globalThis.fetch).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer real-test-token',
+      },
+    }),
+  );
+  expect(auth.user?.role).toBe('student');
+});

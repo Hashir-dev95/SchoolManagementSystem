@@ -9,6 +9,7 @@ import SuperAdminNavigator from './SuperAdminNavigator';
 import PrincipalNavigator from './PrincipalNavigator';
 import TeacherNavigator from './TeacherNavigator';
 import StudentNavigator from './StudentNavigator';
+import DeveloperPreview from '../devPreview/DeveloperPreview';
 const RoleNavigator = () => {
   const { user } = useAuth();
 
@@ -35,7 +36,13 @@ const AppNavigator = () => {
   return (
     <AuthProvider>
       <NavigationContainer>
-        <RoleNavigator />
+        {__DEV__ ? (
+          <DeveloperPreview>
+            <RoleNavigator />
+          </DeveloperPreview>
+        ) : (
+          <RoleNavigator />
+        )}
       </NavigationContainer>
     </AuthProvider>
   );
