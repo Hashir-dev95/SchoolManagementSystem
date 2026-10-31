@@ -8,3 +8,4 @@ export { Button } from './Button';
 export { QuickActions } from './QuickActions';
 export { ScreenHeading, DemoNote } from './ScreenHeading';
 export { DashboardShell, DashboardStateCard } from './DashboardShell';
+export { WorkspaceTabs } from './WorkspaceTabs';
