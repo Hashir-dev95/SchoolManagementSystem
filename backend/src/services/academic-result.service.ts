@@ -226,6 +226,9 @@ export const publishResult = async (identity: JwtPayload | undefined, token: str
 const studentActor = async (identity: JwtPayload | undefined) => {
   const actor = await currentAcademicActor(identity);
   if (actor.role !== 'student' || !ROLE_PERMISSIONS.student.includes(PERMISSIONS.RESULTS_VIEW)) throw new RequestContractError(403, 'Student results are unavailable');
+  return resultRecipientContext(actor);
+};
+const resultRecipientContext = async (actor: Awaited<ReturnType<typeof currentAcademicActor>>) => {
   const branchId = await requireActiveAcademicBranch(actor.branchId?.toString());
   const student = await Student.findOne({isActive: true}).where('userId').equals(actor._id).where('branchId').equals(branchId).read('primary');
   if (!student) throw unavailable();
@@ -252,3 +255,16 @@ const studentDTO=async(row:any)=>{const revision=currentResultRevision(row),subj
 export const listStudentResults=async(identity:JwtPayload|undefined)=>{const ctx=await studentActor(identity),rows:any[]=await AcademicResult.find(studentResultFilter(ctx)).sort({publishedAt:-1}).read('primary'),items=[];for(const row of rows)items.push(await studentDTO(row));return{items,total:items.length};};
 export const getStudentResult=async(identity:JwtPayload|undefined,id:unknown)=>{const ctx=await studentActor(identity),row:any=await AcademicResult.findOne({...studentResultFilter(ctx),_id:objectIdField(id,'result ID')}).read('primary');if(!row)throw unavailable();return studentDTO(row);};
 export const ensureAcademicResultIndexes=()=>AcademicResult.createIndexes();
+
+// Internal Parent read boundary: caller proves verified child scope first.
+// Reuse the canonical recipient/membership/publication predicate and safe DTO,
+// requiring explicit matching publication metadata for this new Parent API.
+export const readPublishedResultsForVerifiedStudent = async (actor: Awaited<ReturnType<typeof currentAcademicActor>>) => {
+  if (actor.role !== 'student' || !actor.isActive || !ROLE_PERMISSIONS.student.includes(PERMISSIONS.RESULTS_VIEW)) throw new RequestContractError(403, 'Published child results are unavailable');
+  const ctx = await resultRecipientContext(actor);
+  const rows = await AcademicResult.find({...studentResultFilter(ctx), publishedRevision: {$gt: 0},
+    $expr: {$eq: ['$publishedRevision', '$currentRevision']}}).sort({publishedAt: -1}).read('primary');
+  const items = [];
+  for (const row of rows) items.push(await studentDTO(row));
+  return {items, total: items.length};
+};

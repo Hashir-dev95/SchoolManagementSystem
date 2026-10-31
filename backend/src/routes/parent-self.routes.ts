@@ -13,6 +13,8 @@ import {
 import { studentEnrollmentDTO } from '../services/student-self-scope.service';
 import { RequestContractError } from '../utils/request-validation';
 import User from '../models/user';
+import { readStudentAssignedWork } from '../services/student-academic-read.service';
+import { readPublishedResultsForVerifiedStudent } from '../services/academic-result.service';
 import {
   readStudentTimetable,
   readStudentPhysicalAttendance,
@@ -107,4 +109,36 @@ router.get(
     ['date'],
   ),
 );
+router.get(
+  '/children/:studentId/homework',
+  parentRead(async request =>
+    readStudentAssignedWork(
+      (await verifiedChild(request.user, request.params.studentId)).scope,
+      'homework',
+    ),
+  ),
+);
+router.get(
+  '/children/:studentId/quizzes',
+  parentRead(async request =>
+    readStudentAssignedWork(
+      (await verifiedChild(request.user, request.params.studentId)).scope,
+      'quiz',
+    ),
+  ),
+);
+router.get(
+  '/children/:studentId/results',
+  parentRead(async request =>
+    readPublishedResultsForVerifiedStudent(
+      (await verifiedChild(request.user, request.params.studentId)).scope.actor,
+    ),
+  ),
+);
+// No linking, submissions, attempts or arbitrary-ID aliases are public here.
+router.use((_req, res) => {
+  res
+    .status(403)
+    .json({ success: false, message: 'Parent operation is not permitted' });
+});
 export default router;

@@ -526,8 +526,13 @@ const studentActor = async (identity: JwtPayload | undefined) => {
 
 export const listStudentAcademicWork = async (identity: JwtPayload | undefined) => {
   const { actor, branchId } = await studentActor(identity);
+  return readAcademicWorkForRecipient(branchId, String(actor._id));
+};
+// Internal safe projection. The caller must authorize the persisted Student or
+// verified Parent-child relationship; this function grants no role/session.
+export const readAcademicWorkForRecipient = async (branchId: string, recipientUserId: string) => {
   const entitlements = await AcademicWorkAudience.find({
-    branchId, recipientUserId: actor._id, state: 'assigned',
+    branchId, recipientUserId, state: 'assigned',
   }).sort({ entitledAt: -1 }).limit(100).read('primary');
   const homeworkIds = entitlements.filter(v => v.workType === 'homework').map(v => v.workId);
   const quizIds = entitlements.filter(v => v.workType === 'quiz').map(v => v.workId);

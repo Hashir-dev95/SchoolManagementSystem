@@ -1,7 +1,7 @@
 import { AcademicWorkAudience } from '../models/academicWorkAudience';
 import { Homework } from '../models/homework';
 import { Quiz } from '../models/quiz';
-import { listStudentAcademicWork } from './academic-work.service';
+import { readAcademicWorkForRecipient } from './academic-work.service';
 import {
   listStudentResults,
   getStudentResult,
@@ -9,6 +9,7 @@ import {
 import {
   resolveStudentSelf,
   studentSelfForbidden,
+  type StudentReadScope,
 } from './student-self-scope.service';
 import type { JwtPayload } from './jwt.service';
 import { RequestContractError } from '../utils/request-validation';
@@ -19,7 +20,16 @@ export async function getStudentAssignedReads(
   type: 'homework' | 'quiz',
 ) {
   const ctx = await resolveStudentSelf(identity);
-  const work = await listStudentAcademicWork(identity);
+  return readStudentAssignedWork(ctx, type);
+}
+export async function readStudentAssignedWork(
+  ctx: StudentReadScope,
+  type: 'homework' | 'quiz',
+) {
+  const work = await readAcademicWorkForRecipient(
+    ctx.branchId,
+    String(ctx.actor._id),
+  );
   const items = [];
   for (const item of work) {
     if (

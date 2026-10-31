@@ -33,6 +33,7 @@ const verified = () => ({
   isActive: true,
   verifiedAt: { $type: 'date' as const, $lte: new Date() },
   verifiedBy: { $type: 'objectId' as const },
+  createdBy: { $type: 'objectId' as const },
 });
 export async function verifiedChild(
   identity: JwtPayload | undefined,

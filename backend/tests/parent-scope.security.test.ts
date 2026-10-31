@@ -61,6 +61,7 @@ for (const change of [
   { isActive: false },
   { verifiedBy: null },
   { verifiedAt: null },
+  { createdBy: null },
 ]) {
   test(`unverified/inactive/revoked relationship fails closed ${JSON.stringify(
     change,
