@@ -9,6 +9,10 @@ import {
   getStudentEnrollment,
 } from '../services/student-self-scope.service';
 import { RequestContractError } from '../utils/request-validation';
+import {
+  getStudentTimetable,
+  getStudentPhysicalAttendance,
+} from '../services/student-occurrence-read.service';
 
 export const studentSelfRead =
   (
@@ -56,12 +60,24 @@ router.get(
   studentSelfRead(request => getStudentEnrollment(request.user)),
 );
 // No ID-based alias, write or arbitrary scope selector exists under /me.
+router.get(
+  '/timetable',
+  studentSelfRead(
+    request => getStudentTimetable(request.user, request.query.date),
+    ['date'],
+  ),
+);
+router.get(
+  '/attendance',
+  studentSelfRead(
+    request => getStudentPhysicalAttendance(request.user, request.query.date),
+    ['date'],
+  ),
+);
 router.use((_request, response) => {
-  response
-    .status(403)
-    .json({
-      success: false,
-      message: 'Student self-service operation is not permitted',
-    });
+  response.status(403).json({
+    success: false,
+    message: 'Student self-service operation is not permitted',
+  });
 });
 export default router;
