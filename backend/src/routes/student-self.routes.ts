@@ -10,6 +10,12 @@ import {
 } from '../services/student-self-scope.service';
 import { RequestContractError } from '../utils/request-validation';
 import {
+  getStudentAssignedReads,
+  getStudentAssignedRead,
+  getStudentPublishedReads,
+  getStudentPublishedRead,
+} from '../services/student-academic-read.service';
+import {
   getStudentTimetable,
   getStudentPhysicalAttendance,
 } from '../services/student-occurrence-read.service';
@@ -60,6 +66,36 @@ router.get(
   studentSelfRead(request => getStudentEnrollment(request.user)),
 );
 // No ID-based alias, write or arbitrary scope selector exists under /me.
+router.get(
+  '/homework',
+  studentSelfRead(request => getStudentAssignedReads(request.user, 'homework')),
+);
+router.get(
+  '/quizzes',
+  studentSelfRead(request => getStudentAssignedReads(request.user, 'quiz')),
+);
+router.get(
+  '/homework/:id',
+  studentSelfRead(request =>
+    getStudentAssignedRead(request.user, 'homework', String(request.params.id)),
+  ),
+);
+router.get(
+  '/quizzes/:id',
+  studentSelfRead(request =>
+    getStudentAssignedRead(request.user, 'quiz', String(request.params.id)),
+  ),
+);
+router.get(
+  '/results',
+  studentSelfRead(request => getStudentPublishedReads(request.user)),
+);
+router.get(
+  '/results/:id',
+  studentSelfRead(request =>
+    getStudentPublishedRead(request.user, request.params.id),
+  ),
+);
 router.get(
   '/timetable',
   studentSelfRead(
