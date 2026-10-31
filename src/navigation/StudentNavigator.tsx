@@ -5,7 +5,9 @@ import {
 } from '@react-navigation/native-stack';
 import StudentLiveLessonsScreen from '../screens/liveLessons/StudentLiveLessonsScreen';
 import LiveLessonRoomScreen from '../screens/liveLessons/LiveLessonRoomScreen';
+import StudentWorkspaceScreen from '../screens/student/StudentWorkspaceScreen';
 export type StudentStackParamList = {
+  StudentWorkspace: undefined;
   StudentLiveLessons: undefined;
   StudentLiveRoom: { sessionId: string };
 };
@@ -21,7 +23,12 @@ function StudentLiveRoom({
 }
 export default function StudentNavigator() {
   return (
-    <Stack.Navigator>
+    <Stack.Navigator initialRouteName="StudentWorkspace">
+      <Stack.Screen
+        name="StudentWorkspace"
+        component={StudentWorkspaceScreen}
+        options={{ title: 'Student workspace' }}
+      />
       <Stack.Screen
         name="StudentLiveLessons"
         component={StudentLiveLessonsScreen}
