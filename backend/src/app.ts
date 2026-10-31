@@ -1,4 +1,5 @@
 import staffSelfServiceRoutes from './routes/staff-self-service.routes';
+import studentSelfRoutes from './routes/student-self.routes';
 import attendanceAmendmentRoutes from './routes/attendance-amendment.routes';
 import {academicAdminRouter, teacherAcademicRouter, principalAcademicRouter} from './routes/academic.routes';
 import {liveLessonRouter} from './routes/live-lesson.routes';
@@ -47,6 +48,7 @@ app.get('/', (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/student/me', studentSelfRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/principal', principalRoutes);
