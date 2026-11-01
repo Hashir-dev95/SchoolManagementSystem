@@ -10,6 +10,7 @@ import PrincipalNavigator from './PrincipalNavigator';
 import TeacherNavigator from './TeacherNavigator';
 import StudentNavigator from './StudentNavigator';
 import ParentNavigator from './ParentNavigator';
+import FinanceNavigator from './FinanceNavigator';
 import DeveloperPreview from '../devPreview/DeveloperPreview';
 const RoleNavigator = () => {
   const { user } = useAuth();
@@ -29,6 +30,8 @@ const RoleNavigator = () => {
       return <StudentNavigator />;
     case USER_ROLES.PARENT:
       return <ParentNavigator />;
+    case USER_ROLES.FINANCE:
+      return <FinanceNavigator />;
 
     default:
       return <AuthNavigator />;
