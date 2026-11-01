@@ -1,4 +1,5 @@
 import { apiClient } from '../api/apiClient';
+import type { FeeList } from '../finance/financeService';
 import type {
   StudentProfile,
   StudentEnrollmentView,
@@ -20,6 +21,8 @@ const read = async <T>(token: string, path: string) =>
 const childPath = (id: string) => `/children/${encodeURIComponent(id)}`;
 // IDs identify a requested child; the server revalidates the relationship.
 export const parentService = {
+  fees: (token: string, id: string) =>
+    read<FeeList>(token, childPath(id) + '/fees'),
   me: (token: string) => read<{ fullName: string }>(token, ''),
   children: (token: string) =>
     read<{ items: VerifiedChild[] }>(token, '/children'),

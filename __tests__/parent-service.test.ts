@@ -26,6 +26,7 @@ test.each([
   ['homework', '/homework'],
   ['quizzes', '/quizzes'],
   ['results', '/results'],
+  ['fees', '/fees'],
 ] as const)(
   '%s identifies the child without supplying authorization scope',
   async (method, suffix) => {

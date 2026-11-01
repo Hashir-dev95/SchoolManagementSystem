@@ -5,6 +5,7 @@ import StudentNavigator from '../src/navigation/StudentNavigator';
 import { studentWorkspaceService } from '../src/services/student/workspaceService';
 import { ApiError } from '../src/services/api/apiClient';
 import type { User } from '../src/types/auth';
+import { fees } from './helpers/fee-fixture';
 
 let mockUser: User | null = {
   id: 'student-a',
@@ -43,6 +44,7 @@ jest.mock('../src/services/student/workspaceService', () => ({
     homework: jest.fn(),
     quizzes: jest.fn(),
     results: jest.fn(),
+    fees: jest.fn(),
   },
 }));
 const service = jest.mocked(studentWorkspaceService);
@@ -138,6 +140,7 @@ beforeEach(() => {
   });
   service.quizzes.mockResolvedValue({ items: [], readOnly: true });
   service.results.mockResolvedValue({ items: [], total: 0 });
+  service.fees.mockResolvedValue(fees);
   mockLogout.mockResolvedValue(undefined);
 });
 afterEach(async () => {
@@ -183,20 +186,22 @@ test('homework/quiz/results use read-only cards and honest empty states', async 
   await press('Results');
   expect(text()).toContain('No published results.');
 });
-test('fees shows its blocker and makes no additional API call', async () => {
+test('fees uses canonical self data and displays server-derived balance', async () => {
   await mount();
   const calls = Object.values(service).reduce(
     (sum, method) => sum + method.mock.calls.length,
     0,
   );
   await press('Fees');
-  expect(text()).toContain('NOT INTEGRATED — awaiting canonical Finance phase');
+  expect(text()).toContain('Canonical tuition');
+  expect(text()).toContain('PKR 300.00');
+  expect(service.fees).toHaveBeenCalledWith('real-token');
   expect(
     Object.values(service).reduce(
       (sum, method) => sum + method.mock.calls.length,
       0,
     ),
-  ).toBe(calls);
+  ).toBe(calls + 1);
 });
 test('published quiz metadata and safe result fields render without submission controls', async () => {
   service.quizzes.mockResolvedValueOnce({

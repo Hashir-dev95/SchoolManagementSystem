@@ -12,6 +12,7 @@ test.each([
   ['homework', '/homework'],
   ['quizzes', '/quizzes'],
   ['results', '/results'],
+  ['fees', '/fees'],
 ] as const)(
   '%s uses only the self endpoint and real token',
   async (method, path) => {

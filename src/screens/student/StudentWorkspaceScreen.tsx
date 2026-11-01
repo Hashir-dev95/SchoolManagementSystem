@@ -22,6 +22,8 @@ import {
   WorkspaceTabs,
 } from '../../components/hiraDashboard';
 import { colors, spacing, typography } from '../../theme/hiraDashboard';
+import { FeeCards } from '../../components/hiraDashboard/FeeCards';
+import type { FeeList } from '../../services/finance/financeService';
 
 const panes = [
   'Profile',
@@ -34,6 +36,7 @@ const panes = [
 ] as const;
 type Pane = (typeof panes)[number];
 type Data =
+  | { kind: 'Fees'; fees: FeeList }
   | {
       kind: 'Profile';
       profile: StudentProfile;
@@ -66,7 +69,7 @@ async function loadPane(token: string, pane: Pane): Promise<Data | null> {
     case 'Results':
       return { kind: pane, ...(await service.results(token)) };
     case 'Fees':
-      return null;
+      return { kind: 'Fees', fees: await service.fees(token) };
   }
 }
 export default function StudentWorkspaceScreen() {
@@ -90,31 +93,29 @@ function Workspace({ token }: { token: string }) {
     let active = true;
     setData(null);
     setError(null);
-    setLoading(pane !== 'Fees');
-    if (pane !== 'Fees') {
-      loadPane(token, pane)
-        .then(value => {
-          if (active) {
-            setData(value);
-          }
-        })
-        .catch((failure: unknown) => {
-          if (active) {
-            setError(
-              failure instanceof ApiError && failure.status === 403
-                ? 'Forbidden: your Student record or enrollment is unavailable. Contact your school.'
-                : failure instanceof ApiError && failure.status === 401
-                ? 'Session unavailable. Sign in again.'
-                : 'Could not load your school records. Please retry.',
-            );
-          }
-        })
-        .finally(() => {
-          if (active) {
-            setLoading(false);
-          }
-        });
-    }
+    setLoading(true);
+    loadPane(token, pane)
+      .then(value => {
+        if (active) {
+          setData(value);
+        }
+      })
+      .catch((failure: unknown) => {
+        if (active) {
+          setError(
+            failure instanceof ApiError && failure.status === 403
+              ? 'Forbidden: your Student record or enrollment is unavailable. Contact your school.'
+              : failure instanceof ApiError && failure.status === 401
+              ? 'Session unavailable. Sign in again.'
+              : 'Could not load your school records. Please retry.',
+          );
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
     return () => {
       active = false;
     };
@@ -157,18 +158,14 @@ function Workspace({ token }: { token: string }) {
         onSelect={value => setPane(value as Pane)}
       />
       <DashboardStateCard loading={loading} error={error} onRetry={retry} />
-      {pane === 'Fees' ? (
-        <SectionCard title="Fees">
-          <Text style={styles.text}>
-            NOT INTEGRATED — awaiting canonical Finance phase
-          </Text>
-        </SectionCard>
-      ) : null}
       {!loading && !error && data ? <ReadContent data={data} /> : null}
     </DashboardShell>
   );
 }
 function ReadContent({ data }: { data: Data }) {
+  if (data.kind === 'Fees') {
+    return <FeeCards data={data.fees} />;
+  }
   if (data.kind === 'Profile') {
     const { profile, enrollment: e } = data;
     return (

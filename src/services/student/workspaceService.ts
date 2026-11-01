@@ -1,5 +1,6 @@
 import { apiClient } from '../api/apiClient';
 import type { StudentResult } from './resultService';
+import type { FeeList } from '../finance/financeService';
 
 export interface StudentProfile {
   studentId: string;
@@ -48,6 +49,7 @@ const read = async <T>(token: string, path: string): Promise<T> =>
 
 // No Student/scope selectors, writes, preview imports or data fallbacks.
 export const studentWorkspaceService = {
+  fees: (token: string) => read<FeeList>(token, '/fees'),
   profile: (token: string) => read<StudentProfile>(token, ''),
   enrollment: (token: string) =>
     read<StudentEnrollmentView>(token, '/enrollment'),

@@ -7,6 +7,7 @@ import { parentService } from '../src/services/parent/parentService';
 import type { VerifiedChild } from '../src/services/parent/parentService';
 import { ApiError } from '../src/services/api/apiClient';
 import type { User } from '../src/types/auth';
+import { fees } from './helpers/fee-fixture';
 
 let mockUser: User = {
   id: 'parent-a',
@@ -47,6 +48,7 @@ jest.mock('../src/services/parent/parentService', () => ({
     homework: jest.fn(),
     quizzes: jest.fn(),
     results: jest.fn(),
+    fees: jest.fn(),
   },
 }));
 const service = jest.mocked(parentService);
@@ -148,6 +150,7 @@ beforeEach(() => {
   });
   service.quizzes.mockResolvedValue({ items: [], readOnly: true });
   service.results.mockResolvedValue({ items: [], total: 0 });
+  service.fees.mockResolvedValue(fees);
   mockLogout.mockResolvedValue(undefined);
 });
 afterEach(async () => {
@@ -230,20 +233,22 @@ test('safe published result rendering excludes any write controls', async () => 
     tree.root.findAll(node => node.props.accessibilityLabel === 'Submit'),
   ).toHaveLength(0);
 });
-test('fees shows the explicit canonical Finance blocker without a fee request', async () => {
+test('fees requests real verified-child data and renders canonical balances', async () => {
   await mount();
   const before = Object.values(service).reduce(
     (sum, method) => sum + method.mock.calls.length,
     0,
   );
   await press('Fees');
-  expect(text()).toContain('Fees integration pending canonical Finance phase');
+  expect(text()).toContain('Canonical tuition');
+  expect(text()).toContain('PKR 300.00');
+  expect(service.fees).toHaveBeenCalledWith('parent-token', 'A');
   expect(
     Object.values(service).reduce(
       (sum, method) => sum + method.mock.calls.length,
       0,
     ),
-  ).toBe(before);
+  ).toBe(before + 1);
 });
 test('empty verified-child list renders no child data or fallback children', async () => {
   service.children.mockResolvedValueOnce({ items: [] });

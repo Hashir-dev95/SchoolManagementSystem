@@ -15,6 +15,8 @@ import {
   Button,
 } from '../../components/hiraDashboard';
 import { colors, spacing, typography } from '../../theme/hiraDashboard';
+import { FeeCards } from '../../components/hiraDashboard/FeeCards';
+import type { FeeList } from '../../services/finance/financeService';
 
 const panes = [
   'Profile',
@@ -28,6 +30,7 @@ const panes = [
 ] as const;
 type Pane = (typeof panes)[number];
 type PaneData = {
+  fees?: FeeList;
   note?: string;
   empty: string;
   records: { id: string; title: string; lines: string[] }[];
@@ -150,13 +153,8 @@ async function loadPane(
     case 'Fees':
       return {
         empty: '',
-        records: [
-          {
-            id: 'fees-pending',
-            title: 'Fees',
-            lines: ['Fees integration pending canonical Finance phase'],
-          },
-        ],
+        records: [],
+        fees: await service.fees(token, id),
       };
   }
 }
@@ -303,7 +301,9 @@ function ChildPane({ childId, token }: { childId: string; token: string }) {
       {!loading && !error && data ? (
         <>
           {data.note ? <Text style={styles.note}>{data.note}</Text> : null}
-          {!data.records.length ? (
+          {data.fees ? (
+            <FeeCards data={data.fees} />
+          ) : !data.records.length ? (
             <Text style={styles.text}>{data.empty}</Text>
           ) : (
             data.records.map(record => (
