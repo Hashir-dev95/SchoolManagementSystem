@@ -687,6 +687,25 @@ export async function feeDTO(fee: Obligation, session?: ClientSession) {
       .read('primary')
       .lean(),
   ]);
+  // Validate each ledger component before summing: opposite-signed corruption
+  // must not cancel out, and foreign currency must never become a PKR receipt.
+  if (
+    !Number.isSafeInteger(fee.amountMinor) ||
+    fee.amountMinor < 1 ||
+    fee.amountMinor > 1000000000 ||
+    [...payments, ...intents].some(
+      row =>
+        row.currency !== fee.currency ||
+        !Number.isSafeInteger(row.amountMinor) ||
+        row.amountMinor < 1 ||
+        row.amountMinor > 1000000000,
+    )
+  ) {
+    throw new RequestContractError(
+      503,
+      'Financial ledger requires reconciliation',
+    );
+  }
   const paidMinor = payments.reduce((sum, row) => sum + row.amountMinor, 0),
     reservedMinor = intents.reduce((sum, row) => sum + row.amountMinor, 0);
   const balanceMinor = fee.amountMinor - paidMinor,
@@ -952,86 +971,60 @@ export async function branchFinanceSummary(
       'Use canonical period scope instead of legacy academic year',
     );
   }
-  const rows = await FeeObligation.aggregate([
-    { $match: { branchId: new Types.ObjectId(branchId) } },
-    {
-      $lookup: {
-        from: FinanceTransaction.collection.name,
-        let: { fee: '$_id' },
-        pipeline: [
-          {
-            $match: {
-              branchId: new Types.ObjectId(branchId),
-              state: 'settled',
-              $expr: { $eq: ['$obligationId', '$$fee'] },
-            },
-          },
-          { $group: { _id: null, paid: { $sum: '$amountMinor' } } },
-        ],
-        as: 'payments',
+  // Summary is a rollup of the same validated Student-bound ledger DTO as dues
+  // and reports. Per-obligation corruption must not be masked by other charges.
+  const session = await FeeObligation.startSession();
+  try {
+    return await session.withTransaction(
+      async () => {
+        const total = {
+          totalInvoices: 0,
+          amountMinor: 0,
+          paidMinor: 0,
+          paidInvoices: 0,
+          partialInvoices: 0,
+          overdueInvoices: 0,
+        };
+        const today = schoolToday();
+        const cursor = FeeObligation.find({ branchId })
+          .session(session)
+          .maxTimeMS(10000)
+          .lean()
+          .cursor({ batchSize: 50 });
+        try {
+          for await (const row of cursor) {
+            const fee = await feeDTO(row, session);
+            total.totalInvoices++;
+            total.amountMinor += fee.amountMinor;
+            total.paidMinor += fee.paidMinor;
+            if (fee.balanceMinor === 0) total.paidInvoices++;
+            if (fee.paidMinor > 0 && fee.balanceMinor > 0)
+              total.partialInvoices++;
+            // Preserve the established Principal summary metric: all past-due
+            // outstanding obligations, including partial and held payments.
+            if (fee.dueDate < today && fee.balanceMinor > 0)
+              total.overdueInvoices++;
+          }
+        } finally {
+          await cursor.close();
+        }
+        const balanceMinor = total.amountMinor - total.paidMinor;
+        const legacyUnmigratedCount = await LegacyFee.countDocuments({})
+          .where('branchId')
+          .equals(branchId)
+          .session(session);
+        return {
+          ...total,
+          balanceMinor,
+          amountLabel: moneyLabel(total.amountMinor),
+          paidLabel: moneyLabel(total.paidMinor),
+          balanceLabel: moneyLabel(balanceMinor),
+          legacyUnmigratedCount,
+        };
       },
-    },
-    {
-      $set: { paid: { $ifNull: [{ $arrayElemAt: ['$payments.paid', 0] }, 0] } },
-    },
-    {
-      $group: {
-        _id: null,
-        totalInvoices: { $sum: 1 },
-        amountMinor: { $sum: '$amountMinor' },
-        paidMinor: { $sum: '$paid' },
-        paidInvoices: {
-          $sum: { $cond: [{ $eq: ['$amountMinor', '$paid'] }, 1, 0] },
-        },
-        partialInvoices: {
-          $sum: {
-            $cond: [
-              {
-                $and: [
-                  { $gt: ['$paid', 0] },
-                  { $lt: ['$paid', '$amountMinor'] },
-                ],
-              },
-              1,
-              0,
-            ],
-          },
-        },
-        overdueInvoices: {
-          $sum: {
-            $cond: [
-              {
-                $and: [
-                  { $lt: ['$dueDate', schoolToday()] },
-                  { $lt: ['$paid', '$amountMinor'] },
-                ],
-              },
-              1,
-              0,
-            ],
-          },
-        },
-      },
-    },
-  ]).read('primary');
-  const total = rows[0] ?? {
-    totalInvoices: 0,
-    amountMinor: 0,
-    paidMinor: 0,
-    paidInvoices: 0,
-    partialInvoices: 0,
-    overdueInvoices: 0,
-  };
-  const balanceMinor = total.amountMinor - total.paidMinor;
-  const legacyUnmigratedCount = await LegacyFee.countDocuments({})
-    .where('branchId')
-    .equals(branchId);
-  return {
-    ...total,
-    balanceMinor,
-    amountLabel: moneyLabel(total.amountMinor),
-    paidLabel: moneyLabel(total.paidMinor),
-    balanceLabel: moneyLabel(balanceMinor),
-    legacyUnmigratedCount,
-  };
+      { readConcern: { level: 'snapshot' }, readPreference: 'primary' },
+    );
+  } finally {
+    await session.endSession();
+  }
 }

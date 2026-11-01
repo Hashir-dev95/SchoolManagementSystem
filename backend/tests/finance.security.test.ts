@@ -26,6 +26,87 @@ import { PERMISSIONS } from '../src/constants/permissions';
 import { getBranchFeeSummary } from '../src/services/fee.service';
 import { recordManualPayment } from '../src/services/finance-payment.service';
 
+async function auditEffect(
+  feeId: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return put(FinanceTransaction, {
+    branchId: state.branch._id,
+    obligationId: new (await import('mongoose')).Types.ObjectId(feeId),
+    studentId: state.student._id,
+    intentId: oid(),
+    actorId: finance.checker.user._id,
+    amountMinor: 1000,
+    currency: 'PKR',
+    state: 'settled',
+    method: 'cash',
+    reference: 'AUDIT-BANK',
+    receiptReference: 'RC-AUDIT-' + oid(),
+    paidAt: new Date(),
+    ...overrides,
+  });
+}
+
+test('H-series audit: summary and report use the same Student-bound settled effects as dues', async () => {
+  const fee = await assignedFee();
+  await auditEffect(fee.id, { studentId: state.otherStudent._id });
+  const dues = (await finHttp('/fees/' + fee.id)).json.data;
+  const report = (await finHttp('/collection-report')).json.data.summary;
+  const summary = (await finHttp('/summary')).json.data;
+  assert.equal(dues.paidMinor, 0);
+  assert.equal(report.paidMinor, dues.paidMinor);
+  assert.equal(summary.paidMinor, dues.paidMinor);
+});
+
+test('H-series audit: summary cannot hide one overpaid obligation behind another unpaid charge', async () => {
+  const fee = await assignedFee(),
+    source = await FeeObligation.findById(fee.id).lean();
+  await put(FeeObligation, {
+    ...source,
+    _id: oid(),
+    structureId: oid(),
+    challanReference: 'AUDIT-SECOND-CHARGE',
+  });
+  await auditEffect(fee.id, { amountMinor: 31000 });
+  assert.equal((await finHttp('/fees/' + fee.id)).status, 503);
+  assert.equal((await finHttp('/collection-report')).status, 503);
+  assert.equal((await finHttp('/summary')).status, 503);
+});
+
+test('H-series audit: mismatched settled currency is never reported as canonical PKR payment', async () => {
+  const fee = await assignedFee();
+  await auditEffect(fee.id, { currency: 'USD' });
+  for (const path of [
+    '/fees/' + fee.id,
+    '/fees',
+    '/collection-report',
+    '/summary',
+  ])
+    assert.equal((await finHttp(path)).status, 503, path);
+});
+
+for (const kind of ['settlements', 'holds']) {
+  test(`H-series audit: positive ${kind} cannot mask a negative imported entry`, async () => {
+    const fee = await assignedFee();
+    for (const amountMinor of [-1000, 2000]) {
+      if (kind === 'settlements') await auditEffect(fee.id, { amountMinor });
+      else
+        await put(FinancePaymentIntent, {
+          branchId: state.branch._id,
+          obligationId: new (await import('mongoose')).Types.ObjectId(fee.id),
+          studentId: state.student._id,
+          currency: 'PKR',
+          amountMinor,
+          status: 'awaiting_verification',
+          expiresAt: new Date(),
+        });
+    }
+    assert.equal((await finHttp('/fees/' + fee.id)).status, 503);
+    assert.equal((await finHttp('/collection-report')).status, 503);
+    assert.equal((await finHttp('/summary')).status, 503);
+  });
+}
+
 test('reconciliation returns minimal own-Branch review DTO and excludes foreign Branch records', async () => {
   const fee = await assignedFee(),
     intent = await recorded(fee.id);
@@ -622,6 +703,7 @@ async function collectionFixture() {
         studentId: state.student._id,
         amountMinor: 30000,
         status: 'reconciliation_required',
+        currency: 'PKR',
         expiresAt: new Date(0),
       });
   }
@@ -1122,6 +1204,7 @@ test('all canonical status filters match feeDTO precedence, with filtering befor
         studentId,
         amountMinor: 30000,
         status: 'awaiting_verification',
+        currency: 'PKR',
         expiresAt: new Date(0),
       });
   }
