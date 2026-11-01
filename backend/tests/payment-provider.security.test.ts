@@ -11,6 +11,7 @@ import {
   finHttp,
   finance,
   put,
+  apiHttp,
 } from './helpers/finance.fixture';
 import {
   startParentCheckout,
@@ -21,6 +22,7 @@ import {
   FinanceProviderObservation,
   FinancePaymentIntent,
   FeeObligation,
+  FinanceAudit,
 } from '../src/models/finance';
 import express from 'express';
 import { createProviderCallbackRouter } from '../src/routes/finance.routes';
@@ -38,6 +40,126 @@ async function checkout() {
     signedProvider,
   );
 }
+
+test('provider audit failure rolls back transaction, receipt and settled intent together', async t => {
+  const intent = await checkout(),
+    event = signedEvent(intent);
+  const revision = (await FeeObligation.findById(intent.feeId))!.revision;
+  t.mock.method(FinanceAudit, 'create', async () => {
+    throw new Error('injected audit failure');
+  });
+  await assert.rejects(
+    processProviderCallback(event.raw, event.headers, signedProvider),
+    /injected audit failure/,
+  );
+  assert.equal(await FinanceTransaction.countDocuments(), 0);
+  assert.equal(
+    await FinanceAudit.countDocuments({ action: 'provider.paid' }),
+    0,
+  );
+  assert.equal(
+    (await FinancePaymentIntent.findById(intent.id))!.status,
+    'reconciliation_required',
+  );
+  assert.equal(
+    (await FeeObligation.findById(intent.feeId))!.revision,
+    revision,
+  );
+  const fee = (await finHttp('/fees/' + intent.feeId)).json.data;
+  assert.equal(fee.paidMinor, 0);
+  assert.deepEqual(fee.receipts, []);
+});
+
+test('settled receipt identity is stable across replay and scoped read-only Student/Parent/Finance views', async () => {
+  const intent = await checkout(),
+    event = signedEvent(intent);
+  assert.deepEqual(
+    (await finHttp('/fees/' + intent.feeId)).json.data.receipts,
+    [],
+  );
+  await processProviderCallback(event.raw, event.headers, signedProvider);
+  const first = (await finHttp('/fees/' + intent.feeId)).json.data;
+  assert.equal(first.status, 'paid');
+  assert.equal(first.balanceMinor, 0);
+  assert.equal(first.receipts.length, 1);
+  const receipt = first.receipts[0];
+  assert.equal(receipt.reference, 'RC-' + intent.id);
+  const before = await Promise.all(
+    [FinanceTransaction, FinanceAudit, FinancePaymentIntent, FeeObligation].map(
+      model => model.collection.find({}).sort({ _id: 1 }).toArray(),
+    ),
+  );
+  for (let index = 0; index < 3; index++) {
+    const student = await apiHttp('/student/me/fees', state.token),
+      parent = await parentHttp(`/children/${state.student._id}/fees`);
+    assert.equal(student.status, 200);
+    assert.equal(parent.status, 200);
+    assert.deepEqual(student.json.data.items[0].receipts, first.receipts);
+    assert.deepEqual(parent.json.data.items[0].receipts, first.receipts);
+    assert.equal(
+      (await finHttp('/fees/' + intent.feeId)).json.data.status,
+      'paid',
+    );
+  }
+  assert.deepEqual(
+    await Promise.all(
+      [
+        FinanceTransaction,
+        FinanceAudit,
+        FinancePaymentIntent,
+        FeeObligation,
+      ].map(model => model.collection.find({}).sort({ _id: 1 }).toArray()),
+    ),
+    before,
+  );
+  assert.equal(
+    (
+      await parentHttp(
+        `/children/${state.student._id}/fees`,
+        parentState.otherToken,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await finHttp('/fees/' + intent.feeId, undefined, finance.foreign)).status,
+    403,
+  );
+  assert.equal((await finHttp('/fees/' + receipt.id)).status, 403);
+  assert.equal(
+    (await apiHttp('/student/me/fees?receiptId=' + receipt.id, state.token))
+      .status,
+    403,
+  );
+  await processProviderCallback(event.raw, event.headers, signedProvider);
+  const anotherEvent = signedEvent(intent, {
+    eventId: 'another-identical-paid-event',
+  });
+  await processProviderCallback(
+    anotherEvent.raw,
+    anotherEvent.headers,
+    signedProvider,
+  );
+  assert.deepEqual(
+    (await finHttp('/fees/' + intent.feeId)).json.data.receipts,
+    first.receipts,
+  );
+  assert.equal(await FinanceTransaction.countDocuments(), 1);
+  assert.equal(
+    await FinanceAudit.countDocuments({ action: 'provider.paid' }),
+    1,
+  );
+  assert.deepEqual(Object.keys(receipt).sort(), [
+    'amountLabel',
+    'amountMinor',
+    'id',
+    'method',
+    'paidAt',
+    'paymentReference',
+    'reference',
+    'status',
+  ]);
+});
 
 test('verification authenticates before trusting shape and rejects malformed normalized evidence', async () => {
   const intent = await checkout(),

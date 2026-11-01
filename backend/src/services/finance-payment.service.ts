@@ -215,13 +215,64 @@ export async function verifyManualPayment(
       ) {
         throw financialDenied();
       }
+      const fee = await feeRecord(
+        ctx.branchId,
+        String(row.obligationId),
+        session,
+        true,
+      );
+      // Validate the original reservation before either settlement or receipt replay.
+      // A corrupted intent must not credit a different Student/currency or amount.
+      const reservationAudit = await FinanceAudit.exists({
+        branchId: ctx.branchId,
+        actorId: row.actorId,
+        targetId: row._id,
+        action: 'payment.recorded',
+        amountMinor: row.amountMinor,
+        fingerprint: fingerprint([
+          'manual',
+          String(fee._id),
+          row.method,
+          row.reference,
+        ]),
+      }).session(session);
+      if (
+        String(row.studentId) !== String(fee.studentId) ||
+        row.currency !== 'PKR' ||
+        row.currency !== fee.currency ||
+        !Number.isSafeInteger(row.amountMinor) ||
+        row.amountMinor <= 0 ||
+        !reservationAudit
+      )
+        throw new RequestContractError(
+          503,
+          'Reservation requires reconciliation',
+        );
       if (row.status === 'settled' && !reject) {
         const receipt = await FinanceTransaction.findOne({
           intentId: row._id,
           branchId: ctx.branchId,
+          obligationId: fee._id,
+          studentId: row.studentId,
+          amountMinor: row.amountMinor,
+          currency: row.currency,
+          method: row.method,
+          reference: row.reference,
+          actorId: row.actorId,
+          verifiedBy: row.verifiedBy,
           state: 'settled',
         }).session(session);
-        if (!receipt) {
+        const verificationAudit =
+          row.verifiedBy &&
+          (await FinanceAudit.exists({
+            branchId: ctx.branchId,
+            actorId: row.verifiedBy,
+            targetId: row._id,
+            action: 'payment.verified',
+            amountMinor: row.amountMinor,
+            afterState: 'settled',
+          }).session(session));
+        if (!receipt || !verificationAudit) {
           throw new RequestContractError(
             503,
             'Settlement requires reconciliation',
@@ -238,12 +289,6 @@ export async function verifyManualPayment(
       ) {
         throw new RequestContractError(409, 'Payment state changed');
       }
-      const fee = await feeRecord(
-        ctx.branchId,
-        String(row.obligationId),
-        session,
-        true,
-      );
       const current = await feeDTO(fee, session);
       if (current.balanceMinor < row.amountMinor) {
         throw new RequestContractError(

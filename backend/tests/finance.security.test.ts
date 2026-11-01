@@ -25,6 +25,160 @@ import { PERMISSIONS } from '../src/constants/permissions';
 import { getBranchFeeSummary } from '../src/services/fee.service';
 import { recordManualPayment } from '../src/services/finance-payment.service';
 
+for (const field of [
+  'studentId',
+  'currency',
+  'amountMinor',
+  'reference',
+  'actorId',
+]) {
+  test(`manual settlement refuses corrupt ${field} reservation binding`, async () => {
+    const fee = await assignedFee(),
+      intent = await recorded(fee.id);
+    const value =
+      field === 'studentId'
+        ? state.otherStudent._id
+        : field === 'currency'
+        ? 'USD'
+        : field === 'amountMinor'
+        ? 20000
+        : field === 'reference'
+        ? 'CORRUPT-REFERENCE'
+        : finance.foreign.user._id;
+    await FinancePaymentIntent.collection.updateOne(
+      { _id: new (await import('mongoose')).Types.ObjectId(intent.id) },
+      { $set: { [field]: value } },
+    );
+    const response = await finHttp(
+      '/payments/' + intent.id + '/verify',
+      verifyBody(intent.revision),
+      finance.checker,
+    );
+    assert.equal(response.status, 503);
+    assert.equal(await FinanceTransaction.countDocuments(), 0);
+    assert.equal(
+      await FinanceAudit.countDocuments({ action: 'payment.verified' }),
+      0,
+    );
+  });
+}
+
+test('manual settlement refuses a reservation whose originating audit is missing', async () => {
+  const fee = await assignedFee(),
+    intent = await recorded(fee.id);
+  await FinanceAudit.deleteMany({ action: 'payment.recorded' });
+  assert.equal(
+    (
+      await finHttp(
+        '/payments/' + intent.id + '/verify',
+        verifyBody(intent.revision),
+        finance.checker,
+      )
+    ).status,
+    503,
+  );
+  assert.equal(await FinanceTransaction.countDocuments(), 0);
+});
+
+test('manual completed replay refuses mismatched receipt evidence and missing verification audit', async () => {
+  const fee = await assignedFee(),
+    intent = await recorded(fee.id);
+  assert.equal(
+    (
+      await finHttp(
+        '/payments/' + intent.id + '/verify',
+        verifyBody(intent.revision),
+        finance.checker,
+      )
+    ).status,
+    200,
+  );
+  await FinanceTransaction.collection.updateOne(
+    { intentId: new (await import('mongoose')).Types.ObjectId(intent.id) },
+    { $set: { currency: 'USD' } },
+  );
+  assert.equal(
+    (
+      await finHttp(
+        '/payments/' + intent.id + '/verify',
+        verifyBody(intent.revision),
+        finance.checker,
+      )
+    ).status,
+    503,
+  );
+  await FinanceTransaction.collection.updateOne(
+    { intentId: new (await import('mongoose')).Types.ObjectId(intent.id) },
+    { $set: { currency: 'PKR' } },
+  );
+  await FinanceAudit.deleteMany({ action: 'payment.verified' });
+  assert.equal(
+    (
+      await finHttp(
+        '/payments/' + intent.id + '/verify',
+        verifyBody(intent.revision),
+        finance.checker,
+      )
+    ).status,
+    503,
+  );
+  assert.equal(await FinanceTransaction.countDocuments(), 1);
+});
+
+test('manual completed replay returns the same safe receipt with one audit and one effect', async () => {
+  const fee = await assignedFee(),
+    intent = await recorded(fee.id);
+  const first = await finHttp(
+    '/payments/' + intent.id + '/verify',
+    verifyBody(intent.revision),
+    finance.checker,
+  );
+  const retry = await finHttp(
+    '/payments/' + intent.id + '/verify',
+    verifyBody(intent.revision),
+    finance.checker,
+  );
+  assert.equal(first.status, 200);
+  assert.deepEqual(retry, first);
+  const current = (await finHttp('/fees/' + fee.id)).json.data;
+  assert.equal(current.status, 'paid');
+  assert.equal(current.balanceMinor, 0);
+  assert.equal(current.receipts[0].id, first.json.data.id);
+  assert.equal(current.receipts[0].reference, 'RC-' + intent.id);
+  assert.equal(await FinanceTransaction.countDocuments(), 1);
+  assert.equal(
+    await FinanceAudit.countDocuments({ action: 'payment.verified' }),
+    1,
+  );
+});
+
+test('manual transaction failure rolls back staged verification status, audit and receipt atomically', async t => {
+  const fee = await assignedFee(),
+    intent = await recorded(fee.id);
+  t.mock.method(FinanceTransaction, 'create', async () => {
+    throw new Error('injected transaction write failure');
+  });
+  assert.equal(
+    (
+      await finHttp(
+        '/payments/' + intent.id + '/verify',
+        verifyBody(intent.revision),
+        finance.checker,
+      )
+    ).status,
+    500,
+  );
+  const current = await FinancePaymentIntent.findById(intent.id);
+  assert.equal(current!.status, 'awaiting_verification');
+  assert.equal(current!.revision, intent.revision);
+  assert.equal(
+    await FinanceAudit.countDocuments({ action: 'payment.verified' }),
+    0,
+  );
+  assert.equal(await FinanceTransaction.countDocuments(), 0);
+  assert.deepEqual((await finHttp('/fees/' + fee.id)).json.data.receipts, []);
+});
+
 test('reservation uses remaining settled balance and returns safe server timestamps without settlement or receipts', async () => {
   const fee = await assignedFee();
   await put(FinanceTransaction, {
