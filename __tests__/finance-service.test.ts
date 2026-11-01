@@ -36,6 +36,39 @@ test('manual recording supplies reference/key but never a client amount or paid 
     { token: 'token', method: 'POST', body },
   );
 });
+
+test('reservation returns authoritative server DTO and preserves its retry identity without amount fields', async () => {
+  const dto = {
+    id: 'intent',
+    feeId: 'fee',
+    amountMinor: 29000,
+    amountLabel: 'SERVER RESERVED',
+    currency: 'PKR',
+    status: 'awaiting_verification',
+    createdAt: '2026-11-01T00:00:00Z',
+    expiresAt: '2026-11-01T00:30:00Z',
+  };
+  const body = {
+    method: 'bank_transfer' as const,
+    reference: 'BANK-001',
+    operationId: 'reservation_retry_001',
+  };
+  jest
+    .mocked(apiClient.request)
+    .mockRejectedValueOnce(new Error('Unknown network outcome'))
+    .mockResolvedValueOnce({ data: dto });
+  await expect(financeService.record('token', 'fee', body)).rejects.toThrow(
+    'Unknown network outcome',
+  );
+  expect(await financeService.record('token', 'fee', body)).toEqual(dto);
+  const calls = jest.mocked(apiClient.request).mock.calls;
+  expect(calls[0]).toEqual(calls[1]);
+  expect(Object.keys(body).sort()).toEqual([
+    'method',
+    'operationId',
+    'reference',
+  ]);
+});
 test('verification and rejection use explicit revision/note/idempotency inputs', async () => {
   const body = {
     revision: 1,

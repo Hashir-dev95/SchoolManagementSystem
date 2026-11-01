@@ -46,6 +46,7 @@ export function intentDTO(row: any, actorId?: unknown) {
     reference: row.reference,
     status: row.status,
     revision: row.revision,
+    createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
     expired: row.expiresAt <= new Date(),
     canVerify:
@@ -136,10 +137,16 @@ export async function recordManualPayment(
         session,
       );
       if (prior) {
-        return intentDTO(
-          await FinancePaymentIntent.findById(prior.targetId).session(session),
-          ctx.actor._id,
-        );
+        const existing = await FinancePaymentIntent.findOne({
+          _id: prior.targetId,
+          branchId: ctx.branchId,
+          actorId: ctx.actor._id,
+          obligationId: id,
+          channel: 'manual',
+        }).session(session);
+        if (!existing)
+          throw new RequestContractError(503, 'Reservation requires review');
+        return intentDTO(existing, ctx.actor._id);
       }
       const row = await reserve(
         ctx.branchId,

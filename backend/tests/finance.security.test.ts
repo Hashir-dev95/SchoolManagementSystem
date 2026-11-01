@@ -23,6 +23,231 @@ import { StudentEnrollment } from '../src/models/studentEnrollment';
 import { ROLE_PERMISSIONS } from '../src/constants/rolePermissions';
 import { PERMISSIONS } from '../src/constants/permissions';
 import { getBranchFeeSummary } from '../src/services/fee.service';
+import { recordManualPayment } from '../src/services/finance-payment.service';
+
+test('reservation uses remaining settled balance and returns safe server timestamps without settlement or receipts', async () => {
+  const fee = await assignedFee();
+  await put(FinanceTransaction, {
+    branchId: state.branch._id,
+    obligationId: new (await import('mongoose')).Types.ObjectId(fee.id),
+    studentId: state.student._id,
+    intentId: oid(),
+    amountMinor: 1000,
+    state: 'settled',
+    currency: 'PKR',
+    method: 'cash',
+    reference: 'EARLIER',
+    receiptReference: 'RC-EARLIER',
+    paidAt: new Date(),
+  });
+  const before = await FinanceTransaction.collection.find({}).toArray();
+  const intent = await recorded(fee.id);
+  assert.equal(intent.amountMinor, 29000);
+  assert.equal(intent.currency, 'PKR');
+  assert.equal(intent.status, 'awaiting_verification');
+  assert.ok(Date.parse(intent.expiresAt) > Date.parse(intent.createdAt));
+  for (const key of [
+    'merchantId',
+    'actorId',
+    'branchId',
+    'fingerprint',
+    'providerTransactionRef',
+  ])
+    assert.equal(key in intent, false);
+  const current = (await finHttp('/fees/' + fee.id)).json.data;
+  assert.equal(current.paidMinor, 1000);
+  assert.equal(current.reservedMinor, 29000);
+  assert.equal(current.receipts.length, 1);
+  assert.deepEqual(
+    await FinanceTransaction.collection.find({}).toArray(),
+    before,
+  );
+});
+
+test('reservation rejects each client financial/scope override and malformed request without creating intents', async () => {
+  const fee = await assignedFee();
+  const body = {
+    method: 'cash',
+    reference: 'SAFE',
+    operationId: 'reservation_tamper_001',
+  };
+  for (const field of [
+    'amount',
+    'amountMinor',
+    'paidAmount',
+    'balance',
+    'settledAmount',
+    'status',
+    'branchId',
+    'studentId',
+  ])
+    assert.equal(
+      (
+        await finHttp(`/fees/${fee.id}/manual-payments`, {
+          ...body,
+          [field]: 'override',
+        })
+      ).status,
+      400,
+    );
+  for (const bad of [
+    [],
+    { ...body, operationId: 'short' },
+    { ...body, operationId: { $ne: null } },
+    { ...body, method: 'unsupported' },
+  ])
+    assert.equal(
+      (await finHttp(`/fees/${fee.id}/manual-payments`, bad)).status,
+      400,
+    );
+  // Express rejects primitive JSON before Finance routing; exercise the service
+  // body boundary directly without assuming the global parser emits JSON errors.
+  await assert.rejects(
+    recordManualPayment(
+      { userId: String(finance.maker.user._id), role: 'finance' },
+      finance.maker.token,
+      fee.id,
+      null,
+    ),
+    { status: 400 },
+  );
+  assert.equal(
+    (await finHttp('/fees/not-an-id/manual-payments', body)).status,
+    400,
+  );
+  assert.equal(await FinancePaymentIntent.countDocuments(), 0);
+  assert.equal(await FinanceTransaction.countDocuments(), 0);
+});
+
+test('reservation rejects foreign obligations, wrong roles, revoked actors and missing record permission', async () => {
+  const fee = await assignedFee(),
+    path = `/fees/${fee.id}/manual-payments`,
+    body = {
+      method: 'cash',
+      reference: 'SAFE',
+      operationId: 'reservation_denied_001',
+    };
+  assert.equal((await finHttp(path, body, finance.foreign)).status, 403);
+  assert.equal(
+    (await apiHttp('/finance/me' + path, state.token, body)).status,
+    403,
+  );
+  const permissions = [...ROLE_PERMISSIONS.finance];
+  ROLE_PERMISSIONS.finance = permissions.filter(
+    p => p !== PERMISSIONS.PAYMENT_RECORD,
+  );
+  try {
+    assert.equal((await finHttp(path, body)).status, 403);
+  } finally {
+    ROLE_PERMISSIONS.finance = permissions;
+  }
+  await Session.updateOne(
+    { token: finance.maker.token },
+    { $set: { isRevoked: true } },
+  );
+  assert.equal((await finHttp(path, body)).status, 401);
+  await User.updateOne(
+    { _id: finance.checker.user._id },
+    { $set: { isActive: false } },
+  );
+  assert.equal((await finHttp(path, body, finance.checker)).status, 401);
+  assert.equal(await FinancePaymentIntent.countDocuments(), 0);
+});
+
+test('fully settled obligation cannot create another reservation', async () => {
+  const fee = await assignedFee(),
+    intent = await recorded(fee.id);
+  assert.equal(
+    (
+      await finHttp(
+        '/payments/' + intent.id + '/verify',
+        verifyBody(intent.revision),
+        finance.checker,
+      )
+    ).status,
+    200,
+  );
+  const result = await finHttp(`/fees/${fee.id}/manual-payments`, {
+    method: 'cash',
+    reference: 'SECOND',
+    operationId: 'paid_reservation_new_001',
+  });
+  assert.equal(result.status, 409);
+  assert.equal(await FinancePaymentIntent.countDocuments(), 1);
+  assert.equal(await FinanceTransaction.countDocuments(), 1);
+});
+
+test('concurrent reservation duplicates return the same DTO and create one intent/audit with no receipt', async () => {
+  const fee = await assignedFee();
+  const results = await Promise.all(
+    Array.from({ length: 5 }, () => recorded(fee.id)),
+  );
+  for (const result of results) assert.deepEqual(result, results[0]);
+  assert.equal(await FinancePaymentIntent.countDocuments(), 1);
+  assert.equal(
+    await FinanceAudit.countDocuments({ action: 'payment.recorded' }),
+    1,
+  );
+  assert.equal(await FinanceTransaction.countDocuments(), 0);
+  assert.deepEqual((await finHttp('/fees/' + fee.id)).json.data.receipts, []);
+});
+
+test('competing reservation keys cannot over-reserve one obligation', async () => {
+  const fee = await assignedFee();
+  const results = await Promise.all(
+    [1, 2, 3].map(index =>
+      finHttp(`/fees/${fee.id}/manual-payments`, {
+        method: 'cash',
+        reference: `COMPETE-${index}`,
+        operationId: `competing_reservation_00${index}`,
+      }),
+    ),
+  );
+  assert.deepEqual(results.map(r => r.status).sort(), [200, 409, 409]);
+  assert.equal(await FinancePaymentIntent.countDocuments(), 1);
+  assert.equal(await FinanceTransaction.countDocuments(), 0);
+});
+
+test('expired reservation retries retain the same held intent and conflicting reuse fails', async () => {
+  const fee = await assignedFee(),
+    intent = await recorded(fee.id);
+  await FinancePaymentIntent.collection.updateOne(
+    { _id: new (await import('mongoose')).Types.ObjectId(intent.id) },
+    { $set: { expiresAt: new Date(0) } },
+  );
+  const retry = await recorded(fee.id);
+  assert.equal(retry.id, intent.id);
+  assert.equal(retry.expired, true);
+  assert.equal(retry.status, 'awaiting_verification');
+  assert.equal(
+    (
+      await finHttp(`/fees/${fee.id}/manual-payments`, {
+        method: 'cash',
+        reference: 'CHANGED',
+        operationId: 'manual_payment_operation_001',
+      })
+    ).status,
+    409,
+  );
+  assert.equal(await FinancePaymentIntent.countDocuments(), 1);
+  assert.equal(await FinanceTransaction.countDocuments(), 0);
+});
+
+test('reservation replay fails closed if its audited target no longer matches Branch/actor/obligation scope', async () => {
+  const fee = await assignedFee(),
+    intent = await recorded(fee.id);
+  await FinancePaymentIntent.collection.updateOne(
+    { _id: new (await import('mongoose')).Types.ObjectId(intent.id) },
+    { $set: { branchId: state.foreign._id } },
+  );
+  const response = await finHttp(`/fees/${fee.id}/manual-payments`, {
+    method: 'bank_transfer',
+    reference: 'BANK-001',
+    operationId: 'manual_payment_operation_001',
+  });
+  assert.equal(response.status, 503);
+  assert.equal(response.json.data, undefined);
+});
 
 async function collectionFixture() {
   const original = await assignedFee();

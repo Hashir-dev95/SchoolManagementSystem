@@ -16,11 +16,12 @@ let mockUser: User = {
   role: 'finance',
 };
 const mockLogout = jest.fn();
+let mockAccessToken = 'finance-token';
 jest.mock('../src/context/AuthContext', () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => children,
   useAuth: () => ({
     user: mockUser,
-    accessToken: 'finance-token',
+    accessToken: mockAccessToken,
     logout: mockLogout,
   }),
 }));
@@ -104,6 +105,10 @@ const payment = {
   revision: 1,
   canVerify: false,
   expired: false,
+  amountMinor: 30000,
+  currency: 'PKR',
+  createdAt: '2026-11-01T00:00:00Z',
+  expiresAt: '2026-11-01T00:30:00Z',
 };
 async function mount(element = <FinanceWorkspaceScreen />) {
   await act(async () => {
@@ -134,6 +139,7 @@ async function fill(label: string, value: string) {
 }
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAccessToken = 'finance-token';
   mockUser = {
     id: 'finance-a',
     fullName: 'Finance A',
@@ -235,6 +241,7 @@ test('manual record retries retain operation key and never claim a paid balance'
   await fill('Bank payment reference', 'BANK-001');
   await press('Record bank payment');
   expect(text()).toContain('Network timed out');
+  expect(text()).toContain('Reservation outcome is unknown');
   await press('Record bank payment');
   expect(service.record).toHaveBeenCalledTimes(2);
   const first = service.record.mock.calls[0][2],
@@ -243,6 +250,89 @@ test('manual record retries retain operation key and never claim a paid balance'
   expect(first).not.toHaveProperty('amountMinor');
   expect(first).not.toHaveProperty('status');
   expect(text()).toContain('PKR 0.00');
+});
+
+test('reservation UI displays server amount, pending status and timestamps without claiming settlement', async () => {
+  service.record.mockResolvedValueOnce({
+    ...payment,
+    amountLabel: 'SERVER RESERVED AMOUNT',
+  });
+  await mount();
+  await press('Fees');
+  await press('CH-001');
+  await fill('Bank payment reference', 'BANK-001');
+  await press('Record bank payment');
+  for (const label of [
+    'SERVER RESERVED AMOUNT',
+    'awaiting_verification',
+    payment.createdAt,
+    payment.expiresAt,
+    'does not confirm payment',
+  ])
+    expect(text()).toContain(label);
+  expect(text()).not.toContain('Payment successful');
+  expect(service.verify).not.toHaveBeenCalled();
+});
+
+test.each([
+  [401, 'Session expired. Sign in again.'],
+  [403, 'Forbidden:'],
+] as const)(
+  'reservation %s is distinct from network uncertainty',
+  async (status, label) => {
+    service.record.mockRejectedValueOnce(new ApiError(status, 'Denied'));
+    await mount();
+    await press('Fees');
+    await press('CH-001');
+    await fill('Bank payment reference', 'BANK-001');
+    await press('Record bank payment');
+    expect(text()).toContain(label);
+    expect(text()).not.toContain('Reservation outcome is unknown');
+    expect(text()).not.toContain('Server reservation result');
+  },
+);
+
+test('already paid and held-balance denials remain honest and do not render a successful reservation', async () => {
+  service.fees.mockResolvedValue({
+    ...fees,
+    items: [{ ...fees.items[0], status: 'paid' }],
+  });
+  service.record.mockRejectedValueOnce(
+    new ApiError(409, 'No unreserved balance is payable'),
+  );
+  await mount();
+  await press('Fees');
+  await press('CH-001');
+  expect(text()).toContain('Already paid: no outstanding balance');
+  await fill('Bank payment reference', 'BANK-001');
+  await press('Record bank payment');
+  expect(text()).toContain('No unreserved balance is payable');
+  expect(text()).not.toContain('Server reservation result');
+});
+
+test('an old reservation cannot overwrite a new session for the same account', async () => {
+  const pending = deferred<typeof payment>();
+  service.record.mockReturnValueOnce(pending.promise);
+  await mount();
+  await press('Fees');
+  await press('CH-001');
+  await fill('Bank payment reference', 'BANK-001');
+  await press('Record bank payment');
+  expect(
+    tree.root.findAll(
+      node =>
+        node.props.accessibilityLabel === 'Record bank payment' &&
+        node.props.disabled === true,
+    ).length,
+  ).toBeGreaterThan(0);
+  mockAccessToken = 'new-finance-session';
+  await act(async () => tree.update(<FinanceWorkspaceScreen />));
+  await press('Fees');
+  await act(async () =>
+    pending.resolve({ ...payment, amountLabel: 'STALE RESERVATION' }),
+  );
+  expect(text()).not.toContain('STALE RESERVATION');
+  expect(text()).not.toContain('Server confirmed the operation');
 });
 test('maker gets no verify action; separate verifier submits revision and review note', async () => {
   await mount();

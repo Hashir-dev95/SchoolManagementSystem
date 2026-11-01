@@ -112,6 +112,12 @@ export interface PaymentView {
   canVerify: boolean;
   expired: boolean;
 }
+export interface ReservationView extends PaymentView {
+  amountMinor: number;
+  currency: string;
+  createdAt: string;
+  expiresAt: string;
+}
 export interface StructureView {
   _id: string;
   title: string;
@@ -177,7 +183,7 @@ export const financeService = {
       operationId: string;
     },
   ) =>
-    write<PaymentView>(
+    write<ReservationView>(
       token,
       `/fees/${encodeURIComponent(feeId)}/manual-payments`,
       body,

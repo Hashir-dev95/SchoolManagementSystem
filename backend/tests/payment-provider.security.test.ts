@@ -9,6 +9,7 @@ import {
   signedProvider,
   signedEvent,
   finHttp,
+  finance,
 } from './helpers/finance.fixture';
 import {
   startParentCheckout,
@@ -18,6 +19,7 @@ import {
   FinanceTransaction,
   FinanceProviderObservation,
   FinancePaymentIntent,
+  FeeObligation,
 } from '../src/models/finance';
 import express from 'express';
 import { createProviderCallbackRouter } from '../src/routes/finance.routes';
@@ -33,6 +35,56 @@ async function checkout() {
     signedProvider,
   );
 }
+test('Parent reservation rejects unlinked children, foreign fees and wrong roles before provider interaction', async () => {
+  const fee = await assignedFee();
+  let attempts = 0;
+  const provider = {
+    ...signedProvider,
+    checkout: async () => {
+      attempts++;
+      return {
+        transactionRef: 'UNEXPECTED',
+        url: 'https://provider.test/unexpected',
+      };
+    },
+  };
+  const start = (
+    childId: string,
+    identity = {
+      userId: String(parentState.parent._id),
+      role: 'parent' as const,
+    },
+    token = parentState.token,
+  ) =>
+    startParentCheckout(
+      identity,
+      token,
+      childId,
+      fee.id,
+      { operationId: 'parent_scope_reservation_001' },
+      provider,
+    );
+  await assert.rejects(start(String(state.otherStudent._id)), { status: 403 });
+  await assert.rejects(
+    startParentCheckout(
+      { userId: String(finance.maker.user._id), role: 'finance' },
+      finance.maker.token,
+      String(state.student._id),
+      fee.id,
+      { operationId: 'wrong_role_reservation_001' },
+      provider,
+    ),
+    { status: 403 },
+  );
+  await FeeObligation.collection.updateOne(
+    { _id: new (await import('mongoose')).Types.ObjectId(fee.id) },
+    { $set: { branchId: state.foreign._id } },
+  );
+  await assert.rejects(start(String(state.student._id)), { status: 403 });
+  assert.equal(attempts, 0);
+  assert.equal(await FinancePaymentIntent.countDocuments(), 0);
+  assert.equal(await FinanceTransaction.countDocuments(), 0);
+});
 test('production checkout is honestly disabled and never fabricates successful payment', async () => {
   const fee = await assignedFee();
   assert.equal(

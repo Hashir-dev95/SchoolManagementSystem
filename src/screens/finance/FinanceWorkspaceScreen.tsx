@@ -16,6 +16,7 @@ import {
   type FinanceStudents,
   type CollectionReport,
   type CollectionFilters,
+  type ReservationView,
 } from '../../services/finance/financeService';
 import {
   DashboardShell,
@@ -94,13 +95,14 @@ export default function FinanceWorkspaceScreen() {
   if (!user || !accessToken) {
     return null;
   }
-  return <Workspace key={user.id} token={accessToken} />;
+  return <Workspace key={`${user.id}:${accessToken}`} token={accessToken} />;
 }
 function Workspace({ token }: { token: string }) {
   const { logout } = useAuth();
   const [pane, setPane] = useState<Pane>('Summary'),
     [data, setData] = useState<Data | null>(null);
   const [filters, setFilters] = useState<FeeFilters>({});
+  const [reservation, setReservation] = useState<ReservationView | null>(null);
   const [loading, setLoading] = useState(true),
     [error, setError] = useState<string | null>(null),
     [attempt, setAttempt] = useState(0);
@@ -148,10 +150,11 @@ function Workspace({ token }: { token: string }) {
   const retry = useCallback(async () => {
     setAttempt(value => value + 1);
   }, []);
-  async function mutate(
+  async function mutate<T>(
     key: string,
     input: unknown,
-    action: (operationId: string) => Promise<unknown>,
+    action: (operationId: string) => Promise<T>,
+    confirmed?: (result: T) => void,
   ) {
     if (locked.current) {
       return;
@@ -168,14 +171,21 @@ function Workspace({ token }: { token: string }) {
     operations.current[requestKey] = op;
     const version = generation.current;
     try {
-      await action(op);
+      const result = await action(op);
       if (version === generation.current) {
+        confirmed?.(result);
         setFeedback('Server confirmed the operation.');
         setAttempt(value => value + 1);
       }
     } catch (failure) {
       if (version === generation.current) {
-        setFeedback(message(failure));
+        setFeedback(
+          message(failure) +
+            (key === 'record' &&
+            (!(failure instanceof ApiError) || failure.status >= 500)
+              ? ' Reservation outcome is unknown. Retry with the same obligation and reference; the same operation ID will be reused.'
+              : ''),
+        );
       }
     } finally {
       locked.current = false;
@@ -233,6 +243,24 @@ function Workspace({ token }: { token: string }) {
         <Text accessibilityRole="alert" style={styles.text}>
           {feedback}
         </Text>
+      ) : null}
+      {pane === 'Fees' &&
+      reservation?.feeId === feeId &&
+      reservation.reference === reference ? (
+        <SectionCard title="Server reservation result">
+          <Text style={styles.text}>
+            {reservation.amountLabel} · {reservation.currency} ·{' '}
+            {reservation.status}
+          </Text>
+          <Text style={styles.text}>
+            Created {reservation.createdAt} · Expires {reservation.expiresAt}
+          </Text>
+          <Text style={styles.note}>
+            {reservation.expired
+              ? 'Expired reservation remains held for explicit review.'
+              : 'Reservation does not confirm payment or create a receipt.'}
+          </Text>
+        </SectionCard>
       ) : null}
       {!loading && !error && data?.kind === 'Summary' ? (
         <SectionCard title="Canonical branch totals">
@@ -302,16 +330,34 @@ function Workspace({ token }: { token: string }) {
               editable={!busy}
               style={styles.input}
             />
+            {data.fees.items.find(fee => fee.id === feeId)?.status ===
+            'paid' ? (
+              <Text style={styles.note}>
+                Already paid: no outstanding balance is payable.
+              </Text>
+            ) : null}
+            {data.fees.items.find(fee => fee.id === feeId)?.status ===
+            'payment_pending' ? (
+              <Text style={styles.note}>
+                Funds are reserved pending review. A retry of the same request
+                retrieves its existing reservation.
+              </Text>
+            ) : null}
             <Button
               title="Record bank payment"
               disabled={busy || !feeId || !reference.trim()}
               onPress={() => {
-                mutate('record', [feeId, reference], op =>
-                  service.record(token, feeId, {
-                    method: 'bank_transfer',
-                    reference,
-                    operationId: op,
-                  }),
+                setReservation(null);
+                mutate(
+                  'record',
+                  [feeId, reference],
+                  op =>
+                    service.record(token, feeId, {
+                      method: 'bank_transfer',
+                      reference,
+                      operationId: op,
+                    }),
+                  setReservation,
                 );
               }}
             />
