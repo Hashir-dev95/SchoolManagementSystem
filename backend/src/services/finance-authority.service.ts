@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { Types, type ClientSession } from 'mongoose';
+import { Types, type ClientSession, type PipelineStage } from 'mongoose';
 import User from '../models/user';
 import Branch from '../models/branch';
 import Session from '../models/session';
@@ -31,7 +31,277 @@ import {
   objectBody,
   objectIdField,
   textField,
+  enumField,
 } from '../utils/request-validation';
+
+export const FINANCE_FEE_STATUSES = [
+  'due',
+  'overdue',
+  'partial',
+  'payment_pending',
+  'paid',
+] as const;
+const literalSearch = (value: unknown) =>
+  textField(value ?? '', 'search', 80).replace(/\s+/g, ' ');
+const escapedSearch = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const pageNumber = (value: unknown, fallback: number, max: number, min = 0) => {
+  if (value === undefined) return fallback;
+  if (
+    typeof value !== 'string' ||
+    !/^\d{1,5}$/.test(value) ||
+    Number(value) < min ||
+    Number(value) > max
+  ) {
+    throw new RequestContractError(400, 'Invalid Finance page');
+  }
+  return Number(value);
+};
+
+/** Read-only search. Placement is resolved by the existing strict enrollment boundary. */
+export async function searchFinanceStudents(
+  identity: JwtPayload | undefined,
+  query: unknown,
+) {
+  const ctx = await financeActor(identity),
+    input = objectBody(query, ['search', 'offset']);
+  const search = literalSearch(input.search),
+    offset = pageNumber(input.offset, 0, 10000);
+  const pattern = escapedSearch(search);
+  const rows = await Student.aggregate<{
+    _id: Types.ObjectId;
+    userId: Types.ObjectId;
+  }>([
+    { $match: { branchId: new Types.ObjectId(ctx.branchId), isActive: true } },
+    {
+      $lookup: {
+        from: User.collection.name,
+        localField: 'userId',
+        foreignField: '_id',
+        pipeline: [
+          {
+            $match: {
+              branchId: new Types.ObjectId(ctx.branchId),
+              role: 'student',
+              isActive: true,
+            },
+          },
+          { $project: { fullName: 1 } },
+        ],
+        as: '_identity',
+      },
+    },
+    { $unwind: '$_identity' },
+    ...(search
+      ? [
+          {
+            $match: {
+              $or: [
+                { admissionNumber: { $regex: pattern, $options: 'i' } },
+                { '_identity.fullName': { $regex: pattern, $options: 'i' } },
+                ...(/^[a-fA-F0-9]{24}$/.test(search)
+                  ? [{ _id: new Types.ObjectId(search) }]
+                  : []),
+              ],
+            },
+          },
+        ]
+      : []),
+    { $sort: { admissionNumber: 1, _id: 1 } },
+    { $skip: offset },
+    { $limit: 51 },
+    { $project: { _id: 1, userId: 1 } },
+  ]).read('primary');
+  const items = [];
+  for (const row of rows.slice(0, 50)) {
+    try {
+      const scope = await resolveStudentReadScope(
+        String(row.userId),
+        ctx.branchId,
+      );
+      if (String(scope.student._id) !== String(row._id)) continue;
+      items.push({
+        id: String(row._id),
+        fullName: scope.user.fullName,
+        admissionNumber: scope.student.admissionNumber,
+        enrollment: {
+          id: String(scope.enrollment._id),
+          academicPeriod: scope.period.name,
+          className: scope.schoolClass.name,
+          sectionName: scope.section.name,
+        },
+      });
+    } catch (error) {
+      // Invalid membership is omitted; database failures are never disguised as empty results.
+      if (!(error instanceof RequestContractError) || error.status !== 403)
+        throw error;
+    }
+  }
+  if ((await financeActor(identity)).branchId !== ctx.branchId)
+    throw financialDenied();
+  return { items, nextOffset: rows.length > 50 ? offset + 50 : null };
+}
+
+export async function listFinanceFees(
+  identity: JwtPayload | undefined,
+  query: unknown,
+) {
+  const ctx = await financeActor(identity),
+    input = objectBody(query, [
+      'studentId',
+      'search',
+      'status',
+      'offset',
+      'limit',
+    ]);
+  const search = literalSearch(input.search),
+    status =
+      input.status === undefined
+        ? undefined
+        : enumField(input.status, 'fee status', FINANCE_FEE_STATUSES);
+  const offset = pageNumber(input.offset, 0, 10000),
+    limit = pageNumber(input.limit, 100, 100, 1);
+  const studentId =
+    input.studentId === undefined
+      ? undefined
+      : objectIdField(input.studentId, 'Student ID');
+  if (studentId) {
+    const student = await Student.findOne({ isActive: true })
+      .where('_id')
+      .equals(studentId)
+      .where('branchId')
+      .equals(ctx.branchId)
+      .select('userId')
+      .read('primary')
+      .lean();
+    if (
+      !student ||
+      !(await User.exists({ role: 'student', isActive: true })
+        .where('_id')
+        .equals(student.userId)
+        .where('branchId')
+        .equals(ctx.branchId)
+        .read('primary'))
+    )
+      throw financialDenied();
+  }
+  const match = {
+    branchId: new Types.ObjectId(ctx.branchId),
+    ...(studentId ? { studentId: new Types.ObjectId(studentId) } : {}),
+    ...(search
+      ? {
+          $or: ['title', 'challanReference', 'academicPeriodName'].map(
+            field => ({
+              [field]: { $regex: escapedSearch(search), $options: 'i' },
+            }),
+          ),
+        }
+      : {}),
+  };
+  const pipeline: PipelineStage[] = [{ $match: match }];
+  if (status) {
+    // Query-side narrowing mirrors feeDTO's precedence, before pagination. The returned
+    // money and status still come only from feeDTO, including its reconciliation checks.
+    for (const [from, alias, filter] of [
+      [
+        FinanceTransaction.collection.name,
+        '_settlements',
+        { state: 'settled' },
+      ],
+      [
+        FinancePaymentIntent.collection.name,
+        '_holds',
+        { status: { $in: reservedStates } },
+      ],
+    ] as const)
+      pipeline.push({
+        $lookup: {
+          from,
+          let: { fee: '$_id', student: '$studentId' },
+          pipeline: [
+            {
+              $match: {
+                branchId: new Types.ObjectId(ctx.branchId),
+                ...filter,
+                $expr: {
+                  $and: [
+                    { $eq: ['$obligationId', '$$fee'] },
+                    { $eq: ['$studentId', '$$student'] },
+                  ],
+                },
+              },
+            },
+            { $group: { _id: null, total: { $sum: '$amountMinor' } } },
+          ],
+          as: alias,
+        },
+      });
+    pipeline.push({
+      $set: {
+        _paid: { $ifNull: [{ $arrayElemAt: ['$_settlements.total', 0] }, 0] },
+        _held: { $ifNull: [{ $arrayElemAt: ['$_holds.total', 0] }, 0] },
+      },
+    });
+    pipeline.push({
+      $set: { _balance: { $subtract: ['$amountMinor', '$_paid'] } },
+    });
+    const conditions: Record<typeof status, object> = {
+      paid: { _balance: 0 },
+      payment_pending: { _balance: { $gt: 0 }, _held: { $gt: 0 } },
+      partial: { _balance: { $gt: 0 }, _held: 0, _paid: { $gt: 0 } },
+      overdue: {
+        _balance: { $gt: 0 },
+        _held: 0,
+        _paid: 0,
+        dueDate: { $lt: schoolToday() },
+      },
+      due: {
+        _balance: { $gt: 0 },
+        _held: 0,
+        _paid: 0,
+        dueDate: { $gte: schoolToday() },
+      },
+    };
+    pipeline.push({ $match: conditions[status] });
+  }
+  pipeline.push(
+    { $sort: { createdAt: -1, _id: -1 } },
+    { $skip: offset },
+    { $limit: limit + 1 },
+    { $unset: ['_settlements', '_holds', '_paid', '_held', '_balance'] },
+  );
+  const rows = await FeeObligation.aggregate<Obligation>(pipeline).read(
+    'primary',
+  );
+  const items = await Promise.all(rows.slice(0, limit).map(row => feeDTO(row)));
+  if ((await financeActor(identity)).branchId !== ctx.branchId)
+    throw financialDenied();
+  return {
+    items: status ? items.filter(item => item.status === status) : items,
+    limit,
+    nextOffset: rows.length > limit ? offset + limit : null,
+  };
+}
+
+export async function lookupFinanceChallan(
+  identity: JwtPayload | undefined,
+  reference: unknown,
+) {
+  const ctx = await financeActor(identity),
+    value = textField(reference, 'challan reference', 80, 1);
+  const row = await FeeObligation.findOne({
+    branchId: ctx.branchId,
+    challanReference: value,
+  })
+    .read('primary')
+    .lean();
+  if (!row)
+    throw new RequestContractError(404, 'Challan not found or unavailable');
+  const result = await feeDTO(row);
+  if ((await financeActor(identity)).branchId !== ctx.branchId)
+    throw financialDenied();
+  return result;
+}
 
 export const financialDenied = () =>
   new RequestContractError(403, 'Financial record or action is unavailable');

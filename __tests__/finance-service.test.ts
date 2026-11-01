@@ -59,3 +59,43 @@ test('errors are propagated without sample money', async () => {
   jest.mocked(apiClient.request).mockRejectedValueOnce(new Error('Forbidden'));
   await expect(financeService.fees('token')).rejects.toThrow('Forbidden');
 });
+
+test('obligation filters normalize optional values and encode search/Student/status/page', async () => {
+  await financeService.fees('token', {
+    search: '  Tuition  & A/B? ',
+    studentId: 'student/id',
+    status: 'payment_pending',
+    offset: 0,
+    limit: 25,
+  });
+  expect(apiClient.request).toHaveBeenCalledWith(
+    '/finance/me/fees?search=Tuition%20%26%20A%2FB%3F&studentId=student%2Fid&status=payment_pending&offset=0&limit=25',
+    { token: 'token' },
+  );
+  await financeService.fees('token', {
+    search: '   ',
+    studentId: undefined,
+    status: undefined,
+  });
+  expect(apiClient.request).toHaveBeenLastCalledWith('/finance/me/fees', {
+    token: 'token',
+  });
+});
+
+test('Student search encodes literal names and paging without accepting Branch authority', async () => {
+  await financeService.students('token', ' A+B / One ', 50);
+  expect(apiClient.request).toHaveBeenCalledWith(
+    '/finance/me/students?search=A%2BB%20%2F%20One&offset=50',
+    { token: 'token' },
+  );
+});
+
+test('challan lookup encodes the typed reference and returns the server DTO using GET only', async () => {
+  const dto = { id: 'fee', status: 'due', balanceLabel: 'SERVER LABEL' };
+  jest.mocked(apiClient.request).mockResolvedValueOnce({ data: dto });
+  expect(await financeService.challan('token', ' CH-A&/ ? ')).toEqual(dto);
+  expect(apiClient.request).toHaveBeenCalledWith(
+    '/finance/me/fees/by-reference?reference=CH-A%26%2F%20%3F',
+    { token: 'token' },
+  );
+});

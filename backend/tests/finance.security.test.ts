@@ -24,6 +24,312 @@ import { ROLE_PERMISSIONS } from '../src/constants/rolePermissions';
 import { PERMISSIONS } from '../src/constants/permissions';
 import { getBranchFeeSummary } from '../src/services/fee.service';
 
+test('Finance Student search uses canonical enrollment and minimal identity for name, admission and ID', async () => {
+  await StudentEnrollment.deleteMany({ studentId: state.otherStudent._id });
+  for (const term of ['Student One', 'SELF-1', String(state.student._id)]) {
+    const response = await finHttp(
+      '/students?search=' + encodeURIComponent(term),
+    );
+    assert.equal(response.status, 200);
+    const row = response.json.data.items[0];
+    assert.deepEqual(Object.keys(row).sort(), [
+      'admissionNumber',
+      'enrollment',
+      'fullName',
+      'id',
+    ]);
+    assert.equal(row.id, String(state.student._id));
+    assert.deepEqual(row.enrollment, {
+      id: String(state.enrollment._id),
+      academicPeriod: 'Current term',
+      className: 'Grade 8',
+      sectionName: 'A',
+    });
+  }
+  assert.equal(
+    (await finHttp('/students?search=maker')).json.data.items.length,
+    0,
+  );
+  assert.equal(
+    (await finHttp('/students?search=Student')).json.data.items.length,
+    1,
+  ); // Other Student has no valid enrollment.
+  await StudentEnrollment.updateOne(
+    { _id: state.enrollment._id },
+    { $set: { status: 'withdrawn', effectiveTo: new Date() } },
+  );
+  assert.equal(
+    (await finHttp('/students?search=SELF-1')).json.data.items.length,
+    0,
+  );
+});
+
+test('Finance Student search excludes foreign Branch and non-Student identities', async () => {
+  assert.equal(
+    (await finHttp('/students?search=SELF-1', undefined, finance.foreign)).json
+      .data.items.length,
+    0,
+  );
+  assert.equal(
+    (await apiHttp('/finance/me/students?search=SELF-1', state.token)).status,
+    403,
+  );
+  await User.updateOne({ _id: state.user._id }, { $set: { role: 'teacher' } });
+  assert.equal(
+    (await finHttp('/students?search=SELF-1')).json.data.items.length,
+    0,
+  );
+});
+
+test('Finance search treats regex characters literally and rejects oversized/structured inputs', async () => {
+  await User.updateOne(
+    { _id: state.user._id },
+    { $set: { fullName: 'Learner [A]+ (One)' } },
+  );
+  assert.equal(
+    (await finHttp('/students?search=' + encodeURIComponent('[A]+'))).json.data
+      .items.length,
+    1,
+  );
+  assert.equal(
+    (await finHttp('/students?search=' + encodeURIComponent('.*'))).json.data
+      .items.length,
+    0,
+  );
+  for (const query of [
+    'search=' + 'x'.repeat(81),
+    'search=a&search=b',
+    'offset=-1',
+    'offset=10001',
+    'branchId=' + state.foreign._id,
+  ]) {
+    assert.ok(
+      [400, 403].includes((await finHttp('/students?' + query)).status),
+    );
+  }
+});
+
+test('Student search fails closed on invalid enrollment references without using profile placement', async () => {
+  // Simulate corrupt imported data; model updates correctly forbid changing
+  // immutable placement and effectiveFrom fields.
+  await StudentEnrollment.collection.updateOne(
+    { _id: state.enrollment._id },
+    { $set: { classId: oid() } },
+  );
+  assert.equal(
+    (await finHttp('/students?search=SELF-1')).json.data.items.length,
+    0,
+  );
+  await StudentEnrollment.collection.updateOne(
+    { _id: state.enrollment._id },
+    { $set: { classId: state.cls._id, effectiveFrom: new Date('2099-01-01') } },
+  );
+  assert.equal(
+    (await finHttp('/students?search=SELF-1')).json.data.items.length,
+    0,
+  );
+});
+
+test('new Finance reads require current view permission and a valid Session', async () => {
+  const fee = await assignedFee();
+  const paths = [
+    '/students?search=SELF-1',
+    '/fees?status=due',
+    '/fees/by-reference?reference=' + fee.challanReference,
+  ];
+  const permissions = [...ROLE_PERMISSIONS.finance];
+  ROLE_PERMISSIONS.finance = permissions.filter(
+    permission => permission !== PERMISSIONS.FINANCE_VIEW,
+  );
+  try {
+    for (const path of paths) assert.equal((await finHttp(path)).status, 403);
+  } finally {
+    ROLE_PERMISSIONS.finance = permissions;
+  }
+  await Session.updateOne(
+    { token: finance.maker.token },
+    { $set: { isRevoked: true } },
+  );
+  for (const path of paths) assert.equal((await finHttp(path)).status, 401);
+});
+
+test('Student filtering keeps obligation history readable without active enrollment and conceals foreign IDs', async () => {
+  const fee = await assignedFee();
+  await StudentEnrollment.updateOne(
+    { _id: state.enrollment._id },
+    { $set: { status: 'withdrawn', effectiveTo: new Date() } },
+  );
+  assert.deepEqual(
+    (await finHttp('/fees?studentId=' + state.student._id)).json.data.items.map(
+      (row: any) => row.id,
+    ),
+    [fee.id],
+  );
+  assert.equal(
+    (
+      await finHttp(
+        '/fees?studentId=' + state.student._id,
+        undefined,
+        finance.foreign,
+      )
+    ).status,
+    403,
+  );
+  assert.equal((await finHttp('/fees?studentId=' + oid())).status, 403);
+});
+
+test('obligation text/reference searches are literal, bounded and scoped', async () => {
+  const fee = await assignedFee();
+  for (const term of ['tuition', 'Current term', fee.challanReference]) {
+    const response = await finHttp('/fees?search=' + encodeURIComponent(term));
+    assert.equal(response.status, 200);
+    assert.equal(response.json.data.items[0].id, fee.id);
+  }
+  assert.equal(
+    (await finHttp('/fees?search=' + encodeURIComponent('.*'))).json.data.items
+      .length,
+    0,
+  );
+  assert.equal(
+    (
+      await finHttp(
+        '/fees?search=' + fee.challanReference,
+        undefined,
+        finance.foreign,
+      )
+    ).json.data.items.length,
+    0,
+  );
+  for (const query of [
+    'search=' + 'x'.repeat(81),
+    'status=confirmed',
+    'limit=0',
+    'limit=101',
+    'offset=-1',
+    'status=due&status=paid',
+  ]) {
+    assert.equal((await finHttp('/fees?' + query)).status, 400);
+  }
+});
+
+test('all canonical status filters match feeDTO precedence, with filtering before pagination', async () => {
+  const original = await assignedFee();
+  const source = await FeeObligation.findById(original.id).lean();
+  for (const [index, status] of [
+    'due',
+    'overdue',
+    'partial',
+    'payment_pending',
+    'paid',
+  ].entries()) {
+    const id = oid(),
+      studentId = state.student._id;
+    await put(FeeObligation, {
+      ...source,
+      _id: id,
+      structureId: oid(),
+      challanReference: `STATUS-${status}`,
+      dueDate: status === 'overdue' ? '2000-01-01' : '2099-01-01',
+      createdAt: new Date(1000 + index),
+    });
+    if (status === 'partial' || status === 'paid')
+      await put(FinanceTransaction, {
+        branchId: state.branch._id,
+        obligationId: id,
+        studentId,
+        intentId: oid(),
+        amountMinor: status === 'paid' ? 30000 : 1000,
+        currency: 'PKR',
+        method: 'cash',
+        reference: 'TEST',
+        receiptReference: `RC-STATUS-${status}`,
+        state: 'settled',
+        actorId: finance.checker.user._id,
+        paidAt: new Date(),
+      });
+    if (status === 'payment_pending')
+      await put(FinancePaymentIntent, {
+        branchId: state.branch._id,
+        obligationId: id,
+        studentId,
+        amountMinor: 30000,
+        status: 'awaiting_verification',
+        expiresAt: new Date(0),
+      });
+  }
+  for (const status of [
+    'due',
+    'overdue',
+    'partial',
+    'payment_pending',
+    'paid',
+  ]) {
+    const response = await finHttp(
+      '/fees?status=' + status + '&search=STATUS-&limit=1',
+    );
+    assert.equal(response.status, 200, JSON.stringify(response));
+    assert.equal(response.json.data.items.length, 1);
+    assert.equal(response.json.data.items[0].status, status);
+    assert.equal(
+      response.json.data.items[0].challanReference,
+      `STATUS-${status}`,
+    );
+  }
+  const first = await finHttp('/fees?search=STATUS-&limit=2');
+  assert.equal(first.json.data.nextOffset, 2);
+  const second = await finHttp('/fees?search=STATUS-&limit=2&offset=2');
+  assert.equal(second.json.data.items.length, 2);
+  assert.notEqual(first.json.data.items[0].id, second.json.data.items[0].id);
+});
+
+test('exact challan lookup is safe for unknown/foreign references and denies wrong role', async () => {
+  const fee = await assignedFee(),
+    path =
+      '/fees/by-reference?reference=' +
+      encodeURIComponent(fee.challanReference);
+  const response = await finHttp(path);
+  assert.equal(response.status, 200);
+  assert.equal(response.json.data.id, fee.id);
+  assert.equal(response.json.data.status, 'due');
+  assert.equal(response.json.data.paidMinor, 0);
+  const unknown = await finHttp('/fees/by-reference?reference=CH-' + oid());
+  const foreign = await finHttp(path, undefined, finance.foreign);
+  assert.equal(unknown.status, 404);
+  assert.deepEqual(foreign, unknown);
+  assert.equal((await apiHttp('/finance/me' + path, state.token)).status, 403);
+  for (const query of [
+    'reference=',
+    'reference=' + 'x'.repeat(81),
+    'reference=a&reference=b',
+  ]) {
+    assert.equal((await finHttp('/fees/by-reference?' + query)).status, 400);
+  }
+});
+
+test('search, status filtering, paging and challan reads perform zero financial writes', async () => {
+  const fee = await assignedFee();
+  const snapshot = async () =>
+    Promise.all(
+      [
+        FeeObligation,
+        FinanceTransaction,
+        FinancePaymentIntent,
+        FinanceAudit,
+      ].map(model => model.collection.find({}).sort({ _id: 1 }).toArray()),
+    );
+  const before = await snapshot();
+  for (let i = 0; i < 2; i++) {
+    assert.equal((await finHttp('/students?search=SELF-1')).status, 200);
+    assert.equal((await finHttp('/fees?status=due&limit=1')).status, 200);
+    assert.equal(
+      (await finHttp('/fees/by-reference?reference=' + fee.challanReference))
+        .status,
+      200,
+    );
+  }
+  assert.deepEqual(await snapshot(), before);
+});
+
 async function recorded(feeId: string) {
   const result = await finHttp(`/fees/${feeId}/manual-payments`, {
     method: 'bank_transfer',

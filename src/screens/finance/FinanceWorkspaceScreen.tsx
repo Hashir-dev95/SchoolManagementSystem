@@ -9,6 +9,11 @@ import {
   type PaymentView,
   type ReconciliationView,
   type StructureView,
+  type FeeFilters,
+  type FeeStatus,
+  type FeeView,
+  type FinanceStudent,
+  type FinanceStudents,
 } from '../../services/finance/financeService';
 import {
   DashboardShell,
@@ -41,12 +46,16 @@ type Data =
       structures: StructureView[];
       students: { id: string; fullName: string; admissionNumber: string }[];
     };
-async function load(token: string, pane: Pane): Promise<Data> {
+async function load(
+  token: string,
+  pane: Pane,
+  filters: FeeFilters,
+): Promise<Data> {
   switch (pane) {
     case 'Summary':
       return { kind: pane, summary: await service.summary(token) };
     case 'Fees':
-      return { kind: pane, fees: await service.fees(token) };
+      return { kind: pane, fees: await service.fees(token, filters) };
     case 'Payments':
       return { kind: pane, ...(await service.payments(token)) };
     case 'Reconciliation':
@@ -83,6 +92,7 @@ function Workspace({ token }: { token: string }) {
   const { logout } = useAuth();
   const [pane, setPane] = useState<Pane>('Summary'),
     [data, setData] = useState<Data | null>(null);
+  const [filters, setFilters] = useState<FeeFilters>({});
   const [loading, setLoading] = useState(true),
     [error, setError] = useState<string | null>(null),
     [attempt, setAttempt] = useState(0);
@@ -102,22 +112,23 @@ function Workspace({ token }: { token: string }) {
   useEffect(() => {
     let active = true;
     generation.current += 1;
+    const request = generation.current;
     setLoading(true);
     setError(null);
     setData(null);
-    load(token, pane)
+    load(token, pane, filters)
       .then(value => {
-        if (active) {
+        if (active && request === generation.current) {
           setData(value);
         }
       })
       .catch((failure: unknown) => {
-        if (active) {
+        if (active && request === generation.current) {
           setError(message(failure));
         }
       })
       .finally(() => {
-        if (active) {
+        if (active && request === generation.current) {
           setLoading(false);
         }
       });
@@ -125,7 +136,7 @@ function Workspace({ token }: { token: string }) {
       active = false;
       generation.current += 1;
     };
-  }, [token, pane, attempt]);
+  }, [token, pane, attempt, filters]);
   const retry = useCallback(async () => {
     setAttempt(value => value + 1);
   }, []);
@@ -192,6 +203,21 @@ function Workspace({ token }: { token: string }) {
         }}
       />
       <DashboardStateCard loading={loading} error={error} onRetry={retry} />
+      {pane === 'Fees' ? (
+        <FinanceLookup
+          token={token}
+          disabled={busy}
+          filters={filters}
+          onFilters={next => {
+            generation.current += 1;
+            setData(null);
+            setLoading(true);
+            setError(null);
+            setFeeId('');
+            setFilters(next);
+          }}
+        />
+      ) : null}
       {feedback ? (
         <Text accessibilityRole="alert" style={styles.text}>
           {feedback}
@@ -222,6 +248,20 @@ function Workspace({ token }: { token: string }) {
       {!loading && !error && data?.kind === 'Fees' ? (
         <>
           <FeeCards data={data.fees} />
+          {data.fees.nextOffset != null ? (
+            <Button
+              title="Next obligations"
+              variant="secondary"
+              disabled={busy}
+              onPress={() => {
+                generation.current += 1;
+                setData(null);
+                setLoading(true);
+                setFeeId('');
+                setFilters({ ...filters, offset: data.fees.nextOffset! });
+              }}
+            />
+          ) : null}
           <SectionCard title="Record bank payment for verification">
             <Text style={styles.note}>
               The server reserves the selected obligation’s full available
@@ -466,6 +506,279 @@ function Workspace({ token }: { token: string }) {
         </>
       ) : null}
     </DashboardShell>
+  );
+}
+const statusChoices: { label: string; value?: FeeStatus }[] = [
+  { label: 'All statuses' },
+  { label: 'Due', value: 'due' },
+  { label: 'Overdue', value: 'overdue' },
+  { label: 'Partial', value: 'partial' },
+  { label: 'Payment pending', value: 'payment_pending' },
+  { label: 'Paid', value: 'paid' },
+];
+/** Read-only lookup controls. No payment action is called from this component. */
+function FinanceLookup({
+  token,
+  disabled,
+  filters,
+  onFilters,
+}: {
+  token: string;
+  disabled: boolean;
+  filters: FeeFilters;
+  onFilters: (filters: FeeFilters) => void;
+}) {
+  const [search, setSearch] = useState(''),
+    [offset, setOffset] = useState(0),
+    [attempt, setAttempt] = useState(0);
+  const [students, setStudents] = useState<{
+    token: string;
+    search: string;
+    offset: number;
+    data: FinanceStudents;
+  } | null>(null);
+  const [searching, setSearching] = useState(false),
+    [searchError, setSearchError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<FinanceStudent | null>(null);
+  const [reference, setReference] = useState(''),
+    [looking, setLooking] = useState(false);
+  const [found, setFound] = useState<{
+    token: string;
+    reference: string;
+    fee: FeeView;
+  } | null>(null);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const searchGeneration = useRef(0),
+    lookupGeneration = useRef(0);
+  useEffect(() => {
+    const counter = searchGeneration;
+    const request = ++counter.current;
+    setStudents(null);
+    setSearchError(null);
+    setSearching(!!search.trim());
+    if (search.trim())
+      service
+        .students(token, search, offset)
+        .then(data => {
+          if (request === searchGeneration.current)
+            setStudents({ token, search, offset, data });
+        })
+        .catch((failure: unknown) => {
+          if (request === searchGeneration.current)
+            setSearchError(message(failure));
+        })
+        .finally(() => {
+          if (request === searchGeneration.current) setSearching(false);
+        });
+    return () => {
+      counter.current++;
+    };
+  }, [token, search, offset, attempt]);
+  useEffect(() => {
+    const counter = lookupGeneration;
+    setFound(null);
+    setLookupError(null);
+    setLooking(false);
+    return () => {
+      counter.current++;
+    };
+  }, [token]);
+  const results =
+    students?.token === token &&
+    students.search === search &&
+    students.offset === offset
+      ? students.data
+      : null;
+  async function lookup() {
+    const request = ++lookupGeneration.current;
+    setLooking(true);
+    setFound(null);
+    setLookupError(null);
+    try {
+      const fee = await service.challan(token, reference);
+      if (request === lookupGeneration.current)
+        setFound({ token, reference, fee });
+    } catch (failure) {
+      if (request === lookupGeneration.current)
+        setLookupError(
+          failure instanceof ApiError && failure.status === 404
+            ? 'No issued challan found in your permitted records.'
+            : message(failure),
+        );
+    } finally {
+      if (request === lookupGeneration.current) setLooking(false);
+    }
+  }
+  return (
+    <>
+      <SectionCard title="Find Students and dues">
+        <Text style={styles.note}>
+          Search enrolled Students by name, admission number or Student ID.
+          Placement comes from current enrollment.
+        </Text>
+        <TextInput
+          accessibilityLabel="Search Finance Students"
+          value={search}
+          editable={!disabled}
+          maxLength={80}
+          style={styles.input}
+          onChangeText={value => {
+            searchGeneration.current++;
+            setStudents(null);
+            setSearchError(null);
+            setSearch(value);
+            setOffset(0);
+          }}
+        />
+        {searching ? (
+          <Text style={styles.text}>Searching Students...</Text>
+        ) : null}
+        {searchError ? (
+          <Text accessibilityRole="alert" style={styles.text}>
+            {searchError}
+          </Text>
+        ) : null}
+        {searchError ? (
+          <Button
+            title="Retry Student search"
+            variant="secondary"
+            disabled={disabled}
+            onPress={() => setAttempt(value => value + 1)}
+          />
+        ) : null}
+        {results && !results.items.length ? (
+          <Text style={styles.text}>
+            No permitted enrolled Students on this page.
+          </Text>
+        ) : null}
+        {results?.items.map(student => (
+          <View key={student.id}>
+            <Text style={styles.note}>
+              {student.enrollment.className} · {student.enrollment.sectionName}{' '}
+              · {student.enrollment.academicPeriod}
+            </Text>
+            <Button
+              title={`Filter fees for ${student.fullName} (${student.admissionNumber})`}
+              variant="secondary"
+              disabled={disabled}
+              onPress={() => {
+                setSelected(student);
+                onFilters({
+                  ...filters,
+                  studentId: student.id,
+                  offset: undefined,
+                });
+              }}
+            />
+          </View>
+        ))}
+        {results?.nextOffset != null ? (
+          <Button
+            title="Next Student results"
+            variant="secondary"
+            disabled={disabled}
+            onPress={() => {
+              searchGeneration.current++;
+              setStudents(null);
+              setOffset(results.nextOffset!);
+            }}
+          />
+        ) : null}
+        {selected && filters.studentId === selected.id ? (
+          <Text style={styles.text}>
+            Dues for {selected.fullName} · {selected.admissionNumber}
+          </Text>
+        ) : null}
+        <TextInput
+          accessibilityLabel="Search obligations"
+          placeholder="Fee title, academic period or challan reference"
+          value={filters.search ?? ''}
+          maxLength={80}
+          editable={!disabled}
+          style={styles.input}
+          onChangeText={value =>
+            onFilters({ ...filters, search: value, offset: undefined })
+          }
+        />
+        <WorkspaceTabs
+          accessibilityLabel="Canonical fee status"
+          items={statusChoices.map(value => value.label)}
+          selected={
+            statusChoices.find(value => value.value === filters.status)!.label
+          }
+          onSelect={label => {
+            if (!disabled)
+              onFilters({
+                ...filters,
+                status: statusChoices.find(value => value.label === label)
+                  ?.value,
+                offset: undefined,
+              });
+          }}
+        />
+        <Button
+          title="Clear dues filters"
+          variant="secondary"
+          disabled={disabled}
+          onPress={() => {
+            searchGeneration.current++;
+            setSearch('');
+            setOffset(0);
+            setStudents(null);
+            setSelected(null);
+            onFilters({});
+          }}
+        />
+      </SectionCard>
+      <SectionCard title="Find issued challan">
+        <Text style={styles.note}>
+          Finding an issued reference confirms only the obligation. It does not
+          confirm a payment.
+        </Text>
+        <TextInput
+          accessibilityLabel="Issued challan reference"
+          value={reference}
+          editable={!disabled}
+          maxLength={80}
+          autoCapitalize="none"
+          style={styles.input}
+          onChangeText={value => {
+            lookupGeneration.current++;
+            setLooking(false);
+            setFound(null);
+            setLookupError(null);
+            setReference(value);
+          }}
+        />
+        <Button
+          title="Find challan"
+          disabled={disabled || looking || !reference.trim()}
+          onPress={lookup}
+        />
+        {looking ? (
+          <Text style={styles.text}>Looking up challan...</Text>
+        ) : null}
+        {lookupError ? (
+          <Text accessibilityRole="alert" style={styles.text}>
+            {lookupError}
+          </Text>
+        ) : null}
+        {lookupError ? (
+          <Button
+            title="Retry challan lookup"
+            variant="secondary"
+            disabled={disabled || looking}
+            onPress={lookup}
+          />
+        ) : null}
+        {found?.token === token && found.reference === reference ? (
+          <>
+            <Text style={styles.text}>Issued challan found.</Text>
+            <FeeCards data={{ items: [found.fee] }} />
+          </>
+        ) : null}
+      </SectionCard>
+    </>
   );
 }
 const styles = StyleSheet.create({

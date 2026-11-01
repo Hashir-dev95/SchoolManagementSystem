@@ -24,9 +24,52 @@ export interface FeeView {
 }
 export interface FeeList {
   items: FeeView[];
+  nextOffset?: number | null;
   legacyUnmigratedCount?: number;
   onlinePayments?: { enabled: boolean; message: string };
 }
+export type FeeStatus =
+  | 'due'
+  | 'overdue'
+  | 'partial'
+  | 'payment_pending'
+  | 'paid';
+export interface FeeFilters {
+  search?: string;
+  studentId?: string;
+  status?: FeeStatus;
+  offset?: number;
+  limit?: number;
+}
+export interface FinanceStudent {
+  id: string;
+  fullName: string;
+  admissionNumber: string;
+  enrollment: {
+    id: string;
+    academicPeriod: string;
+    className: string;
+    sectionName: string;
+  };
+}
+export interface FinanceStudents {
+  items: FinanceStudent[];
+  nextOffset?: number | null;
+}
+const query = (values: Record<string, string | number | undefined>) => {
+  const entries = Object.entries(values).flatMap(([key, value]) => {
+    const normalized =
+      typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value;
+    return normalized === undefined || normalized === ''
+      ? []
+      : [
+          `${encodeURIComponent(key)}=${encodeURIComponent(
+            String(normalized),
+          )}`,
+        ];
+  });
+  return entries.length ? '?' + entries.join('&') : '';
+};
 export interface PaymentView {
   id: string;
   feeId: string;
@@ -67,17 +110,18 @@ const write = async <T>(token: string, path: string, body: unknown) =>
   ).data;
 export const financeService = {
   summary: (token: string) => read<FinanceSummary>(token, '/summary'),
-  fees: (token: string) => read<FeeList>(token, '/fees'),
+  fees: (token: string, filters: FeeFilters = {}) =>
+    read<FeeList>(token, '/fees' + query({ ...filters })),
+  challan: (token: string, reference: string) =>
+    read<FeeView>(token, '/fees/by-reference' + query({ reference })),
   payments: (token: string) =>
     read<{ items: PaymentView[] }>(token, '/payments'),
   reconciliation: (token: string) =>
     read<ReconciliationView>(token, '/reconciliation'),
   structures: (token: string) =>
     read<{ items: StructureView[] }>(token, '/structures'),
-  students: (token: string) =>
-    read<{
-      items: { id: string; fullName: string; admissionNumber: string }[];
-    }>(token, '/students'),
+  students: (token: string, search?: string, offset?: number) =>
+    read<FinanceStudents>(token, '/students' + query({ search, offset })),
   createStructure: (
     token: string,
     body: { title: string; amountMinor: number; operationId: string },

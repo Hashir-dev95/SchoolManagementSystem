@@ -4,19 +4,12 @@ import {
   type AuthenticatedRequest,
 } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/rbac.middleware';
-import {
-  RequestContractError,
-  objectIdField,
-  textField,
-} from '../utils/request-validation';
+import { RequestContractError } from '../utils/request-validation';
 import {
   FeeStructure,
-  FeeObligation,
   FinancePaymentIntent,
   FinanceProviderObservation,
 } from '../models/finance';
-import Student from '../models/student';
-import User from '../models/user';
 import {
   financeActor,
   createFeeStructure,
@@ -24,6 +17,9 @@ import {
   feeRecord,
   feeDTO,
   branchFinanceSummary,
+  searchFinanceStudents,
+  listFinanceFees,
+  lookupFinanceChallan,
 } from '../services/finance-authority.service';
 import {
   recordManualPayment,
@@ -102,81 +98,22 @@ router.post(
 router.get(
   '/students',
   handle(
-    async request => {
-      const ctx = await financeActor(request.user),
-        search = textField(request.query.search ?? '', 'search', 80);
-      const filter = search
-        ? {
-            admissionNumber: {
-              $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-              $options: 'i',
-            },
-          }
-        : {};
-      const students = await Student.find({ isActive: true, ...filter })
-        .where('branchId')
-        .equals(ctx.branchId)
-        .select('_id userId admissionNumber')
-        .limit(50)
-        .lean();
-      const items = [];
-      for (const row of students) {
-        const user = await User.findOne({ isActive: true, role: 'student' })
-          .where('_id')
-          .equals(row.userId)
-          .where('branchId')
-          .equals(ctx.branchId)
-          .select('fullName')
-          .lean();
-        if (user) {
-          items.push({
-            id: String(row._id),
-            fullName: user.fullName,
-            admissionNumber: row.admissionNumber,
-          });
-        }
-      }
-      return { items };
-    },
-    ['search'],
+    request => searchFinanceStudents(request.user, request.query),
+    ['search', 'offset'],
   ),
 );
 router.get(
   '/fees',
   handle(
-    async request => {
-      const ctx = await financeActor(request.user),
-        studentId =
-          request.query.studentId === undefined
-            ? undefined
-            : objectIdField(request.query.studentId, 'Student ID');
-      if (
-        studentId &&
-        !(await Student.exists({ isActive: true })
-          .where('_id')
-          .equals(studentId)
-          .where('branchId')
-          .equals(ctx.branchId))
-      ) {
-        throw new RequestContractError(
-          403,
-          'Student is outside financial scope',
-        );
-      }
-      const rows = await FeeObligation.find({
-        branchId: ctx.branchId,
-        ...(studentId ? { studentId } : {}),
-      })
-        .sort({ createdAt: -1 })
-        .limit(100)
-        .read('primary')
-        .lean();
-      return {
-        items: await Promise.all(rows.map(row => feeDTO(row))),
-        limit: 100,
-      };
-    },
-    ['studentId'],
+    request => listFinanceFees(request.user, request.query),
+    ['studentId', 'search', 'status', 'offset', 'limit'],
+  ),
+);
+router.get(
+  '/fees/by-reference',
+  handle(
+    request => lookupFinanceChallan(request.user, request.query.reference),
+    ['reference'],
   ),
 );
 router.post(
