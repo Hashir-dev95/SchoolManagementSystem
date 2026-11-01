@@ -13,6 +13,8 @@ import {
 import { studentEnrollmentDTO } from '../services/student-self-scope.service';
 import { RequestContractError } from '../utils/request-validation';
 import User from '../models/user';
+import { readStudentFees } from '../services/finance-authority.service';
+import { startParentCheckout } from '../services/finance-payment.service';
 import { readStudentAssignedWork } from '../services/student-academic-read.service';
 import { readPublishedResultsForVerifiedStudent } from '../services/academic-result.service';
 import {
@@ -136,6 +138,43 @@ router.get(
   ),
 );
 // No linking, submissions, attempts or arbitrary-ID aliases are public here.
+router.get(
+  '/children/:studentId/fees',
+  parentRead(async request =>
+    readStudentFees(
+      (await verifiedChild(request.user, request.params.studentId)).scope,
+    ),
+  ),
+);
+router.post(
+  '/children/:studentId/fees/:feeId/checkout',
+  async (request: AuthenticatedRequest, response) => {
+    try {
+      if (Object.keys(request.query).length) {
+        throw new RequestContractError(403, 'Scope cannot be selected');
+      }
+      const data = await startParentCheckout(
+        request.user,
+        request.headers.authorization!.slice(7),
+        request.params.studentId,
+        request.params.feeId,
+        request.body,
+      );
+      await verifiedChild(request.user, request.params.studentId);
+      response.json({ success: true, data });
+    } catch (error) {
+      response
+        .status(error instanceof RequestContractError ? error.status : 500)
+        .json({
+          success: false,
+          message:
+            error instanceof RequestContractError
+              ? error.message
+              : 'Checkout unavailable',
+        });
+    }
+  },
+);
 router.use((_req, res) => {
   res
     .status(403)

@@ -9,6 +9,8 @@ import {
   getStudentEnrollment,
 } from '../services/student-self-scope.service';
 import { RequestContractError } from '../utils/request-validation';
+import { readStudentFees } from '../services/finance-authority.service';
+import { resolveStudentSelf } from '../services/student-self-scope.service';
 import {
   getStudentAssignedReads,
   getStudentAssignedRead,
@@ -66,6 +68,12 @@ router.get(
   studentSelfRead(request => getStudentEnrollment(request.user)),
 );
 // No ID-based alias, write or arbitrary scope selector exists under /me.
+router.get(
+  '/fees',
+  studentSelfRead(async request =>
+    readStudentFees(await resolveStudentSelf(request.user)),
+  ),
+);
 router.get(
   '/homework',
   studentSelfRead(request => getStudentAssignedReads(request.user, 'homework')),
