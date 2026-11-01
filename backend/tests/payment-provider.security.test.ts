@@ -255,6 +255,13 @@ test('expired but provider-paid evidence retains the hold for reconciliation wit
   const fee = (await finHttp('/fees/' + intent.feeId)).json.data;
   assert.equal(fee.reservedMinor, 30000);
   assert.deepEqual(fee.receipts, []);
+  const review = await finHttp('/reconciliation?reason=late_capture');
+  assert.equal(review.status, 200);
+  assert.equal(review.json.data.items[0].classification, 'late_capture');
+  assert.equal(review.json.data.items[0].reviewStatus, 'unresolved');
+  const foreign = await finHttp('/reconciliation', undefined, finance.foreign);
+  assert.deepEqual(foreign.json.data.items, []);
+  assert.deepEqual(foreign.json.data.observations, []);
 });
 
 for (const status of ['failed', 'rejected', 'cancelled']) {
@@ -345,6 +352,10 @@ test('one provider transaction cannot verify/credit two unrelated reservations',
   );
   assert.equal(await FinanceTransaction.countDocuments(), 1);
   assert.equal((await finHttp('/fees/' + second.feeId)).json.data.paidMinor, 0);
+  const review = await finHttp('/reconciliation?reason=conflicting_effect');
+  assert.equal(review.status, 200);
+  assert.equal(review.json.data.items[0].id, second.id);
+  assert.equal(review.json.data.items[0].classification, 'conflicting_effect');
 });
 
 test('event replay binds merchant identity and completed replay requires its actual matching transaction', async () => {
@@ -487,6 +498,31 @@ test('provider timeout keeps one reservation and retries do not create another c
   assert.equal(attempts, 1);
   assert.equal((await finHttp('/fees/' + fee.id)).json.data.availableMinor, 0);
   assert.equal(await FinanceTransaction.countDocuments(), 0);
+  const review = await finHttp('/reconciliation?reason=provider_uncertain');
+  assert.equal(review.status, 200);
+  assert.equal(review.json.data.items[0].id, first.id);
+  assert.equal(review.json.data.items[0].classification, 'provider_uncertain');
+});
+
+test('consistent settled replay is absent from unresolved queue and available as already_resolved', async () => {
+  const intent = await checkout(),
+    event = signedEvent(intent);
+  await processProviderCallback(event.raw, event.headers, signedProvider);
+  const before = await FinanceTransaction.findOne({
+    intentId: intent.id,
+  }).lean();
+  await processProviderCallback(event.raw, event.headers, signedProvider);
+  assert.deepEqual((await finHttp('/reconciliation')).json.data.items, []);
+  const resolved = await finHttp('/reconciliation?reason=already_resolved');
+  assert.equal(resolved.status, 200);
+  assert.equal(resolved.json.data.items[0].reviewStatus, 'resolved');
+  assert.equal(resolved.json.data.items[0].id, intent.id);
+  assert.equal(
+    (await FinanceTransaction.findOne({ intentId: intent.id }))!
+      .receiptReference,
+    before!.receiptReference,
+  );
+  assert.equal(await FinanceTransaction.countDocuments(), 1);
 });
 test('signed non-string event identifiers cannot inject a database selector', async () => {
   const intent = await checkout(),

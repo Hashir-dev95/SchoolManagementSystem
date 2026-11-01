@@ -758,3 +758,318 @@ export async function financePayments(identity: JwtPayload | undefined) {
     .lean();
   return { items: items.map(row => intentDTO(row, ctx.actor._id)) };
 }
+
+export const RECONCILIATION_REASONS = [
+  'late_capture',
+  'provider_uncertain',
+  'conflicting_effect',
+  'corrupt_evidence',
+  'already_resolved',
+  'requires_review',
+] as const;
+const reconciliationLabels: Record<
+  (typeof RECONCILIATION_REASONS)[number],
+  string
+> = {
+  late_capture:
+    'Authenticated late capture; funds remain held for explicit review',
+  provider_uncertain:
+    'Provider outcome is uncertain; no settlement is inferred',
+  conflicting_effect:
+    'Provider reference conflicts with a recorded effect; review required',
+  corrupt_evidence:
+    'Financial evidence is inconsistent or missing; review required',
+  already_resolved:
+    'Canonical outcome is already recorded; no recovery action is required',
+  requires_review: 'Awaiting explicit authorized evidence review',
+};
+/** Read-only bounded candidate pages. Empty filtered pages may still have a next page. */
+export async function financeReconciliation(
+  identity: JwtPayload | undefined,
+  query: unknown,
+) {
+  const ctx = await financeActor(identity),
+    input = objectBody(query, ['reason', 'offset', 'limit']);
+  const reason =
+    input.reason === undefined
+      ? undefined
+      : enumField(
+          input.reason,
+          'reconciliation reason',
+          RECONCILIATION_REASONS,
+        );
+  const page = (value: unknown, fallback: number, min: number, max: number) => {
+    if (value === undefined) return fallback;
+    if (
+      typeof value !== 'string' ||
+      !/^\d{1,5}$/.test(value) ||
+      Number(value) < min ||
+      Number(value) > max
+    )
+      throw new RequestContractError(400, 'Invalid reconciliation page');
+    return Number(value);
+  };
+  const offset = page(input.offset, 0, 0, 10000),
+    limit = page(input.limit, 25, 1, 100);
+  const session = await FinancePaymentIntent.startSession();
+  try {
+    const result = await session.withTransaction(
+      async () => {
+        const rows = await FinancePaymentIntent.find({ branchId: ctx.branchId })
+          .sort({ createdAt: -1, _id: -1 })
+          .skip(offset)
+          .limit(limit + 1)
+          .maxTimeMS(10000)
+          .session(session)
+          .lean();
+        const items = [];
+        for (const row of rows.slice(0, limit)) {
+          const validReferences = [
+            row.obligationId,
+            row.studentId,
+            row.actorId,
+          ].every(value => /^[a-fA-F0-9]{24}$/.test(String(value)));
+          const validAmount =
+            Number.isSafeInteger(row.amountMinor) &&
+            row.amountMinor > 0 &&
+            row.currency === 'PKR';
+          const safeText = (value: unknown, max = 160) =>
+            typeof value === 'string' ? value.slice(0, max) : 'Unavailable';
+          let fee: Awaited<ReturnType<typeof feeRecord>> | undefined;
+          let corrupt = !validReferences || !validAmount;
+          try {
+            if (validReferences)
+              fee = await feeRecord(
+                ctx.branchId,
+                String(row.obligationId),
+                session,
+              );
+            if (fee) await feeDTO(fee, session); // Reuse canonical ledger/currency/reconciliation validation.
+          } catch (error) {
+            if (
+              !(error instanceof RequestContractError) ||
+              ![400, 403, 503].includes(error.status)
+            )
+              throw error;
+            corrupt = true;
+          }
+          const online = row.channel === 'online';
+          const validProvider =
+            typeof row.provider === 'string' &&
+            !!row.provider &&
+            typeof row.merchantId === 'string' &&
+            !!row.merchantId;
+          const validTransactionRef =
+            typeof row.providerTransactionRef === 'string' &&
+            !!row.providerTransactionRef &&
+            row.providerTransactionRef.length <= 160;
+          const origin =
+            fee &&
+            validReferences &&
+            validAmount &&
+            (!online || validProvider) &&
+            typeof row.reference === 'string' &&
+            typeof row.method === 'string' &&
+            (await FinanceAudit.exists({
+              branchId: ctx.branchId,
+              actorId: row.actorId,
+              targetId: row._id,
+              action: online ? 'checkout.reserved' : 'payment.recorded',
+              amountMinor: row.amountMinor,
+              fingerprint: fingerprint(
+                online
+                  ? ['checkout', String(fee._id), row.provider]
+                  : ['manual', String(fee._id), row.method, row.reference],
+              ),
+            }).session(session));
+          const validDate =
+            row.expiresAt instanceof Date &&
+            Number.isFinite(row.expiresAt.getTime());
+          corrupt ||=
+            !fee ||
+            !origin ||
+            !['online', 'manual'].includes(row.channel) ||
+            String(fee.studentId) !== String(row.studentId) ||
+            row.currency !== 'PKR' ||
+            row.currency !== fee.currency ||
+            !Number.isSafeInteger(row.amountMinor) ||
+            row.amountMinor <= 0 ||
+            !validDate ||
+            (online &&
+              (!validProvider ||
+                (row.providerTransactionRef !== undefined &&
+                  !validTransactionRef)));
+          const evidence = await FinanceProviderObservation.findOne({
+            branchId: ctx.branchId,
+            orderRef: String(row._id),
+          })
+            .sort({ createdAt: -1, _id: -1 })
+            .session(session)
+            .lean();
+          const paidEvidence =
+            online &&
+            validProvider &&
+            validTransactionRef &&
+            validAmount &&
+            (await FinanceProviderObservation.exists({
+              branchId: ctx.branchId,
+              orderRef: String(row._id),
+              provider: row.provider,
+              merchantId: row.merchantId,
+              transactionRef: row.providerTransactionRef,
+              amountMinor: row.amountMinor,
+              currency: row.currency,
+              state: 'paid',
+            }).session(session));
+          const conflict =
+            online &&
+            validProvider &&
+            validTransactionRef &&
+            (await FinanceTransaction.exists({
+              provider: row.provider,
+              providerTransactionRef: row.providerTransactionRef,
+              intentId: { $ne: row._id },
+            }).session(session)); // Existence only: never return another Branch's effect or identity.
+          const effects = await FinanceTransaction.find({
+            branchId: ctx.branchId,
+            intentId: row._id,
+          })
+            .limit(2)
+            .session(session)
+            .lean();
+          const effect = effects[0];
+          const exactEffect =
+            effects.length === 1 &&
+            effect.state === 'settled' &&
+            String(effect.obligationId) === String(row.obligationId) &&
+            String(effect.studentId) === String(row.studentId) &&
+            String(effect.actorId) === String(row.actorId) &&
+            effect.amountMinor === row.amountMinor &&
+            effect.currency === row.currency &&
+            effect.receiptReference === `RC-${row._id}` &&
+            (online || String(effect.verifiedBy) === String(row.verifiedBy)) &&
+            effect.reference ===
+              (online ? row.providerTransactionRef : row.reference) &&
+            (!online ||
+              (effect.provider === row.provider &&
+                effect.providerTransactionRef === row.providerTransactionRef));
+          const terminal = ['settled', 'failed', 'rejected'].includes(
+            row.status,
+          );
+          const terminalAudit =
+            terminal &&
+            validReferences &&
+            validAmount &&
+            (online || /^[a-fA-F0-9]{24}$/.test(String(row.verifiedBy))) &&
+            (await FinanceAudit.exists({
+              branchId: ctx.branchId,
+              targetId: row._id,
+              actorId: online ? row.actorId : row.verifiedBy,
+              action: online
+                ? 'provider.' + (row.status === 'settled' ? 'paid' : 'failed')
+                : row.status === 'settled'
+                ? 'payment.verified'
+                : 'payment.rejected',
+              amountMinor: row.amountMinor,
+              afterState: row.status,
+            }).session(session));
+          if (
+            row.status === 'settled'
+              ? !exactEffect || !terminalAudit
+              : effects.length > 0
+          )
+            corrupt = true;
+          if (terminal && !terminalAudit) corrupt = true;
+          if (!terminal && !reservedStates.includes(row.status)) corrupt = true;
+          const evidenceIssue =
+            evidence &&
+            ['binding_mismatch', 'inconsistent', 'unmatched'].includes(
+              evidence.outcome ?? '',
+            );
+          if (evidence?.outcome === 'binding_mismatch') corrupt = true;
+          const expired = validDate && row.expiresAt <= new Date();
+          const classification: (typeof RECONCILIATION_REASONS)[number] =
+            corrupt
+              ? 'corrupt_evidence'
+              : conflict
+              ? 'conflicting_effect'
+              : evidenceIssue
+              ? 'requires_review'
+              : terminal
+              ? 'already_resolved'
+              : expired && paidEvidence
+              ? 'late_capture'
+              : online &&
+                (row.status === 'reconciliation_required' ||
+                  row.status === 'reserved' ||
+                  expired)
+              ? 'provider_uncertain'
+              : 'requires_review';
+          if (
+            reason
+              ? classification !== reason
+              : classification === 'already_resolved'
+          )
+            continue;
+          items.push({
+            id: String(row._id),
+            reference: safeText(row.reference, 120),
+            status: safeText(row.status, 40),
+            classification,
+            reason: reconciliationLabels[classification],
+            reviewStatus:
+              classification === 'already_resolved'
+                ? ('resolved' as const)
+                : ('unresolved' as const),
+            expired,
+            expiresAt: validDate ? row.expiresAt.toISOString() : null,
+            createdAt:
+              row.createdAt instanceof Date &&
+              Number.isFinite(row.createdAt.getTime())
+                ? row.createdAt.toISOString()
+                : null,
+            ...(!corrupt && fee
+              ? {
+                  feeId: String(fee._id),
+                  challanReference: fee.challanReference,
+                  studentId: String(fee.studentId),
+                  amountLabel: moneyLabel(row.amountMinor),
+                  currency: row.currency,
+                }
+              : {}),
+            providerState: evidence ? safeText(evidence.state, 40) : null,
+            providerTransactionReference: online
+              ? validTransactionRef
+                ? row.providerTransactionRef!
+                : null
+              : null,
+          });
+        }
+        // Preserve the existing bounded observation view, including orphaned evidence.
+        // No hydration of foreign obligations/users from observation references occurs.
+        const observations = await FinanceProviderObservation.find({
+          branchId: ctx.branchId,
+          outcome: { $nin: ['settled', 'failed'] },
+        })
+          .sort({ createdAt: -1, _id: -1 })
+          .limit(100)
+          .select('eventId orderRef outcome state createdAt -_id')
+          .session(session)
+          .lean();
+        return {
+          items,
+          observations,
+          offset,
+          limit,
+          nextOffset: rows.length > limit ? offset + limit : null,
+        };
+      },
+      { readConcern: { level: 'snapshot' }, readPreference: 'primary' },
+    );
+    if ((await financeActor(identity)).branchId !== ctx.branchId)
+      throw financialDenied();
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}

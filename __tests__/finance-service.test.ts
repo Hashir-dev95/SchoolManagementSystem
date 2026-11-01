@@ -9,6 +9,23 @@ beforeEach(() => {
     .mocked(apiClient.request)
     .mockResolvedValue({ data: { value: 'server' } });
 });
+
+test('reconciliation serializes reason and paging through the canonical GET contract', async () => {
+  await financeService.reconciliation('token', {
+    reason: 'late_capture',
+    offset: 0,
+    limit: 25,
+  });
+  expect(apiClient.request).toHaveBeenCalledWith(
+    '/finance/me/reconciliation?reason=late_capture&offset=0&limit=25',
+    { token: 'token' },
+  );
+  await financeService.reconciliation('token', { reason: undefined });
+  expect(apiClient.request).toHaveBeenLastCalledWith(
+    '/finance/me/reconciliation',
+    { token: 'token' },
+  );
+});
 test.each([
   'summary',
   'fees',

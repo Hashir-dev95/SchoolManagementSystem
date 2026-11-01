@@ -383,6 +383,158 @@ test('reconciliation queue is read-only with an honest empty state', async () =>
   expect(text()).toContain('No reconciliation items.');
   expect(service.verify).not.toHaveBeenCalled();
 });
+
+const reviewQueue = {
+  items: [
+    {
+      id: 'review-1',
+      reference: 'ORDER-REVIEW',
+      status: 'reconciliation_required',
+      classification: 'late_capture' as const,
+      reviewStatus: 'unresolved' as const,
+      reason:
+        'Authenticated late capture; funds remain held for explicit review',
+      challanReference: 'CH-REVIEW',
+      amountLabel: 'SERVER REVIEW AMOUNT',
+      currency: 'PKR',
+      providerState: 'paid',
+    },
+  ],
+  observations: [],
+  nextOffset: 25 as number | null,
+};
+
+test('reconciliation renders server evidence without payment mutations', async () => {
+  service.reconciliation.mockResolvedValueOnce(reviewQueue);
+  await mount();
+  await press('Reconciliation');
+  for (const label of [
+    'late_capture',
+    'unresolved',
+    'SERVER REVIEW AMOUNT',
+    'CH-REVIEW',
+    'funds remain held',
+  ])
+    expect(text()).toContain(label);
+  expect(service.record).not.toHaveBeenCalled();
+  expect(service.verify).not.toHaveBeenCalled();
+  expect(service.assign).not.toHaveBeenCalled();
+  expect(service.createStructure).not.toHaveBeenCalled();
+});
+
+test.each([
+  'provider_uncertain',
+  'conflicting_effect',
+  'corrupt_evidence',
+] as const)(
+  'reconciliation displays the server %s review reason',
+  async classification => {
+    service.reconciliation.mockResolvedValueOnce({
+      ...reviewQueue,
+      items: [
+        {
+          ...reviewQueue.items[0],
+          classification,
+          reason: `${classification}: explicit review required`,
+        },
+      ],
+    });
+    await mount();
+    await press('Reconciliation');
+    expect(text()).toContain(`${classification}: explicit review required`);
+    expect(service.record).not.toHaveBeenCalled();
+    expect(service.verify).not.toHaveBeenCalled();
+  },
+);
+
+test('reconciliation filters and paging ignore stale completions', async () => {
+  const old = deferred<typeof reviewQueue>();
+  service.reconciliation.mockResolvedValueOnce(reviewQueue);
+  await mount();
+  await press('Reconciliation');
+  await press('Next reconciliation page');
+  expect(service.reconciliation).toHaveBeenLastCalledWith('finance-token', {
+    offset: 25,
+  });
+  service.reconciliation
+    .mockReturnValueOnce(old.promise)
+    .mockResolvedValueOnce({ items: [], observations: [] });
+  await press('Provider uncertain');
+  await press('Corrupt evidence');
+  expect(service.reconciliation).toHaveBeenLastCalledWith('finance-token', {
+    reason: 'corrupt_evidence',
+  });
+  await act(async () => old.resolve(reviewQueue));
+  expect(text()).not.toContain('ORDER-REVIEW');
+  expect(text()).toContain('No reconciliation items.');
+});
+
+test.each([
+  [401, 'Session expired. Sign in again.'],
+  [403, 'Forbidden:'],
+] as const)(
+  'reconciliation %s is distinct from an empty review queue',
+  async (status, label) => {
+    service.reconciliation.mockRejectedValueOnce(
+      new ApiError(status, 'Denied'),
+    );
+    await mount();
+    await press('Reconciliation');
+    expect(text()).toContain(label);
+    expect(text()).not.toContain('No reconciliation items.');
+    await press('Tap to try again');
+    expect(text()).toContain('No reconciliation items.');
+  },
+);
+
+test('reconciliation uncertainty offers retry without stale queue rows', async () => {
+  const pending = deferred<typeof reviewQueue>();
+  service.reconciliation.mockReturnValueOnce(pending.promise);
+  await mount();
+  await press('Reconciliation');
+  expect(text()).toContain('Loading your school overview');
+  await act(async () => pending.reject(new Error('Review offline')));
+  expect(text()).toContain('Review offline');
+  expect(text()).not.toContain('No reconciliation items.');
+  await press('Tap to try again');
+  expect(text()).toContain('No reconciliation items.');
+});
+
+test('new reconciliation session cannot display an older session response', async () => {
+  const pending = deferred<typeof reviewQueue>();
+  service.reconciliation.mockReturnValueOnce(pending.promise);
+  await mount();
+  await press('Reconciliation');
+  mockAccessToken = 'new-review-session';
+  await act(async () => tree.update(<FinanceWorkspaceScreen />));
+  await press('Reconciliation');
+  await act(async () => pending.resolve(reviewQueue));
+  expect(text()).not.toContain('ORDER-REVIEW');
+  expect(text()).toContain('No reconciliation items.');
+});
+
+test('resolved reconciliation view renders server resolution with no recovery action', async () => {
+  await mount();
+  await press('Reconciliation');
+  service.reconciliation.mockResolvedValueOnce({
+    ...reviewQueue,
+    items: [
+      {
+        ...reviewQueue.items[0],
+        classification: 'already_resolved',
+        reviewStatus: 'resolved',
+        reason: 'Canonical outcome already recorded',
+      },
+    ],
+  });
+  await press('Already resolved');
+  expect(service.reconciliation).toHaveBeenLastCalledWith('finance-token', {
+    reason: 'already_resolved',
+  });
+  expect(text()).toContain('already_resolved');
+  expect(text()).toContain('Canonical outcome already recorded');
+  expect(service.verify).not.toHaveBeenCalled();
+});
 test.each([
   [403, 'Forbidden:'],
   [401, 'Session expired'],

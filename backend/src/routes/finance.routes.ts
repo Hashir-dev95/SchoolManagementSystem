@@ -5,11 +5,7 @@ import {
 } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/rbac.middleware';
 import { RequestContractError } from '../utils/request-validation';
-import {
-  FeeStructure,
-  FinancePaymentIntent,
-  FinanceProviderObservation,
-} from '../models/finance';
+import { FeeStructure } from '../models/finance';
 import {
   financeActor,
   createFeeStructure,
@@ -27,6 +23,7 @@ import {
   verifyManualPayment,
   financePayments,
   processProviderCallback,
+  financeReconciliation,
 } from '../services/finance-payment.service';
 import {
   paymentProvider,
@@ -181,45 +178,10 @@ router.post(
 );
 router.get(
   '/reconciliation',
-  handle(async request => {
-    const ctx = await financeActor(request.user);
-    const intents = await FinancePaymentIntent.find({
-      branchId: ctx.branchId,
-      status: {
-        $in: [
-          'reserved',
-          'awaiting_verification',
-          'provider_pending',
-          'reconciliation_required',
-        ],
-      },
-    })
-      .sort({ createdAt: 1 })
-      .limit(100)
-      .lean();
-    const observations = await FinanceProviderObservation.find({
-      branchId: ctx.branchId,
-      outcome: { $nin: ['settled', 'failed'] },
-    })
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .select('eventId orderRef outcome state createdAt')
-      .lean();
-    return {
-      items: intents.map(row => ({
-        id: String(row._id),
-        reference: row.reference,
-        status: row.status,
-        expired: row.expiresAt <= new Date(),
-        expiresAt: row.expiresAt.toISOString(),
-        reason:
-          row.expiresAt <= new Date()
-            ? 'Reservation expired; funds remain held pending verified review'
-            : 'Awaiting verification or provider confirmation',
-      })),
-      observations,
-    };
-  }),
+  handle(
+    request => financeReconciliation(request.user, request.query),
+    ['reason', 'offset', 'limit'],
+  ),
 );
 router.use((_req, res) => {
   res

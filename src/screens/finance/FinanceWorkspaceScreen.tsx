@@ -17,6 +17,8 @@ import {
   type CollectionReport,
   type CollectionFilters,
   type ReservationView,
+  type ReconciliationFilters,
+  type ReconciliationReason,
 } from '../../services/finance/financeService';
 import {
   DashboardShell,
@@ -57,6 +59,7 @@ async function load(
   token: string,
   pane: Pane,
   filters: FeeFilters,
+  reconciliationFilters: ReconciliationFilters,
 ): Promise<Data> {
   switch (pane) {
     case 'Summary':
@@ -68,7 +71,10 @@ async function load(
     case 'Payments':
       return { kind: pane, ...(await service.payments(token)) };
     case 'Reconciliation':
-      return { kind: pane, queue: await service.reconciliation(token) };
+      return {
+        kind: pane,
+        queue: await service.reconciliation(token, reconciliationFilters),
+      };
     case 'Fee setup': {
       const [structures, students] = await Promise.all([
         service.structures(token),
@@ -103,6 +109,8 @@ function Workspace({ token }: { token: string }) {
     [data, setData] = useState<Data | null>(null);
   const [filters, setFilters] = useState<FeeFilters>({});
   const [reservation, setReservation] = useState<ReservationView | null>(null);
+  const [reconciliationFilters, setReconciliationFilters] =
+    useState<ReconciliationFilters>({});
   const [loading, setLoading] = useState(true),
     [error, setError] = useState<string | null>(null),
     [attempt, setAttempt] = useState(0);
@@ -126,7 +134,7 @@ function Workspace({ token }: { token: string }) {
     setLoading(true);
     setError(null);
     setData(null);
-    load(token, pane, filters)
+    load(token, pane, filters, reconciliationFilters)
       .then(value => {
         if (active && request === generation.current) {
           setData(value);
@@ -146,7 +154,7 @@ function Workspace({ token }: { token: string }) {
       active = false;
       generation.current += 1;
     };
-  }, [token, pane, attempt, filters]);
+  }, [token, pane, attempt, filters, reconciliationFilters]);
   const retry = useCallback(async () => {
     setAttempt(value => value + 1);
   }, []);
@@ -221,6 +229,36 @@ function Workspace({ token }: { token: string }) {
         }}
       />
       <DashboardStateCard loading={loading} error={error} onRetry={retry} />
+      {pane === 'Reconciliation' ? (
+        <SectionCard title="Review classification">
+          <WorkspaceTabs
+            accessibilityLabel="Reconciliation classification"
+            items={reconciliationChoices.map(choice => choice.label)}
+            selected={
+              reconciliationChoices.find(
+                choice => choice.value === reconciliationFilters.reason,
+              )!.label
+            }
+            onSelect={label => {
+              if (busy) return;
+              generation.current++;
+              setData(null);
+              setError(null);
+              setLoading(true);
+              setReconciliationFilters({
+                reason: reconciliationChoices.find(
+                  choice => choice.label === label,
+                )?.value,
+              });
+            }}
+          />
+          <Text style={styles.note}>
+            Review only. Pages contain a bounded set of payment candidates; an
+            empty filtered page can have more results. Provider observations are
+            a separate bounded evidence list.
+          </Text>
+        </SectionCard>
+      ) : null}
       {pane === 'Collection report' ? (
         <CollectionReportPane key={token} token={token} />
       ) : null}
@@ -444,6 +482,26 @@ function Workspace({ token }: { token: string }) {
               <Text style={styles.text}>
                 {item.status} · {item.reason}
               </Text>
+              <Text style={styles.note}>
+                {item.classification} · {item.reviewStatus}
+              </Text>
+              {item.challanReference ? (
+                <Text style={styles.text}>
+                  Challan {item.challanReference} · {item.amountLabel} ·{' '}
+                  {item.currency}
+                </Text>
+              ) : null}
+              {item.providerState ? (
+                <Text style={styles.text}>
+                  Provider evidence: {item.providerState} ·{' '}
+                  {item.providerTransactionReference}
+                </Text>
+              ) : null}
+              {item.createdAt ? (
+                <Text style={styles.note}>
+                  Created {item.createdAt} · Expires {item.expiresAt}
+                </Text>
+              ) : null}
             </SectionCard>
           ))}
           {data.queue.observations.map(item => (
@@ -451,6 +509,23 @@ function Workspace({ token }: { token: string }) {
               <Text style={styles.text}>{item.outcome}</Text>
             </SectionCard>
           ))}
+          {data.queue.nextOffset != null ? (
+            <Button
+              title="Next reconciliation page"
+              variant="secondary"
+              disabled={busy}
+              onPress={() => {
+                generation.current++;
+                setData(null);
+                setError(null);
+                setLoading(true);
+                setReconciliationFilters({
+                  ...reconciliationFilters,
+                  offset: data.queue.nextOffset!,
+                });
+              }}
+            />
+          ) : null}
         </>
       ) : null}
       {!loading && !error && data?.kind === 'Fee setup' ? (
@@ -573,6 +648,16 @@ const statusChoices: { label: string; value?: FeeStatus }[] = [
   { label: 'Payment pending', value: 'payment_pending' },
   { label: 'Paid', value: 'paid' },
 ];
+const reconciliationChoices: { label: string; value?: ReconciliationReason }[] =
+  [
+    { label: 'Unresolved' },
+    { label: 'Late capture', value: 'late_capture' },
+    { label: 'Provider uncertain', value: 'provider_uncertain' },
+    { label: 'Conflicting effect', value: 'conflicting_effect' },
+    { label: 'Corrupt evidence', value: 'corrupt_evidence' },
+    { label: 'Already resolved', value: 'already_resolved' },
+    { label: 'Requires review', value: 'requires_review' },
+  ];
 function CollectionReportPane({ token }: { token: string }) {
   const [filters, setFilters] = useState<CollectionFilters>({}),
     [data, setData] = useState<CollectionReport | null>(null),

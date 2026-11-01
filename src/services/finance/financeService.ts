@@ -132,8 +132,35 @@ export interface FinanceSummary {
   legacyUnmigratedCount: number;
 }
 export interface ReconciliationView {
-  items: { id: string; reference: string; status: string; reason: string }[];
+  items: {
+    id: string;
+    reference: string;
+    status: string;
+    reason: string;
+    classification?: ReconciliationReason;
+    reviewStatus?: 'resolved' | 'unresolved';
+    challanReference?: string;
+    amountLabel?: string;
+    currency?: string;
+    providerState?: string | null;
+    providerTransactionReference?: string | null;
+    createdAt?: string | null;
+    expiresAt?: string | null;
+  }[];
   observations: { eventId: string; orderRef: string; outcome: string }[];
+  nextOffset?: number | null;
+}
+export type ReconciliationReason =
+  | 'late_capture'
+  | 'provider_uncertain'
+  | 'conflicting_effect'
+  | 'corrupt_evidence'
+  | 'already_resolved'
+  | 'requires_review';
+export interface ReconciliationFilters {
+  reason?: ReconciliationReason;
+  offset?: number;
+  limit?: number;
 }
 const read = async <T>(token: string, path: string) =>
   (await apiClient.request<{ data: T }>(`/finance/me${path}`, { token })).data;
@@ -155,8 +182,8 @@ export const financeService = {
     read<FeeView>(token, '/fees/by-reference' + query({ reference })),
   payments: (token: string) =>
     read<{ items: PaymentView[] }>(token, '/payments'),
-  reconciliation: (token: string) =>
-    read<ReconciliationView>(token, '/reconciliation'),
+  reconciliation: (token: string, filters: ReconciliationFilters = {}) =>
+    read<ReconciliationView>(token, '/reconciliation' + query({ ...filters })),
   structures: (token: string) =>
     read<{ items: StructureView[] }>(token, '/structures'),
   students: (token: string, search?: string, offset?: number) =>

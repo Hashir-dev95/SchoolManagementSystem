@@ -15,6 +15,7 @@ import {
   FinancePaymentIntent,
   FinanceAudit,
   FeeObligation,
+  FinanceProviderObservation,
 } from '../src/models/finance';
 import Session from '../src/models/session';
 import User from '../src/models/user';
@@ -24,6 +25,174 @@ import { ROLE_PERMISSIONS } from '../src/constants/rolePermissions';
 import { PERMISSIONS } from '../src/constants/permissions';
 import { getBranchFeeSummary } from '../src/services/fee.service';
 import { recordManualPayment } from '../src/services/finance-payment.service';
+
+test('reconciliation returns minimal own-Branch review DTO and excludes foreign Branch records', async () => {
+  const fee = await assignedFee(),
+    intent = await recorded(fee.id);
+  const response = await finHttp('/reconciliation');
+  assert.equal(response.status, 200);
+  const item = response.json.data.items[0];
+  assert.equal(item.id, intent.id);
+  assert.equal(item.classification, 'requires_review');
+  assert.equal(item.reviewStatus, 'unresolved');
+  assert.equal(item.amountLabel, 'PKR 300.00');
+  assert.equal(item.challanReference, fee.challanReference);
+  for (const key of [
+    'branchId',
+    'actorId',
+    'merchantId',
+    'fingerprint',
+    'rawPayload',
+    'email',
+  ])
+    assert.equal(key in item, false);
+  assert.deepEqual(
+    (await finHttp('/reconciliation', undefined, finance.foreign)).json.data
+      .items,
+    [],
+  );
+});
+
+test('reconciliation requires Finance view permission and active canonical session', async () => {
+  assert.equal(
+    (await apiHttp('/finance/me/reconciliation', state.token)).status,
+    403,
+  );
+  const permissions = [...ROLE_PERMISSIONS.finance];
+  ROLE_PERMISSIONS.finance = permissions.filter(
+    p => p !== PERMISSIONS.FINANCE_VIEW,
+  );
+  try {
+    assert.equal((await finHttp('/reconciliation')).status, 403);
+  } finally {
+    ROLE_PERMISSIONS.finance = permissions;
+  }
+  await Session.updateOne(
+    { token: finance.maker.token },
+    { $set: { isRevoked: true } },
+  );
+  assert.equal((await finHttp('/reconciliation')).status, 401);
+  await User.updateOne(
+    { _id: finance.checker.user._id },
+    { $set: { isActive: false } },
+  );
+  assert.equal(
+    (await finHttp('/reconciliation', undefined, finance.checker)).status,
+    401,
+  );
+});
+
+test('reconciliation bounds pages and filters classifications without accepting client scope', async () => {
+  const fee = await assignedFee();
+  await recorded(fee.id);
+  const source = await FeeObligation.findById(fee.id).lean();
+  const other = await put(FeeObligation, {
+    ...source,
+    _id: oid(),
+    structureId: oid(),
+    challanReference: 'OTHER-REVIEW',
+  });
+  assert.equal(
+    (
+      await finHttp(`/fees/${other._id}/manual-payments`, {
+        method: 'cash',
+        reference: 'OTHER-REVIEW',
+        operationId: 'other_review_reserve_001',
+      })
+    ).status,
+    200,
+  );
+  const first = (await finHttp('/reconciliation?limit=1')).json.data;
+  const second = (await finHttp('/reconciliation?limit=1&offset=1')).json.data;
+  assert.equal(first.nextOffset, 1);
+  assert.equal(second.nextOffset, null);
+  assert.notEqual(first.items[0].id, second.items[0].id);
+  assert.deepEqual(
+    (await finHttp('/reconciliation?reason=already_resolved')).json.data.items,
+    [],
+  );
+  for (const query of [
+    'reason=paid',
+    'reason=a&reason=b',
+    'limit=0',
+    'limit=101',
+    'offset=-1',
+    'offset=10001',
+  ])
+    assert.equal(
+      (await finHttp('/reconciliation?' + query)).status,
+      400,
+      query,
+    );
+  for (const query of [
+    'branchId=' + state.foreign._id,
+    'status=paid',
+    'reason[$ne]=x',
+    'search=' + 'x'.repeat(81),
+  ])
+    assert.equal(
+      (await finHttp('/reconciliation?' + query)).status,
+      403,
+      query,
+    );
+});
+
+test('reconciliation classifies missing/corrupt manual evidence without displaying it as authoritative money', async () => {
+  const fee = await assignedFee();
+  await recorded(fee.id);
+  await FinanceAudit.deleteMany({ action: 'payment.recorded' });
+  const response = await finHttp('/reconciliation?reason=corrupt_evidence');
+  assert.equal(response.status, 200);
+  assert.equal(response.json.data.items[0].classification, 'corrupt_evidence');
+  assert.equal(response.json.data.items[0].amountLabel, undefined);
+  assert.equal(response.json.data.items[0].challanReference, undefined);
+  assert.equal(await FinanceTransaction.countDocuments(), 0);
+});
+
+test('reconciliation reads are side-effect free across financial, audit, enrollment and session documents', async () => {
+  const fee = await assignedFee();
+  await recorded(fee.id);
+  const snapshot = async () =>
+    Promise.all(
+      [
+        FeeObligation,
+        FinancePaymentIntent,
+        FinanceTransaction,
+        FinanceAudit,
+        FinanceProviderObservation,
+        StudentEnrollment,
+        Session,
+      ].map(model => model.collection.find({}).sort({ _id: 1 }).toArray()),
+    );
+  const before = await snapshot();
+  for (const path of [
+    '/reconciliation',
+    '/reconciliation?reason=requires_review',
+    '/reconciliation?limit=1&offset=1',
+  ])
+    assert.equal((await finHttp(path)).status, 200);
+  assert.deepEqual(await snapshot(), before);
+});
+
+test('reconciliation contains malformed imported references and amounts as sanitized corrupt evidence', async () => {
+  const fee = await assignedFee(),
+    intent = await recorded(fee.id);
+  await FinancePaymentIntent.collection.updateOne(
+    { _id: new (await import('mongoose')).Types.ObjectId(intent.id) },
+    {
+      $set: {
+        obligationId: 'invalid-reference',
+        actorId: 'invalid-actor',
+        amountMinor: -1,
+      },
+    },
+  );
+  const response = await finHttp('/reconciliation');
+  assert.equal(response.status, 200);
+  assert.equal(response.json.data.items[0].classification, 'corrupt_evidence');
+  assert.equal(response.json.data.items[0].amountLabel, undefined);
+  assert.equal(await FinanceTransaction.countDocuments(), 0);
+});
 
 for (const field of [
   'studentId',
