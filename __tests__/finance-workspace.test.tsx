@@ -50,6 +50,7 @@ jest.mock('../src/services/finance/financeService', () => ({
     record: jest.fn(),
     verify: jest.fn(),
     challan: jest.fn(),
+    collectionReport: jest.fn(),
   },
 }));
 const service = jest.mocked(financeService);
@@ -60,6 +61,38 @@ const summary = {
   paidLabel: 'PKR 0.00',
   balanceLabel: 'PKR 300.00',
   legacyUnmigratedCount: 2,
+};
+const report = {
+  summary: {
+    obligationCount: 7,
+    amountMinor: 98765,
+    paidMinor: 12345,
+    balanceMinor: 86420,
+    amountLabel: 'SERVER CHARGES',
+    paidLabel: 'SERVER SETTLED',
+    balanceLabel: 'SERVER OUTSTANDING',
+    unpaidCount: 3,
+    statusCounts: {
+      due: 1,
+      overdue: 2,
+      partial: 1,
+      payment_pending: 1,
+      paid: 2,
+    },
+  },
+  filtersApplied: {
+    dateBasis: 'obligation_due_date' as const,
+    settlementBasis: 'all_settled' as const,
+    dateFrom: null,
+    dateTo: null,
+    studentId: null,
+    status: null,
+    search: '',
+  },
+  items: fees.items,
+  offset: 0,
+  limit: 25,
+  nextOffset: null as number | null,
 };
 const payment = {
   id: 'intent-1',
@@ -108,6 +141,7 @@ beforeEach(() => {
     role: 'finance',
   };
   service.summary.mockResolvedValue(summary);
+  service.collectionReport.mockResolvedValue(report);
   service.fees.mockResolvedValue(fees);
   service.payments.mockResolvedValue({ items: [payment] });
   service.reconciliation.mockResolvedValue({ items: [], observations: [] });
@@ -507,4 +541,159 @@ test('obligation and Student next-page actions use server offsets', async () => 
     'Student',
     50,
   );
+});
+
+test('collection report renders server summary labels, counts, rows and explicit due-date semantics', async () => {
+  await mount();
+  await press('Collection report');
+  expect(service.collectionReport).toHaveBeenCalledWith('finance-token', {});
+  for (const label of [
+    'SERVER CHARGES',
+    'SERVER SETTLED',
+    'SERVER OUTSTANDING',
+    'CH-001',
+    'Dates select obligation due dates',
+    'regardless of payment date',
+    'every page',
+  ])
+    expect(text()).toContain(label);
+  expect(text()).toContain('No settled payment');
+  expect(service.record).not.toHaveBeenCalled();
+  expect(service.verify).not.toHaveBeenCalled();
+  expect(service.assign).not.toHaveBeenCalled();
+  expect(service.createStructure).not.toHaveBeenCalled();
+  expect(service.challan).not.toHaveBeenCalled();
+});
+
+test('report date, status, Student and text filters compose and clearing restores the base report', async () => {
+  await mount();
+  await press('Collection report');
+  await fill('Report due date from', '2024-01-01');
+  await fill('Report due date to', '2024-01-31');
+  await press('Paid');
+  await fill('Search Finance Students', 'Student A');
+  await press('Filter fees for Student A (A1)');
+  await fill('Search obligations', 'CH-001');
+  expect(service.collectionReport).toHaveBeenLastCalledWith('finance-token', {
+    dateFrom: '2024-01-01',
+    dateTo: '2024-01-31',
+    status: 'paid',
+    studentId: 'student-1',
+    search: 'CH-001',
+    offset: undefined,
+  });
+  await press('Clear report filters');
+  expect(service.collectionReport).toHaveBeenLastCalledWith(
+    'finance-token',
+    {},
+  );
+});
+
+test('report pagination uses server offsets and resets when filters change', async () => {
+  service.collectionReport.mockResolvedValue({ ...report, nextOffset: 25 });
+  await mount();
+  await press('Collection report');
+  await press('Next report page');
+  expect(service.collectionReport).toHaveBeenLastCalledWith('finance-token', {
+    offset: 25,
+  });
+  await press('Overdue');
+  expect(service.collectionReport).toHaveBeenLastCalledWith('finance-token', {
+    status: 'overdue',
+    offset: undefined,
+  });
+});
+
+test('report loading and network failure hide prior totals and allow retry', async () => {
+  const pending = deferred<typeof report>();
+  await mount();
+  await press('Collection report');
+  service.collectionReport.mockReturnValueOnce(pending.promise);
+  await fill('Search obligations', 'Tuition');
+  expect(text()).toContain('Loading your school overview');
+  expect(text()).not.toContain('SERVER CHARGES');
+  await act(async () => pending.reject(new Error('Report offline')));
+  expect(text()).toContain('Report offline');
+  expect(text()).not.toContain('SERVER SETTLED');
+  await press('Tap to try again');
+  expect(text()).toContain('SERVER CHARGES');
+});
+
+test.each([
+  [403, 'Forbidden:'],
+  [401, 'Session expired. Sign in again.'],
+] as const)(
+  'report %s is distinct from an empty or zero collection result',
+  async (status, label) => {
+    service.collectionReport.mockRejectedValueOnce(
+      new ApiError(status, 'Denied'),
+    );
+    await mount();
+    await press('Collection report');
+    expect(text()).toContain(label);
+    expect(text()).not.toContain('SERVER CHARGES');
+    expect(text()).not.toContain('No obligations match');
+    await press('Tap to try again');
+    expect(text()).toContain('SERVER CHARGES');
+  },
+);
+
+test('report distinguishes filtered-empty obligations from zero settled collections', async () => {
+  service.collectionReport.mockResolvedValueOnce({
+    ...report,
+    items: [],
+    summary: { ...report.summary, obligationCount: 0 },
+  });
+  await mount();
+  await press('Collection report');
+  expect(text()).toContain('No obligations match this report scope');
+  expect(text()).not.toContain('No settled collections for these obligations');
+  service.collectionReport.mockResolvedValueOnce({
+    ...report,
+    summary: { ...report.summary, paidMinor: 0, paidLabel: 'PKR 0.00' },
+  });
+  await press('Clear report filters');
+  expect(text()).toContain('No settled collections for these obligations');
+  expect(text()).not.toContain('No obligations match');
+});
+
+test('rapid report filters ignore older successes and errors', async () => {
+  const old = deferred<typeof report>(),
+    olderError = deferred<typeof report>();
+  await mount();
+  await press('Collection report');
+  service.collectionReport
+    .mockReturnValueOnce(old.promise)
+    .mockReturnValueOnce(olderError.promise)
+    .mockResolvedValueOnce(report);
+  await fill('Search obligations', 'Old');
+  await press('Partial');
+  await fill('Report due date to', '2024-01-31');
+  await act(async () => {
+    old.resolve({
+      ...report,
+      summary: { ...report.summary, amountLabel: 'STALE REPORT TOTAL' },
+    });
+    olderError.reject(new Error('STALE REPORT ERROR'));
+  });
+  expect(text()).toContain('SERVER CHARGES');
+  expect(text()).not.toContain('STALE REPORT');
+});
+
+test('switching Finance accounts or unmounting invalidates outstanding report completion', async () => {
+  const old = deferred<typeof report>();
+  service.collectionReport.mockReturnValueOnce(old.promise);
+  await mount();
+  await press('Collection report');
+  mockUser = { ...mockUser, id: 'finance-b' };
+  await act(async () => tree.update(<FinanceWorkspaceScreen />));
+  await press('Collection report');
+  await act(async () =>
+    old.resolve({
+      ...report,
+      summary: { ...report.summary, amountLabel: 'OTHER ACCOUNT TOTAL' },
+    }),
+  );
+  expect(text()).toContain('SERVER CHARGES');
+  expect(text()).not.toContain('OTHER ACCOUNT TOTAL');
 });

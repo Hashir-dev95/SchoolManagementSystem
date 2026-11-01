@@ -14,6 +14,8 @@ import {
   type FeeView,
   type FinanceStudent,
   type FinanceStudents,
+  type CollectionReport,
+  type CollectionFilters,
 } from '../../services/finance/financeService';
 import {
   DashboardShell,
@@ -22,6 +24,8 @@ import {
   DashboardStateCard,
   SectionCard,
   Button,
+  StatCard,
+  StatGrid,
 } from '../../components/hiraDashboard';
 import { FeeCards } from '../../components/hiraDashboard/FeeCards';
 import { colors, spacing, typography } from '../../theme/hiraDashboard';
@@ -29,6 +33,7 @@ import { colors, spacing, typography } from '../../theme/hiraDashboard';
 const panes = [
   'Summary',
   'Fees',
+  'Collection report',
   'Payments',
   'Reconciliation',
   'Fee setup',
@@ -39,6 +44,7 @@ const structureLabel = (item: StructureView) =>
 type Data =
   | { kind: 'Summary'; summary: FinanceSummary }
   | { kind: 'Fees'; fees: FeeList }
+  | { kind: 'Collection report' }
   | { kind: 'Payments'; items: PaymentView[] }
   | { kind: 'Reconciliation'; queue: ReconciliationView }
   | {
@@ -56,6 +62,8 @@ async function load(
       return { kind: pane, summary: await service.summary(token) };
     case 'Fees':
       return { kind: pane, fees: await service.fees(token, filters) };
+    case 'Collection report':
+      return { kind: pane };
     case 'Payments':
       return { kind: pane, ...(await service.payments(token)) };
     case 'Reconciliation':
@@ -203,6 +211,9 @@ function Workspace({ token }: { token: string }) {
         }}
       />
       <DashboardStateCard loading={loading} error={error} onRetry={retry} />
+      {pane === 'Collection report' ? (
+        <CollectionReportPane key={token} token={token} />
+      ) : null}
       {pane === 'Fees' ? (
         <FinanceLookup
           token={token}
@@ -516,17 +527,189 @@ const statusChoices: { label: string; value?: FeeStatus }[] = [
   { label: 'Payment pending', value: 'payment_pending' },
   { label: 'Paid', value: 'paid' },
 ];
+function CollectionReportPane({ token }: { token: string }) {
+  const [filters, setFilters] = useState<CollectionFilters>({}),
+    [data, setData] = useState<CollectionReport | null>(null),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState<string | null>(null),
+    [attempt, setAttempt] = useState(0);
+  const generation = useRef(0);
+  useEffect(() => {
+    const counter = generation;
+    const request = ++counter.current;
+    setData(null);
+    setError(null);
+    setLoading(true);
+    service
+      .collectionReport(token, filters)
+      .then(report => {
+        if (request === counter.current) setData(report);
+      })
+      .catch((failure: unknown) => {
+        if (request === counter.current) setError(message(failure));
+      })
+      .finally(() => {
+        if (request === counter.current) setLoading(false);
+      });
+    return () => {
+      counter.current++;
+    };
+  }, [token, filters, attempt]);
+  const change = (next: CollectionFilters) => {
+    generation.current++;
+    setData(null);
+    setError(null);
+    setLoading(true);
+    setFilters(next);
+  };
+  return (
+    <>
+      <SectionCard title="Collection and receivables report">
+        <Text style={styles.note}>
+          Dates select obligation due dates, inclusive (YYYY-MM-DD). Settled
+          totals include all settled payments for those obligations, regardless
+          of payment date. Pending reservations are not collections. Summary
+          totals cover all matching records, across every page. Legacy
+          unmigrated fees are excluded.
+        </Text>
+        <TextInput
+          accessibilityLabel="Report due date from"
+          placeholder="Due from YYYY-MM-DD"
+          value={filters.dateFrom ?? ''}
+          maxLength={10}
+          style={styles.input}
+          onChangeText={value =>
+            change({
+              ...filters,
+              dateFrom: value || undefined,
+              offset: undefined,
+            })
+          }
+        />
+        <TextInput
+          accessibilityLabel="Report due date to"
+          placeholder="Due to YYYY-MM-DD"
+          value={filters.dateTo ?? ''}
+          maxLength={10}
+          style={styles.input}
+          onChangeText={value =>
+            change({
+              ...filters,
+              dateTo: value || undefined,
+              offset: undefined,
+            })
+          }
+        />
+      </SectionCard>
+      <FinanceLookup
+        token={token}
+        disabled={false}
+        filters={filters}
+        onFilters={change}
+        report
+      />
+      <DashboardStateCard
+        loading={loading}
+        error={error}
+        onRetry={async () => {
+          setAttempt(value => value + 1);
+        }}
+      />
+      {!loading && !error && data ? (
+        <>
+          <StatGrid>
+            <StatCard
+              icon="#"
+              label="Report obligations"
+              value={data.summary.obligationCount}
+            />
+            <StatCard
+              icon="+"
+              label="Report charges"
+              value={data.summary.amountLabel}
+            />
+            <StatCard
+              icon="✓"
+              label="Report settled"
+              value={data.summary.paidLabel}
+            />
+            <StatCard
+              icon="…"
+              label="Report outstanding"
+              value={data.summary.balanceLabel}
+            />
+          </StatGrid>
+          <SectionCard title="Canonical obligation statuses">
+            <Text style={styles.text}>
+              Fully paid: {data.summary.statusCounts.paid}
+            </Text>
+            <Text style={styles.text}>
+              Partial: {data.summary.statusCounts.partial}
+            </Text>
+            <Text style={styles.text}>
+              Due: {data.summary.statusCounts.due}
+            </Text>
+            <Text style={styles.text}>
+              Overdue: {data.summary.statusCounts.overdue}
+            </Text>
+            <Text style={styles.text}>
+              Payment pending: {data.summary.statusCounts.payment_pending}
+            </Text>
+            <Text style={styles.text}>
+              No settled payment: {data.summary.unpaidCount}
+            </Text>
+            <Text style={styles.note}>
+              Statuses match the dues list. No settled payment includes
+              obligations with pending reservations.
+            </Text>
+          </SectionCard>
+          {data.summary.obligationCount === 0 ? (
+            <Text style={styles.text}>
+              No obligations match this report scope. Clear report filters to
+              view all permitted obligations.
+            </Text>
+          ) : (
+            <>
+              {data.summary.paidMinor === 0 ? (
+                <Text style={styles.text}>
+                  No settled collections for these obligations.
+                </Text>
+              ) : null}
+              {data.items.length ? (
+                <FeeCards data={{ items: data.items }} />
+              ) : (
+                <Text style={styles.text}>
+                  No obligation rows on this page. Clear report filters to
+                  return to the first page.
+                </Text>
+              )}
+            </>
+          )}
+          {data.nextOffset != null ? (
+            <Button
+              title="Next report page"
+              variant="secondary"
+              onPress={() => change({ ...filters, offset: data.nextOffset! })}
+            />
+          ) : null}
+        </>
+      ) : null}
+    </>
+  );
+}
 /** Read-only lookup controls. No payment action is called from this component. */
 function FinanceLookup({
   token,
   disabled,
   filters,
   onFilters,
+  report = false,
 }: {
   token: string;
   disabled: boolean;
   filters: FeeFilters;
   onFilters: (filters: FeeFilters) => void;
+  report?: boolean;
 }) {
   const [search, setSearch] = useState(''),
     [offset, setOffset] = useState(0),
@@ -611,7 +794,13 @@ function FinanceLookup({
   }
   return (
     <>
-      <SectionCard title="Find Students and dues">
+      <SectionCard
+        title={
+          report
+            ? 'Find Students and report obligations'
+            : 'Find Students and dues'
+        }
+      >
         <Text style={styles.note}>
           Search enrolled Students by name, admission number or Student ID.
           Placement comes from current enrollment.
@@ -717,7 +906,7 @@ function FinanceLookup({
           }}
         />
         <Button
-          title="Clear dues filters"
+          title={report ? 'Clear report filters' : 'Clear dues filters'}
           variant="secondary"
           disabled={disabled}
           onPress={() => {
@@ -730,54 +919,56 @@ function FinanceLookup({
           }}
         />
       </SectionCard>
-      <SectionCard title="Find issued challan">
-        <Text style={styles.note}>
-          Finding an issued reference confirms only the obligation. It does not
-          confirm a payment.
-        </Text>
-        <TextInput
-          accessibilityLabel="Issued challan reference"
-          value={reference}
-          editable={!disabled}
-          maxLength={80}
-          autoCapitalize="none"
-          style={styles.input}
-          onChangeText={value => {
-            lookupGeneration.current++;
-            setLooking(false);
-            setFound(null);
-            setLookupError(null);
-            setReference(value);
-          }}
-        />
-        <Button
-          title="Find challan"
-          disabled={disabled || looking || !reference.trim()}
-          onPress={lookup}
-        />
-        {looking ? (
-          <Text style={styles.text}>Looking up challan...</Text>
-        ) : null}
-        {lookupError ? (
-          <Text accessibilityRole="alert" style={styles.text}>
-            {lookupError}
+      {!report ? (
+        <SectionCard title="Find issued challan">
+          <Text style={styles.note}>
+            Finding an issued reference confirms only the obligation. It does
+            not confirm a payment.
           </Text>
-        ) : null}
-        {lookupError ? (
+          <TextInput
+            accessibilityLabel="Issued challan reference"
+            value={reference}
+            editable={!disabled}
+            maxLength={80}
+            autoCapitalize="none"
+            style={styles.input}
+            onChangeText={value => {
+              lookupGeneration.current++;
+              setLooking(false);
+              setFound(null);
+              setLookupError(null);
+              setReference(value);
+            }}
+          />
           <Button
-            title="Retry challan lookup"
-            variant="secondary"
-            disabled={disabled || looking}
+            title="Find challan"
+            disabled={disabled || looking || !reference.trim()}
             onPress={lookup}
           />
-        ) : null}
-        {found?.token === token && found.reference === reference ? (
-          <>
-            <Text style={styles.text}>Issued challan found.</Text>
-            <FeeCards data={{ items: [found.fee] }} />
-          </>
-        ) : null}
-      </SectionCard>
+          {looking ? (
+            <Text style={styles.text}>Looking up challan...</Text>
+          ) : null}
+          {lookupError ? (
+            <Text accessibilityRole="alert" style={styles.text}>
+              {lookupError}
+            </Text>
+          ) : null}
+          {lookupError ? (
+            <Button
+              title="Retry challan lookup"
+              variant="secondary"
+              disabled={disabled || looking}
+              onPress={lookup}
+            />
+          ) : null}
+          {found?.token === token && found.reference === reference ? (
+            <>
+              <Text style={styles.text}>Issued challan found.</Text>
+              <FeeCards data={{ items: [found.fee] }} />
+            </>
+          ) : null}
+        </SectionCard>
+      ) : null}
     </>
   );
 }

@@ -20,6 +20,7 @@ import {
   searchFinanceStudents,
   listFinanceFees,
   lookupFinanceChallan,
+  financeCollectionReport,
 } from '../services/finance-authority.service';
 import {
   recordManualPayment,
@@ -75,6 +76,13 @@ router.get(
   '/summary',
   handle(async request =>
     branchFinanceSummary((await financeActor(request.user)).branchId),
+  ),
+);
+router.get(
+  '/collection-report',
+  handle(
+    request => financeCollectionReport(request.user, request.query),
+    ['dateFrom', 'dateTo', 'studentId', 'status', 'search', 'offset', 'limit'],
   ),
 );
 router.get(

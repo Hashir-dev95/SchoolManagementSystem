@@ -41,6 +41,37 @@ export interface FeeFilters {
   offset?: number;
   limit?: number;
 }
+export interface CollectionFilters extends FeeFilters {
+  /** Inclusive canonical obligation due dates, never payment settlement dates. */
+  dateFrom?: string;
+  dateTo?: string;
+}
+export interface CollectionReport {
+  summary: {
+    obligationCount: number;
+    amountMinor: number;
+    paidMinor: number;
+    balanceMinor: number;
+    amountLabel: string;
+    paidLabel: string;
+    balanceLabel: string;
+    unpaidCount: number;
+    statusCounts: Record<FeeStatus, number>;
+  };
+  filtersApplied: {
+    dateBasis: 'obligation_due_date';
+    settlementBasis: 'all_settled';
+    dateFrom: string | null;
+    dateTo: string | null;
+    studentId: string | null;
+    status: FeeStatus | null;
+    search: string;
+  };
+  items: FeeView[];
+  offset: number;
+  limit: number;
+  nextOffset: number | null;
+}
 export interface FinanceStudent {
   id: string;
   fullName: string;
@@ -110,6 +141,8 @@ const write = async <T>(token: string, path: string, body: unknown) =>
   ).data;
 export const financeService = {
   summary: (token: string) => read<FinanceSummary>(token, '/summary'),
+  collectionReport: (token: string, filters: CollectionFilters = {}) =>
+    read<CollectionReport>(token, '/collection-report' + query({ ...filters })),
   fees: (token: string, filters: FeeFilters = {}) =>
     read<FeeList>(token, '/fees' + query({ ...filters })),
   challan: (token: string, reference: string) =>

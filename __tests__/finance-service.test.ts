@@ -99,3 +99,44 @@ test('challan lookup encodes the typed reference and returns the server DTO usin
     { token: 'token' },
   );
 });
+
+test('collection report serializes normalized dates, Student, status, text and pagination through a GET', async () => {
+  const dto = {
+    summary: { amountLabel: 'SERVER TOTAL' },
+    items: [],
+    nextOffset: null,
+  };
+  jest.mocked(apiClient.request).mockResolvedValueOnce({ data: dto });
+  expect(
+    await financeService.collectionReport('finance-token', {
+      dateFrom: ' 2024-01-01 ',
+      dateTo: '2024-01-31',
+      studentId: 'student/id',
+      status: 'paid',
+      search: ' A+B &/ ',
+      offset: 0,
+      limit: 25,
+    }),
+  ).toEqual(dto);
+  expect(apiClient.request).toHaveBeenCalledWith(
+    '/finance/me/collection-report?dateFrom=2024-01-01&dateTo=2024-01-31&studentId=student%2Fid&status=paid&search=A%2BB%20%26%2F&offset=0&limit=25',
+    { token: 'finance-token' },
+  );
+  await financeService.collectionReport('finance-token', {
+    search: ' ',
+    dateFrom: undefined,
+  });
+  expect(apiClient.request).toHaveBeenLastCalledWith(
+    '/finance/me/collection-report',
+    { token: 'finance-token' },
+  );
+});
+
+test('collection report propagates errors without substituting zero totals', async () => {
+  jest
+    .mocked(apiClient.request)
+    .mockRejectedValueOnce(new Error('Report offline'));
+  await expect(financeService.collectionReport('token')).rejects.toThrow(
+    'Report offline',
+  );
+});

@@ -303,6 +303,153 @@ export async function lookupFinanceChallan(
   return result;
 }
 
+/** Due-date cohort, with lifetime settled amounts. One read-only snapshot supplies
+ * both the full filtered summary and its detail page; never reserves or audits money. */
+export async function financeCollectionReport(
+  identity: JwtPayload | undefined,
+  query: unknown,
+) {
+  const ctx = await financeActor(identity),
+    input = objectBody(query, [
+      'dateFrom',
+      'dateTo',
+      'studentId',
+      'status',
+      'search',
+      'offset',
+      'limit',
+    ]);
+  const dateFrom =
+      input.dateFrom === undefined ? undefined : scheduleDate(input.dateFrom),
+    dateTo =
+      input.dateTo === undefined ? undefined : scheduleDate(input.dateTo),
+    search = literalSearch(input.search),
+    status =
+      input.status === undefined
+        ? undefined
+        : enumField(input.status, 'fee status', FINANCE_FEE_STATUSES),
+    studentId =
+      input.studentId === undefined
+        ? undefined
+        : objectIdField(input.studentId, 'Student ID'),
+    offset = pageNumber(input.offset, 0, 10000),
+    limit = pageNumber(input.limit, 25, 100, 1);
+  if (dateFrom && dateTo && dateFrom > dateTo)
+    throw new RequestContractError(400, 'Due date range is reversed');
+  const session = await FeeObligation.startSession();
+  try {
+    const result = await session.withTransaction(
+      async () => {
+        if (studentId) {
+          // Historical obligations survive enrollment closure. No profile placement is used.
+          const student = await Student.findOne({ isActive: true })
+            .where('_id')
+            .equals(studentId)
+            .where('branchId')
+            .equals(ctx.branchId)
+            .select('userId')
+            .session(session)
+            .lean();
+          if (
+            !student ||
+            !(await User.exists({ role: 'student', isActive: true })
+              .where('_id')
+              .equals(student.userId)
+              .where('branchId')
+              .equals(ctx.branchId)
+              .session(session))
+          )
+            throw financialDenied();
+        }
+        const summary = {
+          obligationCount: 0,
+          amountMinor: 0,
+          paidMinor: 0,
+          balanceMinor: 0,
+          unpaidCount: 0,
+          statusCounts: {
+            due: 0,
+            overdue: 0,
+            partial: 0,
+            payment_pending: 0,
+            paid: 0,
+          },
+        };
+        const items: Awaited<ReturnType<typeof feeDTO>>[] = [];
+        const cursor = FeeObligation.find({
+          branchId: ctx.branchId,
+          ...(studentId ? { studentId } : {}),
+          ...(dateFrom || dateTo
+            ? {
+                dueDate: {
+                  ...(dateFrom ? { $gte: dateFrom } : {}),
+                  ...(dateTo ? { $lte: dateTo } : {}),
+                },
+              }
+            : {}),
+          ...(search
+            ? {
+                $or: ['title', 'challanReference', 'academicPeriodName'].map(
+                  field => ({
+                    [field]: { $regex: escapedSearch(search), $options: 'i' },
+                  }),
+                ),
+              }
+            : {}),
+        })
+          .sort({ createdAt: -1, _id: -1 })
+          .session(session)
+          .maxTimeMS(10000)
+          .lean()
+          .cursor({ batchSize: 50 });
+        try {
+          for await (const row of cursor) {
+            const fee = await feeDTO(row, session);
+            if (status && fee.status !== status) continue;
+            const index = summary.obligationCount++;
+            summary.amountMinor += fee.amountMinor;
+            summary.paidMinor += fee.paidMinor;
+            summary.balanceMinor += fee.balanceMinor;
+            summary.statusCounts[fee.status]++;
+            if (fee.paidMinor === 0) summary.unpaidCount++;
+            if (index >= offset && items.length < limit) items.push(fee);
+          }
+        } finally {
+          await cursor.close();
+        }
+        return {
+          summary: {
+            ...summary,
+            amountLabel: moneyLabel(summary.amountMinor),
+            paidLabel: moneyLabel(summary.paidMinor),
+            balanceLabel: moneyLabel(summary.balanceMinor),
+          },
+          filtersApplied: {
+            dateBasis: 'obligation_due_date' as const,
+            settlementBasis: 'all_settled' as const,
+            dateFrom: dateFrom ?? null,
+            dateTo: dateTo ?? null,
+            studentId: studentId ?? null,
+            status: status ?? null,
+            search,
+          },
+          items,
+          offset,
+          limit,
+          nextOffset:
+            offset + limit < summary.obligationCount ? offset + limit : null,
+        };
+      },
+      { readConcern: { level: 'snapshot' }, readPreference: 'primary' },
+    );
+    if ((await financeActor(identity)).branchId !== ctx.branchId)
+      throw financialDenied();
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}
+
 export const financialDenied = () =>
   new RequestContractError(403, 'Financial record or action is unavailable');
 export const reservedStates: Array<
@@ -558,6 +705,16 @@ export async function feeDTO(fee: Obligation, session?: ClientSession) {
       'Financial ledger requires reconciliation',
     );
   }
+  const status: (typeof FINANCE_FEE_STATUSES)[number] =
+    balanceMinor === 0
+      ? 'paid'
+      : reservedMinor > 0
+      ? 'payment_pending'
+      : paidMinor > 0
+      ? 'partial'
+      : fee.dueDate < schoolToday()
+      ? 'overdue'
+      : 'due';
   return {
     id: String(fee._id),
     studentId: String(fee.studentId),
@@ -575,16 +732,7 @@ export async function feeDTO(fee: Obligation, session?: ClientSession) {
     paidLabel: moneyLabel(paidMinor),
     reservedLabel: moneyLabel(reservedMinor),
     balanceLabel: moneyLabel(balanceMinor),
-    status:
-      balanceMinor === 0
-        ? 'paid'
-        : reservedMinor > 0
-        ? 'payment_pending'
-        : paidMinor > 0
-        ? 'partial'
-        : fee.dueDate < schoolToday()
-        ? 'overdue'
-        : 'due',
+    status,
     receipts: payments.map(row => ({
       id: String(row._id),
       reference: row.receiptReference,
