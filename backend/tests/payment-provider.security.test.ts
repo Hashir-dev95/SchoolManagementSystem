@@ -10,6 +10,7 @@ import {
   signedEvent,
   finHttp,
   finance,
+  put,
 } from './helpers/finance.fixture';
 import {
   startParentCheckout,
@@ -23,6 +24,8 @@ import {
 } from '../src/models/finance';
 import express from 'express';
 import { createProviderCallbackRouter } from '../src/routes/finance.routes';
+import { RequestContractError } from '../src/utils/request-validation';
+import type { ProviderEvent } from '../src/services/payment-provider';
 
 async function checkout() {
   const fee = await assignedFee();
@@ -35,6 +38,211 @@ async function checkout() {
     signedProvider,
   );
 }
+
+test('verification authenticates before trusting shape and rejects malformed normalized evidence', async () => {
+  const intent = await checkout(),
+    event = signedEvent(intent);
+  const normalized = JSON.parse(event.raw.toString()) as ProviderEvent;
+  for (const bad of [
+    null,
+    [],
+    { ...normalized, amountMinor: '30000' },
+    { ...normalized, amountMinor: 30001 },
+    { ...normalized, state: 'success' },
+    { ...normalized, transactionRef: { $ne: null } },
+    { ...normalized, provider: 'injected-provider' },
+    { ...normalized, branchId: String(state.foreign._id) },
+  ]) {
+    await assert.rejects(
+      processProviderCallback(event.raw, event.headers, {
+        ...signedProvider,
+        verifyCallback: async () => bad as unknown as ProviderEvent,
+      }),
+      { status: 403 },
+    );
+  }
+  assert.equal(await FinanceTransaction.countDocuments(), 0);
+  assert.equal((await finHttp('/fees/' + intent.feeId)).json.data.paidMinor, 0);
+});
+
+test('verification outages return sanitized uncertainty without recording success or releasing a reservation', async () => {
+  const intent = await checkout(),
+    event = signedEvent(intent);
+  await assert.rejects(
+    processProviderCallback(event.raw, event.headers, {
+      ...signedProvider,
+      verifyCallback: async () => {
+        throw new RequestContractError(503, 'private adapter details');
+      },
+    }),
+    (error: unknown) =>
+      error instanceof RequestContractError &&
+      error.status === 503 &&
+      !error.message.includes('private'),
+  );
+  assert.equal(await FinanceProviderObservation.countDocuments(), 0);
+  assert.equal(await FinanceTransaction.countDocuments(), 0);
+  assert.equal(
+    (await FinancePaymentIntent.findById(intent.id))!.status,
+    'provider_pending',
+  );
+});
+
+test('missing configuration and empty/oversized evidence fail before verification', async () => {
+  const intent = await checkout(),
+    event = signedEvent(intent);
+  await assert.rejects(
+    processProviderCallback(event.raw, event.headers, {
+      ...signedProvider,
+      merchantId: '',
+    }),
+    { status: 503 },
+  );
+  for (const raw of [Buffer.alloc(0), Buffer.alloc(65537)])
+    await assert.rejects(
+      processProviderCallback(raw, event.headers, signedProvider),
+      { status: 400 },
+    );
+  assert.equal(await FinanceProviderObservation.countDocuments(), 0);
+});
+
+test('expired but provider-paid evidence retains the hold for reconciliation without settlement', async () => {
+  const intent = await checkout(),
+    event = signedEvent(intent);
+  await FinancePaymentIntent.collection.updateOne(
+    { _id: new (await import('mongoose')).Types.ObjectId(intent.id) },
+    { $set: { expiresAt: new Date(0) } },
+  );
+  const result = await processProviderCallback(
+    event.raw,
+    event.headers,
+    signedProvider,
+  );
+  assert.equal(result.status, 'reconciliation_required');
+  const revision = (await FinancePaymentIntent.findById(intent.id))!.revision;
+  assert.equal(
+    (await processProviderCallback(event.raw, event.headers, signedProvider))
+      .status,
+    'reconciliation_required',
+  );
+  assert.equal(
+    (await FinancePaymentIntent.findById(intent.id))!.revision,
+    revision,
+  );
+  assert.equal(await FinanceTransaction.countDocuments(), 0);
+  const fee = (await finHttp('/fees/' + intent.feeId)).json.data;
+  assert.equal(fee.reservedMinor, 30000);
+  assert.deepEqual(fee.receipts, []);
+});
+
+for (const status of ['failed', 'rejected', 'cancelled']) {
+  test(`terminal/corrupt reservation ${status} is never resurrected by paid evidence`, async () => {
+    const intent = await checkout(),
+      event = signedEvent(intent);
+    await FinancePaymentIntent.collection.updateOne(
+      { _id: new (await import('mongoose')).Types.ObjectId(intent.id) },
+      { $set: { status } },
+    );
+    assert.equal(
+      (await processProviderCallback(event.raw, event.headers, signedProvider))
+        .status,
+      'inconsistent',
+    );
+    assert.equal(
+      (await FinancePaymentIntent.findById(intent.id))!.status,
+      status,
+    );
+    assert.equal(await FinanceTransaction.countDocuments(), 0);
+  });
+}
+
+for (const field of [
+  'actorId',
+  'studentId',
+  'obligationId',
+  'channel',
+  'provider',
+]) {
+  test(`verification rejects corrupt reservation ${field} mapping`, async () => {
+    const intent = await checkout(),
+      event = signedEvent(intent);
+    const value =
+      field === 'actorId'
+        ? finance.foreign.user._id
+        : field === 'studentId'
+        ? state.otherStudent._id
+        : field === 'obligationId'
+        ? oid()
+        : field === 'channel'
+        ? 'manual'
+        : 'another-provider';
+    await FinancePaymentIntent.collection.updateOne(
+      { _id: new (await import('mongoose')).Types.ObjectId(intent.id) },
+      { $set: { [field]: value } },
+    );
+    await assert.rejects(
+      processProviderCallback(event.raw, event.headers, signedProvider),
+      { status: 403 },
+    );
+    assert.equal(await FinanceTransaction.countDocuments(), 0);
+  });
+}
+
+test('one provider transaction cannot verify/credit two unrelated reservations', async () => {
+  const first = await checkout(),
+    event = signedEvent(first);
+  await processProviderCallback(event.raw, event.headers, signedProvider);
+  const source = await FeeObligation.findById(first.feeId).lean();
+  const secondFee = await put(FeeObligation, {
+    ...source,
+    _id: oid(),
+    structureId: oid(),
+    challanReference: 'SECOND-PROVIDER-FEE',
+  });
+  const second = await startParentCheckout(
+    { userId: String(parentState.parent._id), role: 'parent' },
+    parentState.token,
+    String(state.student._id),
+    String(secondFee._id),
+    { operationId: 'second_provider_checkout_001' },
+    {
+      ...signedProvider,
+      checkout: async () => ({
+        transactionRef: 'txn-' + first.id,
+        url: 'https://provider.test/checkout',
+      }),
+    },
+  );
+  const reused = signedEvent(second, {
+    transactionRef: 'txn-' + first.id,
+    eventId: 'second-transaction-reuse',
+  });
+  await assert.rejects(
+    processProviderCallback(reused.raw, reused.headers, signedProvider),
+    { status: 409 },
+  );
+  assert.equal(await FinanceTransaction.countDocuments(), 1);
+  assert.equal((await finHttp('/fees/' + second.feeId)).json.data.paidMinor, 0);
+});
+
+test('event replay binds merchant identity and completed replay requires its actual matching transaction', async () => {
+  const intent = await checkout(),
+    event = signedEvent(intent);
+  await processProviderCallback(event.raw, event.headers, signedProvider);
+  const changed = signedEvent(intent, { merchantId: 'rotated-merchant' });
+  await assert.rejects(
+    processProviderCallback(changed.raw, changed.headers, {
+      ...signedProvider,
+      merchantId: 'rotated-merchant',
+    }),
+    { status: 409 },
+  );
+  await FinanceTransaction.deleteMany({});
+  await assert.rejects(
+    processProviderCallback(event.raw, event.headers, signedProvider),
+    { status: 503 },
+  );
+});
 test('Parent reservation rejects unlinked children, foreign fees and wrong roles before provider interaction', async () => {
   const fee = await assignedFee();
   let attempts = 0;

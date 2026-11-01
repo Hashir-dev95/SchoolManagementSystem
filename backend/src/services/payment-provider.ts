@@ -23,6 +23,11 @@ export interface PaymentProvider {
     headers: Record<string, unknown>,
   ): Promise<ProviderEvent>;
 }
+// verifyCallback must authenticate raw evidence before returning a normalized event.
+// Return only ProviderEvent fields, and the gross payable amount (no fee/net subtraction).
+// Reject bad signatures; throw RequestContractError(503, ...) for temporary provider
+// outages/timeouts. The callback boundary sanitizes errors and never treats uncertainty
+// as verified evidence. Production remains disabled until a real adapter is reviewed.
 const unavailable = () =>
   new RequestContractError(
     503,

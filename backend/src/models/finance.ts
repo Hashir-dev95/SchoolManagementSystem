@@ -169,6 +169,7 @@ audit.index(
 const observation = new Schema(
   {
     provider: text,
+    merchantId: { type: String, immutable: true },
     eventId: text,
     orderRef: text,
     transactionRef: text,

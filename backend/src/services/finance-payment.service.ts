@@ -3,6 +3,7 @@ import {
   FinancePaymentIntent,
   FinanceTransaction,
   FinanceProviderObservation,
+  FinanceAudit,
 } from '../models/finance';
 import User from '../models/user';
 import Session from '../models/session';
@@ -451,12 +452,33 @@ export async function processProviderCallback(
   headers: Record<string, unknown>,
   provider: PaymentProvider = paymentProvider,
 ) {
-  if (!provider.enabled) {
+  if (!provider.enabled || !provider.id || !provider.merchantId) {
     throw new RequestContractError(503, 'Provider validation pending');
   }
+  if (!Buffer.isBuffer(raw) || raw.length === 0 || raw.length > 64 * 1024)
+    throw new RequestContractError(400, 'Invalid provider evidence');
   let event;
   try {
     event = await provider.verifyCallback(raw, headers);
+  } catch (error) {
+    // Adapters distinguish temporary verification outages from unauthentic evidence.
+    if (error instanceof RequestContractError && error.status >= 500)
+      throw new RequestContractError(
+        503,
+        'Provider verification unavailable; retry required',
+      );
+    throw financialDenied();
+  }
+  try {
+    objectBody(event, [
+      'eventId',
+      'orderRef',
+      'transactionRef',
+      'merchantId',
+      'amountMinor',
+      'currency',
+      'state',
+    ]);
   } catch {
     throw financialDenied();
   }
@@ -497,6 +519,7 @@ export async function processProviderCallback(
     recordedEvent.transactionRef !== event.transactionRef ||
     recordedEvent.amountMinor !== event.amountMinor ||
     recordedEvent.currency !== event.currency ||
+    recordedEvent.merchantId !== event.merchantId ||
     recordedEvent.state !== event.state
   ) {
     throw new RequestContractError(
@@ -546,18 +569,63 @@ export async function processProviderCallback(
       if (
         !row ||
         row.channel !== 'online' ||
-        String(row.studentId) !== String(fee.studentId)
+        String(row.studentId) !== String(fee.studentId) ||
+        String(row.branchId) !== String(fee.branchId) ||
+        String(row.obligationId) !== String(fee._id) ||
+        row.provider !== provider.id ||
+        row.merchantId !== event.merchantId ||
+        row.providerTransactionRef !== event.transactionRef ||
+        row.amountMinor !== event.amountMinor ||
+        row.currency !== event.currency
       ) {
         throw financialDenied();
       }
+      const reservationAudit = await FinanceAudit.exists({
+        branchId: row.branchId,
+        actorId: row.actorId,
+        targetId: row._id,
+        action: 'checkout.reserved',
+        amountMinor: row.amountMinor,
+        fingerprint: fingerprint(['checkout', String(fee._id), provider.id]),
+      }).session(session);
+      if (!reservationAudit) throw financialDenied();
       if (row.status === 'settled') {
         if (event.state !== 'paid') {
           return { status: 'inconsistent', intentId: String(row._id) };
         }
+        const effect = await FinanceTransaction.exists({
+          intentId: row._id,
+          obligationId: fee._id,
+          branchId: row.branchId,
+          studentId: row.studentId,
+          amountMinor: row.amountMinor,
+          currency: row.currency,
+          provider: provider.id,
+          providerTransactionRef: event.transactionRef,
+          state: 'settled',
+        }).session(session);
+        if (!effect)
+          throw new RequestContractError(
+            503,
+            'Payment requires reconciliation',
+          );
         return { status: 'settled', intentId: String(row._id) };
       }
       if (!reservedStates.includes(row.status)) {
         return { status: 'inconsistent', intentId: String(row._id) };
+      }
+      if (
+        !(row.expiresAt instanceof Date) ||
+        !Number.isFinite(row.expiresAt.getTime()) ||
+        row.expiresAt <= new Date()
+      ) {
+        // A late capture is evidence for review, never authority to resurrect a hold.
+        if (row.status !== 'reconciliation_required') {
+          row.status = 'reconciliation_required';
+          row.revision += 1;
+          await row.save({ session });
+        }
+        return { status: 'reconciliation_required', intentId: String(row._id) };
       }
       if (event.state === 'pending') {
         return { status: 'pending', intentId: String(row._id) };
@@ -566,6 +634,7 @@ export async function processProviderCallback(
       if (current.balanceMinor < row.amountMinor) {
         throw new RequestContractError(409, 'Payment requires reconciliation');
       }
+      const beforeState = row.status;
       row.status = event.state === 'paid' ? 'settled' : 'failed';
       row.revision += 1;
       await row.save({ session });
@@ -603,7 +672,7 @@ export async function processProviderCallback(
         {
           amountMinor: row.amountMinor,
           reference: event.transactionRef,
-          beforeState: 'provider_pending',
+          beforeState,
           afterState: row.status,
         },
       );
@@ -614,7 +683,12 @@ export async function processProviderCallback(
       $set: { outcome: 'reconciliation_required' },
     });
     await FinancePaymentIntent.updateOne(
-      { _id: initial._id, status: { $in: reservedStates } },
+      {
+        _id: initial._id,
+        channel: 'online',
+        provider: provider.id,
+        status: { $in: reservedStates },
+      },
       { $set: { status: 'reconciliation_required' }, $inc: { revision: 1 } },
     );
     if ((error as { code?: number }).code === 11000) {
