@@ -165,6 +165,12 @@ export default function PrincipalDashboardScreen({
             />
           </StatGrid>
           <SectionCard title="Branch snapshot">
+            {data.feeSummary.legacyUnmigratedCount ? (
+              <Text style={styles.note}>
+                {data.feeSummary.legacyUnmigratedCount} legacy fee records need
+                migration; excluded from financial totals.
+              </Text>
+            ) : null}
             <Card style={styles.unavailableCard}>
               <Text style={styles.note}>
                 {data.students.active} active of {data.students.total} students

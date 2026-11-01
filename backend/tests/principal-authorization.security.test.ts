@@ -17,6 +17,7 @@ import SchoolClass from '../src/models/schoolClass';
 import Section from '../src/models/section';
 import Attendance from '../src/models/attendance';
 import Fee from '../src/models/fee';
+import {FeeObligation, FinanceTransaction} from '../src/models/finance';
 import {generateAccessToken} from '../src/services/jwt.service';
 import {registerSession} from '../src/services/session.service';
 import {ROLE_PERMISSIONS} from '../src/constants/rolePermissions';
@@ -71,7 +72,7 @@ const notice = (extra: Record<string, unknown> = {}) => new SchoolNotice({
 beforeEach(async () => {
   mock.restoreAll();
   process.env.JWT_SECRET = jwtSecret;
-  for (const model of [PrincipalTask, SafetyAlert, SchoolNotice, ApprovalRequest, Attendance, Fee, Student, Section, SchoolClass, Session, User, Branch]) {
+  for (const model of [FeeObligation, FinanceTransaction, PrincipalTask, SafetyAlert, SchoolNotice, ApprovalRequest, Attendance, Fee, Student, Section, SchoolClass, Session, User, Branch]) {
     await model.collection.deleteMany({});
   }
   branchA = (await Branch.create({name: 'Own branch', code: 'AA', address: 'A', city: 'A'}))._id;
@@ -94,11 +95,19 @@ beforeEach(async () => {
   for (const [branchId, userId, code] of [[branchA, student.id, 'A'], [branchB, foreign.id, 'B']] as const) {
     const schoolClass = await SchoolClass.create({branchId, name: code, code, academicYear: 'test'});
     const section = await Section.create({branchId, classId: schoolClass._id, name: code, code});
-    const record = await Student.create({branchId, userId, classId: schoolClass._id, sectionId: section._id, admissionNumber: code});
-    const invoice = await Fee.create({branchId, studentId: record._id, academicYear: 'test', invoiceNumber: code,
-      amount: code === 'A' ? 25 : 900, paidAmount: code === 'A' ? 5 : 0, dueDate: new Date()});
-    await Attendance.create({branchId, studentId: record._id, classId: schoolClass._id, sectionId: section._id,
-      date: new Date(), status: code === 'A' ? 'present' : 'absent', markedBy: userId});
+    const record = await new Student({branchId, userId, classId: schoolClass._id, sectionId: section._id, admissionNumber: code}).save();
+    const invoice = await new Fee({branchId, studentId: record._id, academicYear: 'test', invoiceNumber: code,
+      amount: code === 'A' ? 25 : 900, paidAmount: code === 'A' ? 5 : 0, dueDate: new Date()}).save();
+    // Financial dashboard fixtures use canonical charge + settlement evidence;
+    // the retained legacy invoice is only an approval-reference fixture.
+    const financialId = new mongoose.Types.ObjectId();
+    await mongoose.connection.db!.collection(FeeObligation.collection.name).insertOne({_id: financialId, branchId, studentId: record._id,
+      recipientUserId: userId, enrollmentId: new mongoose.Types.ObjectId(), academicPeriodId: new mongoose.Types.ObjectId(), structureId: new mongoose.Types.ObjectId(),
+      title: 'Canonical tuition', academicPeriodName: 'test', amountMinor: code === 'A' ? 2500 : 90000, currency: 'PKR', dueDate: '2026-01-01', challanReference: `TEST-${code}`});
+    if (code === 'A') await mongoose.connection.db!.collection(FinanceTransaction.collection.name).insertOne({branchId, obligationId: financialId, studentId: record._id,
+      intentId: new mongoose.Types.ObjectId(), amountMinor: 500, currency: 'PKR', method: 'cash', reference: 'Historical test settlement', receiptReference: 'TEST-RC-A', state: 'settled', actorId: admin.id, paidAt: new Date()});
+    await new Attendance({branchId, studentId: record._id, classId: schoolClass._id, sectionId: section._id,
+      date: new Date(), status: code === 'A' ? 'present' : 'absent', markedBy: userId}).save();
     if (code === 'A') {feeA = invoice._id; studentA = record._id;}
   }
 });
@@ -282,6 +291,7 @@ test('dashboard isolates all aggregate families and ignores a spoofed GET JSON b
   assert.equal(data.feeSummary.totalAmount, 25);
   assert.equal(data.feeSummary.paidAmount, 5);
   assert.equal(data.feeSummary.outstandingAmount, 20);
+  assert.equal(data.feeSummary.legacyUnmigratedCount, 1);
   assert.equal(data.safetyAlerts.total, 1);
   assert.equal(data.safetyAlerts.critical, 0);
   assert.equal(data.pendingApprovals.total, 1);

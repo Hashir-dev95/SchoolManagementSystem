@@ -15,6 +15,7 @@ import mongoose from 'mongoose';
 import {ensureAcademicSetupIndexes} from './services/academic-setup.service';
 
 import app from './app';
+import {ensureFinanceIndexes} from './models/finance';
 import connectDatabase from './config/database';
 import Subject from './models/subject';
 import TeacherAssignment from './models/teacherAssignment';
@@ -31,6 +32,7 @@ const PORT = process.env.PORT || 5000;
 
 const startServer = async (): Promise<void> => {
   await connectDatabase();
+  await ensureFinanceIndexes();
   await ensureAcademicSetupIndexes();
   await ensureStaffSelfServiceIndexes();
   await ensureLiveLessonIndexes();

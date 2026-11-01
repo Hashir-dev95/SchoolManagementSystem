@@ -87,6 +87,7 @@ export interface PrincipalDashboardData {
   students: { total: number; active: number };
   attendance: AttendanceSummary | null;
   feeSummary: {
+    legacyUnmigratedCount?: number;
     totalInvoices: number;
     totalAmount: number;
     paidAmount: number;

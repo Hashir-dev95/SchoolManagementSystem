@@ -76,6 +76,9 @@ export const PERMISSIONS = {
   RESULTS_MANAGE: 'results.manage',
 
   FINANCE_VIEW: 'finance.view',
+  FEE_MANAGE: 'finance.fees.manage',
+  PAYMENT_RECORD: 'finance.payments.record',
+  PAYMENT_VERIFY: 'finance.payments.verify',
   FINANCE_MANAGE: 'finance.manage',
 
   REPORTS_VIEW: 'reports.view',

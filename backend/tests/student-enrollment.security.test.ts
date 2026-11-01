@@ -1,4 +1,5 @@
 import Fee from '../src/models/fee';
+import {FeeObligation, FinanceTransaction} from '../src/models/finance';
 import {getBranchFeeSummary} from '../src/services/fee.service';
 import {Homework} from '../src/models/homework';
 import {Quiz} from '../src/models/quiz';
@@ -328,10 +329,18 @@ test('retry receipts are actor-scoped and current sessions are required', async 
 test('actual Fee documents and Branch outstanding balance survive promotion and withdrawal', async () => {
   const current = (await enroll()).json.data.enrollment;
   const fee = await Fee.create({branchId: branch, studentId, academicYear: 'CURRENT', invoiceNumber: 'OWNED-FEE-001', amount: 1000, paidAmount: 100, dueDate: new Date('2026-09-01'), status: 'partial'});
+  const obligationId = new mongoose.Types.ObjectId(), recipient = await Student.findById(studentId).select('userId').lean();
+  await mongoose.connection.db!.collection(FeeObligation.collection.name).insertOne({_id: obligationId, branchId: new mongoose.Types.ObjectId(branch), studentId: new mongoose.Types.ObjectId(studentId),
+    recipientUserId: recipient!.userId, enrollmentId: new mongoose.Types.ObjectId(current.id), academicPeriodId: new mongoose.Types.ObjectId(periodId), structureId: new mongoose.Types.ObjectId(),
+    title: 'Canonical tuition', academicPeriodName: 'CURRENT', amountMinor: 100000, currency: 'PKR', dueDate: '2026-09-01', challanReference: 'CH-LIFECYCLE'});
+  await mongoose.connection.db!.collection(FinanceTransaction.collection.name).insertOne({branchId: new mongoose.Types.ObjectId(branch), obligationId, studentId: new mongoose.Types.ObjectId(studentId),
+    intentId: new mongoose.Types.ObjectId(), amountMinor: 10000, currency: 'PKR', method: 'cash', reference: 'VERIFIED-LIFECYCLE', receiptReference: 'RC-LIFECYCLE', state: 'settled', actorId: new mongoose.Types.ObjectId(teacherId), paidAt: new Date()});
+  const originalObligation = await FeeObligation.findById(obligationId).lean();
   const original = await Fee.findById(fee._id).lean(); const summary = await getBranchFeeSummary(branch);
   const next = await nextPeriod(); const promoted = await change(current.id, 'promote', next); assert.equal(promoted.status, 200);
   assert.equal((await change(promoted.json.data.enrollment.id, 'withdraw')).status, 200);
   assert.deepEqual(await Fee.findById(fee._id).lean(), original);
+  assert.deepEqual(await FeeObligation.findById(obligationId).lean(), originalObligation);
   assert.deepEqual(await getBranchFeeSummary(branch), summary); assert.equal(summary.outstandingAmount, 900);
   assert.equal(await Fee.countDocuments({studentId}), 1);
 });

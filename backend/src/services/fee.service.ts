@@ -1,7 +1,6 @@
-import {Types} from 'mongoose';
-
-import Fee from '../models/fee';
-
+// Legacy Fee records are retained for reconciliation/approval references only.
+// Every live summary now derives from canonical obligations + settled transactions.
+import { branchFinanceSummary } from './finance-authority.service';
 export interface FeeSummary {
   totalInvoices: number;
   totalAmount: number;
@@ -11,98 +10,22 @@ export interface FeeSummary {
   partialInvoices: number;
   paidInvoices: number;
   overdueInvoices: number;
+  legacyUnmigratedCount: number;
 }
-
-const validateObjectId = (
-  value: string,
-  fieldName: string,
-): void => {
-  if (!Types.ObjectId.isValid(value)) {
-    throw new Error(`Invalid ${fieldName}`);
-  }
-};
-
 export const getBranchFeeSummary = async (
   branchId: string,
   academicYear?: string,
 ): Promise<FeeSummary> => {
-  validateObjectId(branchId, 'branch ID');
-
-  const branchObjectId = new Types.ObjectId(branchId);
-
-  const match: {
-    branchId: Types.ObjectId;
-    academicYear?: string;
-  } = {
-    branchId: branchObjectId,
-  };
-
-  if (academicYear?.trim()) {
-    match.academicYear = academicYear.trim();
-  }
-
-  const [summary] = await Fee.aggregate([
-    {
-      $match: match,
-    },
-    {
-      $group: {
-        _id: null,
-        totalInvoices: {$sum: 1},
-        totalAmount: {$sum: '$amount'},
-        paidAmount: {$sum: '$paidAmount'},
-
-        pendingInvoices: {
-          $sum: {
-            $cond: [{$eq: ['$status', 'pending']}, 1, 0],
-          },
-        },
-
-        partialInvoices: {
-          $sum: {
-            $cond: [{$eq: ['$status', 'partial']}, 1, 0],
-          },
-        },
-
-        paidInvoices: {
-          $sum: {
-            $cond: [{$eq: ['$status', 'paid']}, 1, 0],
-          },
-        },
-
-        overdueInvoices: {
-          $sum: {
-            $cond: [{$eq: ['$status', 'overdue']}, 1, 0],
-          },
-        },
-      },
-    },
-  ]);
-
-  if (!summary) {
-    return {
-      totalInvoices: 0,
-      totalAmount: 0,
-      paidAmount: 0,
-      outstandingAmount: 0,
-      pendingInvoices: 0,
-      partialInvoices: 0,
-      paidInvoices: 0,
-      overdueInvoices: 0,
-    };
-  }
-
-  const totalAmount = Number(summary.totalAmount ?? 0);
-  const paidAmount = Number(summary.paidAmount ?? 0);
-
+  const row = await branchFinanceSummary(branchId, academicYear);
   return {
-    totalInvoices: Number(summary.totalInvoices ?? 0),
-    totalAmount,
-    paidAmount,
-    outstandingAmount: Math.max(totalAmount - paidAmount, 0),
-    pendingInvoices: Number(summary.pendingInvoices ?? 0),
-    partialInvoices: Number(summary.partialInvoices ?? 0),
-    paidInvoices: Number(summary.paidInvoices ?? 0),
-    overdueInvoices: Number(summary.overdueInvoices ?? 0),
+    totalInvoices: row.totalInvoices,
+    totalAmount: row.amountMinor / 100,
+    paidAmount: row.paidMinor / 100,
+    outstandingAmount: row.balanceMinor / 100,
+    pendingInvoices: row.totalInvoices - row.paidInvoices - row.partialInvoices,
+    partialInvoices: row.partialInvoices,
+    paidInvoices: row.paidInvoices,
+    overdueInvoices: row.overdueInvoices,
+    legacyUnmigratedCount: row.legacyUnmigratedCount,
   };
 };
