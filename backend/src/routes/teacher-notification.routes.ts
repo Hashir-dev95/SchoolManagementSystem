@@ -11,7 +11,7 @@ const router=Router();
 router.use(authenticateToken,requireRole('teacher'));
 router.get('/notifications',handle(request=>listTeacherNotifications(request.user,request.query)));
 router.get('/notifications/:notificationId',handle(request=>{if(Object.keys(request.query).length)throw new RequestContractError(400,'Unsupported query fields');return getTeacherNotification(request.user,request.params.notificationId);}));
-router.post('/notifications/:notificationId/read',handle(request=>markTeacherNotificationRead(request.user,request.params.notificationId,request.body)));
+router.post('/notifications/:notificationId/read',handle(request=>{if(Object.keys(request.query).length)throw new RequestContractError(400,'Unsupported query fields');return markTeacherNotificationRead(request.user,request.params.notificationId,request.body,token(request));}));
 router.get('/notification-preferences',handle(request=>{if(Object.keys(request.query).length)throw new RequestContractError(400,'Unsupported query fields');return getTeacherNotificationPreferences(request.user);}));
 router.put('/notification-preferences',handle(request=>saveTeacherNotificationPreferences(request.user,request.body)));
 router.get('/device-sessions',handle(request=>{if(Object.keys(request.query).length)throw new RequestContractError(400,'Unsupported query fields');return listTeacherSessions(request.user,token(request));}));

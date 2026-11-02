@@ -2,11 +2,12 @@ import {createHash} from 'node:crypto';
 import mongoose from 'mongoose';
 import SchoolNotice from '../models/schoolNotice';
 import Session from '../models/session';
-import {Notification,NotificationReadOperation, NOTIFICATION_CATEGORIES, NOTIFICATION_DEEP_LINKS, NOTIFICATION_SOURCE_TYPES} from '../models/notification';
+import {Notification,NotificationReadOperation, NOTIFICATION_CATEGORIES} from '../models/notification';
 import {TeacherNotificationPreference} from '../models/teacherNotificationPreference';
 import {getTeacherScope} from './teacher-scope.service';
 import {schoolTimezone} from './school-date.service';
 import {objectBody, objectIdField, textField, RequestContractError} from '../utils/request-validation';
+import {createInternalNotification,notificationDTO,getOwnNotification,markOwnNotificationRead} from './notification.service';
 import type {JwtPayload} from './jwt.service';
 
 type Identity=JwtPayload|undefined;
@@ -15,33 +16,17 @@ const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).d
 const opId=(value:unknown)=>{const valueText=textField(value,'client operation ID',80,16);if(!/^[A-Za-z0-9_-]+$/.test(valueText))throw new RequestContractError(400,'Invalid client operation ID');return valueText;};
 const expectedRevision=(value:unknown)=>{if(typeof value!=='number'||!Number.isSafeInteger(value)||value<0)throw new RequestContractError(400,'Invalid preference revision');return value;};
 const clock=(value:unknown,name:string)=>{if(typeof value!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(value))throw new RequestContractError(400,`Invalid ${name}`);return value;};
-const safeBody=(value:string)=>value.replace(/\s+/g,' ').trim().slice(0,280);
-const unavailable=()=>new RequestContractError(404,'Notification is unavailable or outside your scope');
 
 const teacherContext=async(identity:Identity)=>{const scope=await getTeacherScope(identity);return{teacherId:scope.actorId,branchId:scope.branchId};};
-const notificationDTO=(row:any)=>({
-  notificationId:String(row._id),category:row.category,title:row.title,body:row.body,priority:row.priority,
-  createdAt:row.createdAt.toISOString(),availableAt:row.availableAt.toISOString(),readAt:row.readAt?.toISOString()??null,
-  source:{type:row.sourceType,revision:row.sourceRevision},
-  deepLink:row.deepLinkType==='none'?null:{type:row.deepLinkType,targetId:String(row.deepLinkTargetId)},
-});
+export {createInternalNotification} from './notification.service';
 
-export const createInternalNotification=async(input:{recipientUserId:string;branchId:string;sourceType:typeof NOTIFICATION_SOURCE_TYPES[number];sourceId:string;sourceRevision:number;eventType:string;category:typeof NOTIFICATION_CATEGORIES[number];title:string;body:string;deepLinkType:typeof NOTIFICATION_DEEP_LINKS[number];deepLinkTargetId?:string;priority?:'low'|'normal'|'high'|'urgent';availableAt:Date})=>{
-  const key={recipientUserId:new mongoose.Types.ObjectId(input.recipientUserId),sourceType:input.sourceType,sourceId:new mongoose.Types.ObjectId(input.sourceId),sourceRevision:input.sourceRevision,eventType:input.eventType};
-  const operationId=`${input.eventType}:${input.sourceId}:${input.sourceRevision}:${input.recipientUserId}`;
-  const fingerprint=hash({...input,availableAt:input.availableAt.toISOString()});
-  try{await Notification.updateOne(key,{$setOnInsert:{...key,recipientRole:'teacher',branchId:new mongoose.Types.ObjectId(input.branchId),category:input.category,title:input.title,body:safeBody(input.body),deepLinkType:input.deepLinkType,...(input.deepLinkTargetId?{deepLinkTargetId:new mongoose.Types.ObjectId(input.deepLinkTargetId)}:{}),priority:input.priority??'normal',availableAt:input.availableAt,operationId,fingerprint}},{upsert:true,runValidators:true});}
-  catch(error){if((error as{code?:number}).code!==11000)throw error;}
-  return Notification.findOne(key).read('primary');
+export const reconcileTeacherNotifications=async(identity:Identity)=>{const ctx=await teacherContext(identity);const now=new Date();const notices:any[]=await (SchoolNotice as any).find({branchId:ctx.branchId,status:'published',audienceRoles:'teacher',publishedAt:{$lte:now},$or:[{expiresAt:{$exists:false}},{expiresAt:null},{expiresAt:{$gt:now}}]}).sort({publishedAt:-1}).limit(100).read('primary');
+  for(const notice of notices){const availableAt=notice.publishedAt??notice.createdAt;if(await Notification.exists({recipientUserId:ctx.teacherId,sourceType:'school_notice',sourceId:notice._id,sourceRevision:Math.max(1,availableAt.getTime()),eventType:'school_notice_published'}).read('primary'))continue;await createInternalNotification({recipientUserId:ctx.teacherId,branchId:ctx.branchId,sourceType:'school_notice',sourceId:String(notice._id),sourceRevision:Math.max(1,availableAt.getTime()),eventType:'school_notice_published',category:'notice',title:notice.title,body:notice.message,deepLinkType:'inbox_notice',deepLinkTargetId:String(notice._id),priority:notice.priority,availableAt});}
 };
 
-export const reconcileTeacherNotifications=async(identity:Identity)=>{const ctx=await teacherContext(identity);const now=new Date();const notices:any[]=await (SchoolNotice as any).find({branchId:ctx.branchId,status:'published',audienceRoles:'teacher',publishedAt:{$exists:true},$or:[{expiresAt:{$exists:false}},{expiresAt:null},{expiresAt:{$gt:now}}]}).sort({publishedAt:-1}).limit(100).read('primary');
-  for(const notice of notices){const availableAt=notice.publishedAt??notice.createdAt;await createInternalNotification({recipientUserId:ctx.teacherId,branchId:ctx.branchId,sourceType:'school_notice',sourceId:String(notice._id),sourceRevision:Math.max(1,availableAt.getTime()),eventType:'school_notice_published',category:'notice',title:notice.title,body:notice.message,deepLinkType:'inbox_notice',deepLinkTargetId:String(notice._id),priority:notice.priority,availableAt});}
-};
-
-export const listTeacherNotifications=async(identity:Identity,query:unknown)=>{const input=objectBody(query,['offset']),offset=input.offset===undefined?0:Number(input.offset);if(!Number.isSafeInteger(offset)||offset<0||offset>10000)throw new RequestContractError(400,'Invalid notification offset');const ctx=await teacherContext(identity);await reconcileTeacherNotifications(identity);const filter={recipientUserId:ctx.teacherId,recipientRole:'teacher',branchId:ctx.branchId,availableAt:{$lte:new Date()}};const Model:any=Notification;const[rows,total,unread]=await Promise.all([Model.find(filter).sort({availableAt:-1,_id:-1}).skip(offset).limit(50).read('primary'),Model.countDocuments(filter).read('primary'),Model.countDocuments({...filter,readAt:{$exists:false}}).read('primary')]);return{items:rows.map(notificationDTO),total,unread,nextOffset:offset+rows.length<total?offset+rows.length:null};};
-export const getTeacherNotification=async(identity:Identity,id:unknown)=>{const ctx=await teacherContext(identity),row=await Notification.findOne({_id:objectIdField(id,'notification ID'),recipientUserId:ctx.teacherId,recipientRole:'teacher',branchId:ctx.branchId}).read('primary');if(!row)throw unavailable();return notificationDTO(row);};
-export const markTeacherNotificationRead=async(identity:Identity,id:unknown,body:unknown)=>{const input=objectBody(body,['clientOperationId']),operation=opId(input.clientOperationId),ctx=await teacherContext(identity),notificationId=objectIdField(id,'notification ID'),fingerprint=hash({notificationId,action:'read'});let row=await Notification.findOne({_id:notificationId,recipientUserId:ctx.teacherId,recipientRole:'teacher',branchId:ctx.branchId}).read('primary');if(!row)throw unavailable();try{await NotificationReadOperation.create({recipientUserId:ctx.teacherId,notificationId,operationId:operation,fingerprint});}catch(error){if((error as{code?:number}).code!==11000)throw error;const prior:any=await NotificationReadOperation.findOne({recipientUserId:ctx.teacherId,operationId:operation}).read('primary');if(!prior||prior.fingerprint!==fingerprint)throw new RequestContractError(409,'Operation ID was reused');}if(!row.readAt)row=await Notification.findOneAndUpdate({_id:row._id,recipientUserId:ctx.teacherId,readAt:{$exists:false}},{$set:{readAt:new Date()}},{returnDocument:'after',runValidators:true})??await Notification.findById(row._id);if(!row)throw unavailable();return notificationDTO(row);};
+export const listTeacherNotifications=async(identity:Identity,query:unknown)=>{const input=objectBody(query,['offset']),offset=input.offset===undefined?0:Number(input.offset);if(!Number.isSafeInteger(offset)||offset<0||offset>10000)throw new RequestContractError(400,'Invalid notification offset');const ctx=await teacherContext(identity);await reconcileTeacherNotifications(identity);const filter={recipientUserId:ctx.teacherId,recipientRole:'teacher',branchId:ctx.branchId,availableAt:{$lte:new Date()}};const Model:any=Notification;const[rows,total,unread]=await Promise.all([Model.find(filter).sort({availableAt:-1,_id:-1}).skip(offset).limit(50).read('primary'),Model.countDocuments(filter).read('primary'),Model.countDocuments({...filter,readAt:null}).read('primary')]);return{items:rows.map(notificationDTO),total,unread,nextOffset:offset+rows.length<total?offset+rows.length:null};};
+export const getTeacherNotification=async(identity:Identity,id:unknown)=>{await teacherContext(identity);return getOwnNotification(identity,id);};
+export const markTeacherNotificationRead=async(identity:Identity,id:unknown,body:unknown,token:string)=>{await teacherContext(identity);return markOwnNotificationRead(identity,id,body,token);};
 
 const defaultPreference=(ctx:{teacherId:string;branchId:string})=>({teacherId:ctx.teacherId,branchId:ctx.branchId,enabledCategories:[...optionalCategories],quietHours:{enabled:false,start:'22:00',end:'07:00',timezone:schoolTimezone()},revision:0,updatedAt:null});
 const preferenceDTO=(row:any,ctx:{teacherId:string;branchId:string})=>row?{enabledCategories:[...row.enabledCategories],quietHours:{enabled:row.quietHours.enabled,start:row.quietHours.start,end:row.quietHours.end,timezone:row.quietHours.timezone},revision:row.revision,updatedAt:row.updatedAt.toISOString()}:defaultPreference(ctx);

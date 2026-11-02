@@ -11,6 +11,13 @@ export const NOTIFICATION_CATEGORIES = [
   'communication',
   'system',
 ] as const;
+export const NOTIFICATION_RECIPIENT_ROLES = [
+  'teacher',
+  'student',
+  'parent',
+  'principal',
+  'finance',
+] as const;
 export const NOTIFICATION_SOURCE_TYPES = [
   'school_notice',
   'attendance_session',
@@ -20,6 +27,9 @@ export const NOTIFICATION_SOURCE_TYPES = [
   'catch_up',
   'academic_result',
   'teacher_notice',
+  'teacher_assignment',
+  'student_enrollment',
+  'parent_student_link',
   'system',
 ] as const;
 export const NOTIFICATION_DEEP_LINKS = [
@@ -41,7 +51,7 @@ const schema = new Schema(
     },
     recipientRole: {
       type: String,
-      enum: ['teacher'],
+      enum: NOTIFICATION_RECIPIENT_ROLES,
       required: true,
       immutable: true,
     },
