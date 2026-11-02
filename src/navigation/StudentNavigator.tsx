@@ -6,8 +6,10 @@ import {
 import StudentLiveLessonsScreen from '../screens/liveLessons/StudentLiveLessonsScreen';
 import LiveLessonRoomScreen from '../screens/liveLessons/LiveLessonRoomScreen';
 import StudentWorkspaceScreen from '../screens/student/StudentWorkspaceScreen';
+import NotificationInboxScreen from '../screens/notifications/NotificationInboxScreen';
 export type StudentStackParamList = {
   StudentWorkspace: undefined;
+  StudentNotifications: undefined;
   StudentLiveLessons: undefined;
   StudentLiveRoom: { sessionId: string };
 };
@@ -24,6 +26,11 @@ function StudentLiveRoom({
 export default function StudentNavigator() {
   return (
     <Stack.Navigator initialRouteName="StudentWorkspace">
+      <Stack.Screen
+        name="StudentNotifications"
+        component={NotificationInboxScreen}
+        options={{ title: 'Notifications' }}
+      />
       <Stack.Screen
         name="StudentWorkspace"
         component={StudentWorkspaceScreen}

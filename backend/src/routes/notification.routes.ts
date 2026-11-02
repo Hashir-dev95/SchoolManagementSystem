@@ -6,14 +6,18 @@ import {
 import { RequestContractError } from '../utils/request-validation';
 import {
   getOwnNotification,
+  listOwnNotifications,
   markOwnNotificationRead,
 } from '../services/notification.service';
 
 const handle =
-  (action: (request: AuthenticatedRequest) => Promise<unknown>) =>
+  (
+    action: (request: AuthenticatedRequest) => Promise<unknown>,
+    allowQuery = false,
+  ) =>
   async (request: AuthenticatedRequest, response: Response) => {
     try {
-      if (Object.keys(request.query).length)
+      if (!allowQuery && Object.keys(request.query).length)
         throw new RequestContractError(400, 'Unsupported query fields');
       response.json({ success: true, data: await action(request) });
     } catch (error) {
@@ -34,7 +38,11 @@ router.use((_request, response, next) => {
   next();
 });
 router.use(authenticateToken);
-// F1 ownership primitives only. No list/inbox/create endpoint (F2/F6).
+// Literal own-inbox route must precede the F1 item route. No creation endpoint.
+router.get(
+  '/me',
+  handle(request => listOwnNotifications(request.user, request.query), true),
+);
 router.get(
   '/:notificationId',
   handle(request =>
@@ -53,11 +61,9 @@ router.post(
   ),
 );
 router.use((_request, response) => {
-  response
-    .status(403)
-    .json({
-      success: false,
-      message: 'Notification operation is not permitted',
-    });
+  response.status(403).json({
+    success: false,
+    message: 'Notification operation is not permitted',
+  });
 });
 export default router;

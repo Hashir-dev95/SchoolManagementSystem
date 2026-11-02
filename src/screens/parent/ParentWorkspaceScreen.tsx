@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { ParentStackParamList } from '../../navigation/ParentNavigator';
 import { useAuth } from '../../context/AuthContext';
 import { ApiError } from '../../services/api/apiClient';
 import {
@@ -166,6 +169,8 @@ export default function ParentWorkspaceScreen() {
   return <Workspace key={user.id} token={accessToken} />;
 }
 function Workspace({ token }: { token: string }) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<ParentStackParamList>>();
   const { logout } = useAuth();
   const [children, setChildren] = useState<VerifiedChild[]>([]);
   const [selected, setSelected] = useState('');
@@ -217,6 +222,11 @@ function Workspace({ token }: { token: string }) {
         subtitle="Child access is verified by your school on every request."
       />
       <View style={styles.actions}>
+        <Button
+          title="Notifications"
+          variant="secondary"
+          onPress={() => navigation.navigate('ParentNotifications')}
+        />
         <Button title="Refresh children" variant="secondary" onPress={retry} />
         <Button
           title="Sign out"

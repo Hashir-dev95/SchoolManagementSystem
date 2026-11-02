@@ -411,6 +411,112 @@ async function readContext(
   );
   return { actor, branchId };
 }
+
+// Shared validation lets legacy Teacher reconciliation reject bad requests before
+// running its existing producer, without issuing a throwaway inbox aggregation.
+export function notificationInboxQuery(query: unknown, defaultLimit = 25) {
+  const input = objectBody(query, ['status', 'offset', 'limit']);
+  const status =
+    input.status === undefined
+      ? 'all'
+      : enumField(input.status, 'notification status', [
+          'all',
+          'unread',
+          'read',
+        ] as const);
+  const integer = (
+    value: unknown,
+    fallback: number,
+    min: number,
+    max: number,
+    name: string,
+  ) => {
+    if (value === undefined) return fallback;
+    if (
+      (typeof value !== 'string' || !/^(0|[1-9]\d*)$/.test(value)) &&
+      (typeof value !== 'number' || !Number.isSafeInteger(value))
+    )
+      throw new RequestContractError(400, `Invalid notification ${name}`);
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max)
+      throw new RequestContractError(400, `Invalid notification ${name}`);
+    return parsed;
+  };
+  const offset = integer(input.offset, 0, 0, 10000, 'offset');
+  const limit = integer(input.limit, defaultLimit, 1, 100, 'limit');
+  return { status, offset, limit };
+}
+
+// One read authority for every inbox, including the Teacher compatibility route.
+// History belongs to the User, not a now-revoked assignment/link or former role.
+export async function listOwnNotifications(
+  identity: JwtPayload | undefined,
+  query: unknown,
+) {
+  const { status, offset, limit } = notificationInboxQuery(query);
+  const ctx = await readContext(identity);
+  const readFilter =
+    status === 'unread'
+      ? { readAt: null }
+      : status === 'read'
+      ? { readAt: { $type: 'date' } }
+      : {};
+  // A single read-only aggregation gives items/counts the same visible scope.
+  // Explicit ObjectIds are required because aggregate pipelines do not cast.
+  const [result] = await Notification.aggregate<{
+    items: NotificationRecord[];
+    total: { count: number }[];
+    unread: { count: number }[];
+  }>([
+    {
+      $match: {
+        recipientUserId: ctx.actor._id,
+        branchId: new Types.ObjectId(ctx.branchId),
+        availableAt: { $lte: new Date() },
+      },
+    },
+    { $sort: { availableAt: -1, _id: -1 } },
+    {
+      $facet: {
+        items: [
+          { $match: readFilter },
+          { $skip: offset },
+          { $limit: limit },
+          {
+            $project: {
+              category: 1,
+              title: 1,
+              body: 1,
+              priority: 1,
+              createdAt: 1,
+              availableAt: 1,
+              readAt: 1,
+              sourceType: 1,
+              sourceRevision: 1,
+              deepLinkType: 1,
+              deepLinkTargetId: 1,
+            },
+          },
+        ],
+        total: [{ $match: readFilter }, { $count: 'count' }],
+        unread: [{ $match: { readAt: null } }, { $count: 'count' }],
+      },
+    },
+  ]).read('primary');
+  const items = result!.items.map(notificationDTO);
+  const total = result!.total[0]?.count ?? 0;
+  const next = offset + items.length;
+  return {
+    items,
+    status,
+    offset,
+    limit,
+    total,
+    unread: result!.unread[0]?.count ?? 0,
+    nextOffset: next < total && next <= 10000 ? next : null,
+  };
+}
+
 export async function getOwnNotification(
   identity: JwtPayload | undefined,
   id: unknown,

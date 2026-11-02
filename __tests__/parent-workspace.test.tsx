@@ -16,6 +16,7 @@ let mockUser: User = {
   role: 'parent',
 };
 const mockLogout = jest.fn();
+const mockNavigate = jest.fn();
 jest.mock('../src/context/AuthContext', () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => children,
   useAuth: () => ({
@@ -26,7 +27,7 @@ jest.mock('../src/context/AuthContext', () => ({
 }));
 jest.mock('@react-navigation/native', () => ({
   NavigationContainer: 'NavigationContainer',
-  useNavigation: () => ({ navigate: jest.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate }),
 }));
 jest.mock('@react-navigation/native-stack', () => ({
   createNativeStackNavigator: () => ({
@@ -166,7 +167,14 @@ test('canonical Parent routing uses one existing root NavigationContainer', asyn
     tree.root
       .findAll(node => String(node.type) === 'StackScreen')
       .map(node => node.props.name),
-  ).toEqual(['ParentWorkspace']);
+  ).toEqual(['ParentNotifications', 'ParentWorkspace']);
+});
+test('Parent notifications opens account inbox independently of verified child selection', async () => {
+  service.children.mockResolvedValue({ items: [] });
+  await mount();
+  await press('Notifications');
+  expect(mockNavigate).toHaveBeenCalledWith('ParentNotifications');
+  expect(service.child).not.toHaveBeenCalled();
 });
 test('verified selector retains Branch/Class/Section and child details come from canonical API', async () => {
   await mount();

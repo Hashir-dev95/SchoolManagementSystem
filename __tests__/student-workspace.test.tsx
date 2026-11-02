@@ -158,7 +158,12 @@ test('Student navigator starts at canonical workspace and retains both live less
     tree.root
       .findAll(node => String(node.type) === 'StackScreen')
       .map(node => node.props.name),
-  ).toEqual(['StudentWorkspace', 'StudentLiveLessons', 'StudentLiveRoom']);
+  ).toEqual([
+    'StudentNotifications',
+    'StudentWorkspace',
+    'StudentLiveLessons',
+    'StudentLiveRoom',
+  ]);
 });
 test('profile and placement display real self-service enrollment data', async () => {
   await mount();
@@ -285,6 +290,11 @@ test('logout and live lessons use canonical actions', async () => {
   expect(mockNavigate).toHaveBeenCalledWith('StudentLiveLessons');
   await press('Sign out');
   expect(mockLogout).toHaveBeenCalledTimes(1);
+});
+test('Student notifications opens own account inbox without recipient parameters', async () => {
+  await mount();
+  await press('Notifications');
+  expect(mockNavigate).toHaveBeenCalledWith('StudentNotifications');
 });
 test('an old request cannot populate another pane or another signed-in Student', async () => {
   let release!: (data: Awaited<ReturnType<typeof service.profile>>) => void;

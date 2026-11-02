@@ -7,7 +7,7 @@ import {TeacherNotificationPreference} from '../models/teacherNotificationPrefer
 import {getTeacherScope} from './teacher-scope.service';
 import {schoolTimezone} from './school-date.service';
 import {objectBody, objectIdField, textField, RequestContractError} from '../utils/request-validation';
-import {createInternalNotification,notificationDTO,getOwnNotification,markOwnNotificationRead} from './notification.service';
+import {createInternalNotification,listOwnNotifications,notificationInboxQuery,getOwnNotification,markOwnNotificationRead} from './notification.service';
 import type {JwtPayload} from './jwt.service';
 
 type Identity=JwtPayload|undefined;
@@ -24,7 +24,12 @@ export const reconcileTeacherNotifications=async(identity:Identity)=>{const ctx=
   for(const notice of notices){const availableAt=notice.publishedAt??notice.createdAt;if(await Notification.exists({recipientUserId:ctx.teacherId,sourceType:'school_notice',sourceId:notice._id,sourceRevision:Math.max(1,availableAt.getTime()),eventType:'school_notice_published'}).read('primary'))continue;await createInternalNotification({recipientUserId:ctx.teacherId,branchId:ctx.branchId,sourceType:'school_notice',sourceId:String(notice._id),sourceRevision:Math.max(1,availableAt.getTime()),eventType:'school_notice_published',category:'notice',title:notice.title,body:notice.message,deepLinkType:'inbox_notice',deepLinkTargetId:String(notice._id),priority:notice.priority,availableAt});}
 };
 
-export const listTeacherNotifications=async(identity:Identity,query:unknown)=>{const input=objectBody(query,['offset']),offset=input.offset===undefined?0:Number(input.offset);if(!Number.isSafeInteger(offset)||offset<0||offset>10000)throw new RequestContractError(400,'Invalid notification offset');const ctx=await teacherContext(identity);await reconcileTeacherNotifications(identity);const filter={recipientUserId:ctx.teacherId,recipientRole:'teacher',branchId:ctx.branchId,availableAt:{$lte:new Date()}};const Model:any=Notification;const[rows,total,unread]=await Promise.all([Model.find(filter).sort({availableAt:-1,_id:-1}).skip(offset).limit(50).read('primary'),Model.countDocuments(filter).read('primary'),Model.countDocuments({...filter,readAt:null}).read('primary')]);return{items:rows.map(notificationDTO),total,unread,nextOffset:offset+rows.length<total?offset+rows.length:null};};
+export const listTeacherNotifications=async(identity:Identity,query:unknown)=>{
+  // Preserve the existing notice producer and fixed-50 default for legacy clients.
+  const input=notificationInboxQuery(query,50);
+  await reconcileTeacherNotifications(identity);
+  return listOwnNotifications(identity,input);
+};
 export const getTeacherNotification=async(identity:Identity,id:unknown)=>{await teacherContext(identity);return getOwnNotification(identity,id);};
 export const markTeacherNotificationRead=async(identity:Identity,id:unknown,body:unknown,token:string)=>{await teacherContext(identity);return markOwnNotificationRead(identity,id,body,token);};
 
