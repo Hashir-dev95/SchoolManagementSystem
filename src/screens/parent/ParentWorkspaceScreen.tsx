@@ -223,6 +223,11 @@ function Workspace({ token }: { token: string }) {
       />
       <View style={styles.actions}>
         <Button
+          title="Messages"
+          variant="secondary"
+          onPress={() => navigation.navigate('ParentChat')}
+        />
+        <Button
           title="Notifications"
           variant="secondary"
           onPress={() => navigation.navigate('ParentNotifications')}

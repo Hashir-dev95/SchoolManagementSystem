@@ -159,6 +159,7 @@ test('Student navigator starts at canonical workspace and retains both live less
       .findAll(node => String(node.type) === 'StackScreen')
       .map(node => node.props.name),
   ).toEqual([
+    'StudentChat',
     'StudentNotifications',
     'StudentWorkspace',
     'StudentLiveLessons',

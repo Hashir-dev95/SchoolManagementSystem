@@ -26,6 +26,7 @@ import TeacherCatchUpQueueScreen from '../screens/teacher/TeacherCatchUpQueueScr
 import TeacherCatchUpScreen from '../screens/teacher/TeacherCatchUpScreen';
 import TeacherMarksScreen from '../screens/teacher/TeacherMarksScreen';
 import TeacherNotificationsScreen from '../screens/teacher/TeacherNotificationsScreen';
+import ChatWorkspaceScreen from '../screens/chat/ChatWorkspaceScreen';
 
 export type TeacherStackParamList = {
   TeacherLiveLesson: { periodId: string; date: string };
@@ -49,6 +50,7 @@ export type TeacherStackParamList = {
   TeacherCatchUp: { catchUpId: string };
   TeacherMarks: TeacherTupleIds;
   TeacherNotifications: undefined;
+  TeacherChat: undefined;
   TeacherRoster: TeacherTupleIds;
   TeacherTimetable: undefined;
   TeacherPeriod: { periodId: string; date: string };
@@ -170,6 +172,11 @@ export default function TeacherNavigator() {
         name="TeacherNotifications"
         component={TeacherNotificationsScreen}
         options={{ title: 'Notifications & preferences' }}
+      />
+      <Stack.Screen
+        name="TeacherChat"
+        component={ChatWorkspaceScreen}
+        options={{ title: 'Messages' }}
       />
       <Stack.Screen
         name="TeacherSelfService"

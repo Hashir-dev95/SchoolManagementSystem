@@ -133,6 +133,11 @@ function Workspace({ token }: { token: string }) {
       />
       <View style={styles.actions}>
         <Button
+          title="Messages"
+          variant="secondary"
+          onPress={() => navigation.navigate('StudentChat')}
+        />
+        <Button
           title="Notifications"
           variant="secondary"
           onPress={() => navigation.navigate('StudentNotifications')}

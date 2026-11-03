@@ -2,14 +2,21 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import ParentWorkspaceScreen from '../screens/parent/ParentWorkspaceScreen';
 import NotificationInboxScreen from '../screens/notifications/NotificationInboxScreen';
+import ChatWorkspaceScreen from '../screens/chat/ChatWorkspaceScreen';
 export type ParentStackParamList = {
   ParentWorkspace: undefined;
   ParentNotifications: undefined;
+  ParentChat: undefined;
 };
 const Stack = createNativeStackNavigator<ParentStackParamList>();
 export default function ParentNavigator() {
   return (
     <Stack.Navigator initialRouteName="ParentWorkspace">
+      <Stack.Screen
+        name="ParentChat"
+        component={ChatWorkspaceScreen}
+        options={{ title: 'Messages' }}
+      />
       <Stack.Screen
         name="ParentNotifications"
         component={NotificationInboxScreen}
