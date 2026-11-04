@@ -2,6 +2,12 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+// These public settings affect JS output even when no source file changes.
+tasks.withType(com.facebook.react.tasks.BundleHermesCTask).configureEach {
+    inputs.property("schoolAppDevApiOrigin", providers.environmentVariable("SCHOOL_APP_DEV_API_ORIGIN").orElse(""))
+    inputs.property("schoolAppReleaseApiOrigin", providers.environmentVariable("SCHOOL_APP_RELEASE_API_ORIGIN").orElse(""))
+}
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
