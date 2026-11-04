@@ -12,9 +12,18 @@ const ref = (name: string) => ({
 });
 const history = new Schema(
   {
-    action: { type: String, enum: ['draft_created'], required: true },
+    action: {
+      type: String,
+      enum: ['draft_created', 'draft_edited'],
+      required: true,
+    },
     actorId: ref('User'),
-    revision: { type: Number, required: true, enum: [0] },
+    revision: {
+      type: Number,
+      required: true,
+      min: 0,
+      validate: Number.isSafeInteger,
+    },
     at: { type: Date, required: true, immutable: true },
   },
   { _id: false, strict: 'throw' },
@@ -39,7 +48,13 @@ const schema = new Schema(
       maxlength: 500,
       select: false,
     },
-    revision: { type: Number, required: true, default: 0, enum: [0] },
+    revision: {
+      type: Number,
+      required: true,
+      default: 0,
+      min: 0,
+      validate: Number.isSafeInteger,
+    },
     state: {
       type: String,
       enum: PARENT_LEAVE_STATES,
@@ -74,7 +89,7 @@ const schema = new Schema(
       match: /^[a-f0-9]{64}$/,
       select: false,
     },
-    history: { type: [history], required: true, immutable: true },
+    history: { type: [history], required: true },
   },
   { timestamps: true, strict: 'throw', optimisticConcurrency: true },
 );
@@ -98,16 +113,21 @@ schema.pre('validate', function () {
   } catch {
     this.invalidate('startDate', 'Invalid leave date range');
   }
-  // G1 has no executable transition writer. Future slices must replace this
+  // Draft editing grants no lifecycle transition. Future slices must replace this
   // guard only alongside atomic linked approval/history/domain integration.
   if (this.state !== 'draft' || this.approvalRequestId != null)
-    this.invalidate('state', 'Only unlinked drafts can be persisted in G1');
+    this.invalidate('state', 'Only unlinked drafts can be persisted');
   if (
-    this.history.length !== 1 ||
-    String(this.history[0]?.actorId) !== String(this.requesterId) ||
-    this.history[0]?.revision !== 0 ||
-    !this.history[0]?.at ||
-    this.history[0].at > new Date()
+    this.history.length !== this.revision + 1 ||
+    this.history.some(
+      (entry, index) =>
+        String(entry.actorId) !== String(this.requesterId) ||
+        entry.revision !== index ||
+        entry.action !== (index === 0 ? 'draft_created' : 'draft_edited') ||
+        !entry.at ||
+        entry.at > new Date() ||
+        (index > 0 && entry.at < this.history[index - 1].at),
+    )
   )
     this.invalidate('history', 'Draft creation provenance is required');
 });
@@ -115,3 +135,45 @@ schema.pre('validate', function () {
 // select:false is query hygiene, not authorization. Public callers must use the
 // explicit service DTO; native driver writes/reads bypass Mongoose validators.
 export const ParentLeaveApplication = model('ParentLeaveApplication', schema);
+
+const editOperation = new Schema(
+  {
+    requesterId: ref('User'),
+    branchId: ref('Branch'),
+    studentId: ref('Student'),
+    applicationId: ref('ParentLeaveApplication'),
+    clientOperationId: {
+      type: String,
+      required: true,
+      immutable: true,
+      maxlength: 120,
+    },
+    fingerprint: {
+      type: String,
+      required: true,
+      immutable: true,
+      match: /^[a-f0-9]{64}$/,
+      select: false,
+    },
+    resultRevision: {
+      type: Number,
+      required: true,
+      immutable: true,
+      min: 1,
+      validate: Number.isSafeInteger,
+    },
+  },
+  { timestamps: { createdAt: true, updatedAt: false }, strict: 'throw' },
+);
+editOperation.index(
+  { requesterId: 1, clientOperationId: 1 },
+  { unique: true, name: 'parent_leave_edit_owner_operation' },
+);
+export const ParentLeaveEditOperation = model(
+  'ParentLeaveEditOperation',
+  editOperation,
+);
+export async function ensureParentLeaveApplicationIndexes() {
+  await ParentLeaveApplication.createIndexes();
+  await ParentLeaveEditOperation.createIndexes();
+}

@@ -1,4 +1,5 @@
 import { Router, type Response } from 'express';
+import parentLeaveDraftRoutes from './parent-leave-draft.routes';
 import {
   authenticateToken,
   type AuthenticatedRequest,
@@ -62,6 +63,7 @@ router.use((_req, res, next) => {
   next();
 });
 router.use(authenticateToken, requireRole('parent'));
+router.use('/children/:studentId/leave-applications', parentLeaveDraftRoutes);
 router.get(
   '/',
   parentRead(async request => {

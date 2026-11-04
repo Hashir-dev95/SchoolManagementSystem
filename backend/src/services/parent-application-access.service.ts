@@ -172,9 +172,9 @@ export async function withParentApplicationWriteAuthority<T>(
 }
 
 /**
- * Internal G1 persistence exercise: creates unlinked drafts only, no routes.
+ * Canonical unlinked draft creation; the G2a adapter supplies explicit DTOs.
  * The draft itself is the immutable create-operation receipt. Editing or submit
- * will need separate operation receipts; never recompute this fingerprint from
+ * use separate operation receipts; never recompute this fingerprint from
  * subsequently edited content. Overlapping drafts do not reserve leave dates.
  */
 export async function createParentLeaveDraft(

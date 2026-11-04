@@ -28,6 +28,7 @@ import SchoolNotice from './models/schoolNotice';
 import {ensureTeacherAccountIndex} from './services/teacher-provisioning.service';
 import {ensureAssignmentAdminIndexes} from './services/teacher-assignment-admin.service';
 import {ensureChatIndexes} from './models/chat';
+import {ensureParentLeaveApplicationIndexes} from './models/parentLeaveApplication';
 
 const PORT = process.env.PORT || 5000;
 
@@ -36,6 +37,7 @@ const startServer = async (): Promise<void> => {
   await ensureFinanceIndexes();
   await ensureAcademicSetupIndexes();
   await ensureStaffSelfServiceIndexes();
+  await ensureParentLeaveApplicationIndexes();
   await ensureLiveLessonIndexes();
   let classroomMaintenance = false;
   const classroomTimer = setInterval(() => {

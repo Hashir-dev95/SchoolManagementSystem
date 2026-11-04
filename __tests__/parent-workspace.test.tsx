@@ -167,7 +167,7 @@ test('canonical Parent routing uses one existing root NavigationContainer', asyn
     tree.root
       .findAll(node => String(node.type) === 'StackScreen')
       .map(node => node.props.name),
-  ).toEqual(['ParentChat', 'ParentNotifications', 'ParentWorkspace']);
+  ).toEqual(['ParentLeaveApplications', 'ParentChat', 'ParentNotifications', 'ParentWorkspace']);
 });
 test('Parent notifications opens account inbox independently of verified child selection', async () => {
   service.children.mockResolvedValue({ items: [] });

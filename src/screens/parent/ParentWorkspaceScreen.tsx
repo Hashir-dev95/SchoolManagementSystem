@@ -222,6 +222,7 @@ function Workspace({ token }: { token: string }) {
         subtitle="Child access is verified by your school on every request."
       />
       <View style={styles.actions}>
+        <Button title="Leave applications" variant="secondary" onPress={() => navigation.navigate('ParentLeaveApplications')} />
         <Button
           title="Messages"
           variant="secondary"
