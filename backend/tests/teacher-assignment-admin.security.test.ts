@@ -1,4 +1,4 @@
-import {seedCurriculumFixtures} from './helpers/curriculum-fixtures';
+import { seedCurriculumFixtures } from './helpers/curriculum-fixtures';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import type { Server } from 'node:http';
@@ -24,7 +24,7 @@ import {
   ensureTimetableIndexes,
 } from '../src/models/timetable';
 import { ensureAttendanceIndexes } from '../src/models/periodAttendance';
-import {ensureAssignmentAdminIndexes} from '../src/services/teacher-assignment-admin.service';
+import { ensureAssignmentAdminIndexes } from '../src/services/teacher-assignment-admin.service';
 
 // Owned ephemeral data only; never load dotenv or the development DB URI.
 let db: MongoMemoryReplSet, server: Server, base: string;
