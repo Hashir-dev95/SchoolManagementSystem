@@ -193,7 +193,10 @@ function Inbox({
       if (!current.deepLink || !openReference?.(current)) setUnavailable(true);
     } catch (failure) {
       if (request === generation.current) {
-        if (failure instanceof ApiError && [401, 403].includes(failure.status))
+        if (
+          failure instanceof ApiError &&
+          [401, 403, 404].includes(failure.status)
+        )
           setData(null);
         setError(failureMessage(failure));
       }

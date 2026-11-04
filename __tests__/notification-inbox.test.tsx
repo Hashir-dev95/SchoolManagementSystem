@@ -412,6 +412,142 @@ test('old detail response cannot navigate after token switch', async () => {
   );
   expect(navigate).not.toHaveBeenCalled();
 });
+test.each([401, 403, 404])(
+  'current owned-detail %s conceals protected summaries without navigating',
+  async status => {
+    const linked: InboxNotification = {
+      ...item,
+      deepLink: {
+        type: 'chat_conversation',
+        targetId: 'abcdef0123456789abcdef01',
+      },
+    };
+    service.list.mockResolvedValue(page({ items: [linked] }));
+    service.get.mockRejectedValue(new ApiError(status, 'Private denial detail'));
+    const tree = await mount();
+    expect(contents(tree)).toContain(item.title);
+    expect(contents(tree)).toContain(item.body);
+
+    await press(tree, `Open ${item.title}`);
+
+    expect(contents(tree)).not.toContain(item.title);
+    expect(contents(tree)).not.toContain(item.body);
+    expect(contents(tree)).not.toContain('Private denial detail');
+    expect(
+      tree.root.findAllByType(Button).some(node =>
+        [`Open ${item.title}`, `Mark ${item.title} read`].includes(
+          node.props.title,
+        ),
+      ),
+    ).toBe(false);
+    expect(service.get).toHaveBeenCalledWith('token1', item.notificationId);
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(service.markRead).not.toHaveBeenCalled();
+  },
+);
+
+for (const status of [401, 403, 404]) {
+  test.each(['account', 'token', 'role', 'Branch'] as const)(
+    `late owned-detail ${status} cannot clear the inbox after %s changes`,
+    async change => {
+      service.list.mockResolvedValueOnce(
+        page({
+          items: [
+            {
+              ...item,
+              deepLink: {
+                type: 'chat_conversation',
+                targetId: 'abcdef0123456789abcdef01',
+              },
+            },
+          ],
+        }),
+      );
+      const pending = deferred<InboxNotification>();
+      service.get.mockReturnValueOnce(pending.promise);
+      const tree = await mount();
+      await act(async () => {
+        tree.root
+          .findAllByType(Button)
+          .find(node => node.props.title === `Open ${item.title}`)!
+          .props.onPress();
+      });
+      if (change === 'account') mockUser = { ...mockUser!, id: 'other-user' };
+      if (change === 'token') mockToken = 'new-token';
+      if (change === 'role') mockUser = { ...mockUser!, role: 'parent' };
+      if (change === 'Branch')
+        mockUser = { ...mockUser!, branchId: 'other-branch' };
+      const current = {
+        ...item,
+        notificationId: 'current-notification',
+        title: 'Current account update',
+        body: 'Current authority protected summary.',
+      };
+      service.list.mockResolvedValue(page({ items: [current], unread: 3 }));
+      await act(async () => tree.update(<NotificationInboxScreen />));
+      expect(contents(tree)).toContain(current.title);
+      expect(contents(tree)).toContain(current.body);
+      expect(contents(tree)).not.toContain(item.body);
+
+      await act(async () =>
+        pending.reject(new ApiError(status, 'Obsolete authority denial')),
+      );
+
+      expect(contents(tree)).toContain(current.title);
+      expect(contents(tree)).toContain(current.body);
+      expect(contents(tree)).toContain('3 unread');
+      expect(contents(tree)).not.toContain('Obsolete authority denial');
+      expect(contents(tree)).not.toContain('Session unavailable');
+      expect(contents(tree)).not.toContain('Forbidden');
+      expect(contents(tree)).not.toContain(
+        'This notification or linked content is unavailable.',
+      );
+      expect(service.list).toHaveBeenCalledTimes(2);
+      expect(service.get).toHaveBeenCalledTimes(1);
+      expect(mockNavigate).not.toHaveBeenCalled();
+    },
+  );
+}
+
+test('transient owned-detail network failure preserves summaries and retries fresh navigation', async () => {
+  const linked: InboxNotification = {
+    ...item,
+    deepLink: {
+      type: 'chat_conversation',
+      targetId: 'abcdef0123456789abcdef01',
+    },
+  };
+  service.list.mockResolvedValue(page({ items: [linked] }));
+  service.get
+    .mockRejectedValueOnce(new Error('Temporary connection failure'))
+    .mockResolvedValueOnce(linked);
+  const tree = await mount();
+
+  await press(tree, `Open ${item.title}`);
+
+  expect(contents(tree)).toContain(item.title);
+  expect(contents(tree)).toContain(item.body);
+  expect(contents(tree)).toContain('Temporary connection failure');
+  expect(contents(tree)).not.toContain('Forbidden');
+  expect(contents(tree)).not.toContain(
+    'This notification or linked content is unavailable.',
+  );
+  expect(mockNavigate).not.toHaveBeenCalled();
+
+  await press(tree, `Open ${item.title}`);
+
+  expect(mockNavigate).toHaveBeenCalledTimes(1);
+  expect(mockNavigate).toHaveBeenCalledWith('StudentChat', {
+    conversationId: linked.deepLink!.targetId,
+  });
+  expect(service.get.mock.calls).toEqual([
+    ['token1', item.notificationId],
+    ['token1', item.notificationId],
+  ]);
+  expect(contents(tree)).not.toContain('Temporary connection failure');
+  expect(service.markRead).not.toHaveBeenCalled();
+});
+
 test('late mark-read result cannot refresh or alter a new account inbox', async () => {
   const pending = deferred<InboxNotification>();
   service.markRead.mockReturnValue(pending.promise);
