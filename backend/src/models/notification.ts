@@ -19,6 +19,7 @@ export const NOTIFICATION_RECIPIENT_ROLES = [
   'finance',
 ] as const;
 export const NOTIFICATION_SOURCE_TYPES = [
+  'chat_message',
   'school_notice',
   'attendance_session',
   'timetable_occurrence',
@@ -33,6 +34,7 @@ export const NOTIFICATION_SOURCE_TYPES = [
   'system',
 ] as const;
 export const NOTIFICATION_DEEP_LINKS = [
+  'chat_conversation',
   'inbox_notice',
   'teacher_timetable',
   'attendance_period',

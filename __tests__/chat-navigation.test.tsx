@@ -6,6 +6,8 @@ import StudentWorkspaceScreen from '../src/screens/student/StudentWorkspaceScree
 import ParentWorkspaceScreen from '../src/screens/parent/ParentWorkspaceScreen';
 import ChatWorkspaceScreen from '../src/screens/chat/ChatWorkspaceScreen';
 import type { UserRole } from '../src/constants/roles';
+import { chatService } from '../src/services/chat/chatService';
+import { ApiError } from '../src/services/api/apiClient';
 
 let mockRole: UserRole = 'teacher';
 const mockNavigate = jest.fn(),
@@ -57,6 +59,10 @@ jest.mock('../src/services/parent/parentService', () => ({
     me: jest.fn().mockResolvedValue({ fullName: 'Parent' }),
     children: jest.fn().mockResolvedValue({ items: [] }),
   },
+}));
+jest.mock('../src/services/chat/chatService', () => ({
+  chatOperationId: () => 'chat_00000000000000000000000000000001',
+  chatService: { detail: jest.fn(), history: jest.fn(), list: jest.fn() },
 }));
 let tree: Renderer.ReactTestRenderer | undefined;
 async function mount(element: React.ReactElement) {
@@ -133,3 +139,21 @@ test('Parent with no selected or verified child still opens account Messages', a
   await press('Messages');
   expect(mockNavigate).toHaveBeenCalledWith('ParentChat');
 });
+test.each(['teacher', 'student', 'parent'] as const)(
+  '%s existing chat screen consumes a notification route target through F4 detail, not route authority',
+  async role => {
+    mockRole = role;
+    const targetId = 'abcdef0123456789abcdef01';
+    jest
+      .mocked(chatService.detail)
+      .mockRejectedValueOnce(new ApiError(403, 'revoked relationship'));
+    await mount(
+      <ChatWorkspaceScreen route={{ params: { conversationId: targetId } }} />,
+    );
+    expect(chatService.detail).toHaveBeenCalledWith('session', targetId);
+    expect(chatService.history).not.toHaveBeenCalled();
+    expect(JSON.stringify(tree!.toJSON())).toContain(
+      'This conversation is unavailable',
+    );
+  },
+);

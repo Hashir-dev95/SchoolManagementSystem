@@ -50,7 +50,7 @@ export type TeacherStackParamList = {
   TeacherCatchUp: { catchUpId: string };
   TeacherMarks: TeacherTupleIds;
   TeacherNotifications: undefined;
-  TeacherChat: undefined;
+  TeacherChat: { conversationId?: string } | undefined;
   TeacherRoster: TeacherTupleIds;
   TeacherTimetable: undefined;
   TeacherPeriod: { periodId: string; date: string };

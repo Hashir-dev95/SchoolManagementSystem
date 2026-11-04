@@ -688,3 +688,117 @@ test('controller refuses fabricated conversations/recipients even when called ou
   });
   expect(transport.create).not.toHaveBeenCalled();
 });
+
+test('notification target outside the inbox page revalidates detail before history, without fabricated conversation data', async () => {
+  const pending = deferred<ChatConversation>();
+  transport.detail.mockReturnValueOnce(pending.promise);
+  await mount(
+    <ChatWorkspace
+      conversationId="outside-page"
+      transport={transport}
+      operationId={operationId}
+    />,
+  );
+  expect(transport.detail).toHaveBeenCalledWith('token-one', 'outside-page');
+  expect(transport.list).not.toHaveBeenCalled();
+  expect(transport.history).not.toHaveBeenCalled();
+  expect(button('Send message').props.disabled).toBe(true);
+  await act(async () => pending.resolve(conversation('outside-page')));
+  expect(transport.history).toHaveBeenCalledWith(
+    'token-one',
+    'outside-page',
+    undefined,
+  );
+  expect(text()).toContain('Private history-outside-page');
+});
+test('notification target detail network failure retries the exact target without relying on inbox membership', async () => {
+  transport.detail.mockRejectedValueOnce(new Error('target offline'));
+  await mount(
+    <ChatWorkspace
+      conversationId="outside-page"
+      transport={transport}
+      operationId={operationId}
+    />,
+  );
+  expect(text()).toContain('target offline');
+  expect(transport.history).not.toHaveBeenCalled();
+  await press('Refresh conversation');
+  expect(transport.detail.mock.calls).toEqual([
+    ['token-one', 'outside-page'],
+    ['token-one', 'outside-page'],
+  ]);
+  expect(text()).toContain('Private history-outside-page');
+});
+test.each([403, 404])(
+  'revoked notification target %s never exposes prior protected chat or enables send',
+  async status => {
+    await mount();
+    await press('Open Teacher A');
+    await draft('private cached draft');
+    transport.detail.mockRejectedValueOnce(
+      new ApiError(status, 'revoked after send'),
+    );
+    await act(async () =>
+      tree!.update(
+        <ChatWorkspace
+          conversationId="revoked"
+          transport={transport}
+          operationId={operationId}
+        />,
+      ),
+    );
+    expect(text()).not.toContain('Private history-A');
+    expect(text()).not.toContain('private cached draft');
+    expect(button('Send message').props.disabled).toBe(true);
+    expect(transport.history).toHaveBeenCalledTimes(1);
+  },
+);
+test('target parameter change fences late detail and hides old outbox until fresh authority succeeds', async () => {
+  const pending = deferred<ChatConversation>();
+  transport.detail.mockReturnValueOnce(pending.promise);
+  await mount(
+    <ChatWorkspace
+      conversationId="A"
+      transport={transport}
+      operationId={operationId}
+    />,
+  );
+  await act(async () =>
+    tree!.update(
+      <ChatWorkspace
+        conversationId="B"
+        transport={transport}
+        operationId={operationId}
+      />,
+    ),
+  );
+  await act(async () => pending.resolve(a));
+  expect(text()).toContain('Private history-B');
+  expect(text()).not.toContain('Private history-A');
+  expect(transport.history.mock.calls.map(call => call[1])).toEqual(['B']);
+});
+test.each(['account', 'token', 'role', 'Branch'] as const)(
+  'notification target response after %s switch cannot expose old data',
+  async change => {
+    const pending = deferred<ChatHistory>();
+    transport.history.mockReturnValueOnce(pending.promise);
+    const targetView = () => (
+      <ChatWorkspace
+        conversationId="A"
+        transport={transport}
+        operationId={operationId}
+      />
+    );
+    await mount(targetView());
+    if (change === 'account') mockUser = { ...mockUser!, id: 'other-account' };
+    if (change === 'token') mockToken = 'new-token';
+    if (change === 'role') mockUser = { ...mockUser!, role: 'parent' };
+    if (change === 'Branch')
+      mockUser = { ...mockUser!, branchId: 'other-Branch' };
+    transport.history.mockResolvedValueOnce(history([]));
+    await act(async () => tree!.update(targetView()));
+    await act(async () => pending.resolve(history([row('old-target-secret')])));
+    expect(text()).not.toContain('old-target-secret');
+    expect(mockLogout).not.toHaveBeenCalled();
+  },
+);

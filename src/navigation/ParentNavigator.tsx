@@ -6,7 +6,7 @@ import ChatWorkspaceScreen from '../screens/chat/ChatWorkspaceScreen';
 export type ParentStackParamList = {
   ParentWorkspace: undefined;
   ParentNotifications: undefined;
-  ParentChat: undefined;
+  ParentChat: { conversationId?: string } | undefined;
 };
 const Stack = createNativeStackNavigator<ParentStackParamList>();
 export default function ParentNavigator() {

@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { ApiError } from '../../services/api/apiClient';
 import {
@@ -35,13 +35,37 @@ const failureMessage = (error: unknown) =>
     : 'Could not load notifications. Please retry.';
 
 export default function NotificationInboxScreen() {
+  const { user } = useAuth();
+  const navigation = useNavigation<{
+    navigate: (
+      route: 'StudentChat' | 'ParentChat',
+      params: { conversationId: string },
+    ) => void;
+  }>();
+  const openReference = (item: InboxNotification) => {
+    if (
+      item.deepLink?.type !== 'chat_conversation' ||
+      !/^[a-fA-F0-9]{24}$/.test(item.deepLink.targetId)
+    )
+      return false;
+    if (user?.role === 'student')
+      navigation.navigate('StudentChat', {
+        conversationId: item.deepLink.targetId,
+      });
+    else if (user?.role === 'parent')
+      navigation.navigate('ParentChat', {
+        conversationId: item.deepLink.targetId,
+      });
+    else return false;
+    return true;
+  };
   return (
     <DashboardShell>
       <ScreenHeading
         title="Notifications"
         subtitle="Your school account inbox"
       />
-      <NotificationInbox />
+      <NotificationInbox openReference={openReference} />
     </DashboardShell>
   );
 }

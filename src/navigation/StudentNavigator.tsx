@@ -11,7 +11,7 @@ import ChatWorkspaceScreen from '../screens/chat/ChatWorkspaceScreen';
 export type StudentStackParamList = {
   StudentWorkspace: undefined;
   StudentNotifications: undefined;
-  StudentChat: undefined;
+  StudentChat: { conversationId?: string } | undefined;
   StudentLiveLessons: undefined;
   StudentLiveRoom: { sessionId: string };
 };

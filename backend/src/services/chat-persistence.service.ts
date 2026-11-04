@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { createChatMessageNotification } from './notification.service';
 import type { ClientSession } from 'mongoose';
 import { ChatConversation, ChatMessage } from '../models/chat';
 import {
@@ -283,6 +284,12 @@ export async function sendChatMessage(
           },
         ],
         { session },
+      );
+      await createChatMessageNotification(
+        session,
+        identity,
+        String(message!._id),
+        authority,
       );
       return messageDTO(message!, authority.senderUserId);
     },

@@ -19,10 +19,12 @@ import type { User } from '../src/types/auth';
 
 let mockUser: User | null;
 let mockToken: string | null;
+const mockNavigate = jest.fn();
 jest.mock('../src/context/AuthContext', () => ({
   useAuth: () => ({ user: mockUser, accessToken: mockToken }),
 }));
 jest.mock('@react-navigation/native', () => ({
+  useNavigation: () => ({ navigate: mockNavigate }),
   useFocusEffect: (effect: () => void | (() => void)) => {
     const { useEffect } = jest.requireActual('react');
     useEffect(effect, [effect]);
@@ -431,3 +433,106 @@ test('late mark-read result cannot refresh or alter a new account inbox', async 
   expect(contents(tree)).toContain('Parent own inbox');
   expect(contents(tree)).toContain('3 unread');
 });
+
+test.each([
+  ['student', 'StudentChat'],
+  ['parent', 'ParentChat'],
+] as const)(
+  '%s opens only a fresh owned chat reference through its existing role route',
+  async (role, route) => {
+    mockUser = { ...mockUser!, role };
+    const targetId = 'abcdef0123456789abcdef01';
+    service.list.mockResolvedValue(
+      page({
+        items: [{ ...item, deepLink: { type: 'chat_conversation', targetId } }],
+      }),
+    );
+    service.get.mockResolvedValue({
+      ...item,
+      deepLink: { type: 'chat_conversation', targetId },
+    });
+    const tree = await mount();
+    await press(tree, 'Open School update');
+    expect(service.get).toHaveBeenCalledWith('token1', 'own1');
+    expect(mockNavigate).toHaveBeenCalledWith(route, {
+      conversationId: targetId,
+    });
+    expect(service.markRead).not.toHaveBeenCalled();
+  },
+);
+test('malformed chat targets and other roles do not dispatch arbitrary navigation', async () => {
+  service.list.mockResolvedValue(
+    page({
+      items: [
+        {
+          ...item,
+          deepLink: {
+            type: 'chat_conversation',
+            targetId: 'abcdef0123456789abcdef01',
+          },
+        },
+      ],
+    }),
+  );
+  service.get.mockResolvedValue({
+    ...item,
+    deepLink: { type: 'chat_conversation', targetId: 'https://foreign' },
+  });
+  const tree = await mount();
+  await press(tree, 'Open School update');
+  expect(mockNavigate).not.toHaveBeenCalled();
+  mockUser = { ...mockUser!, role: 'finance' };
+  await act(async () => tree.update(<NotificationInboxScreen />));
+  service.get.mockResolvedValue({
+    ...item,
+    deepLink: {
+      type: 'chat_conversation',
+      targetId: 'abcdef0123456789abcdef01',
+    },
+  });
+  await press(tree, 'Open School update');
+  expect(mockNavigate).not.toHaveBeenCalled();
+});
+test.each(['account', 'token', 'role', 'Branch'] as const)(
+  'pending owned chat detail cannot navigate after %s changes',
+  async change => {
+    service.list.mockResolvedValue(
+      page({
+        items: [
+          {
+            ...item,
+            deepLink: {
+              type: 'chat_conversation',
+              targetId: 'abcdef0123456789abcdef01',
+            },
+          },
+        ],
+      }),
+    );
+    const pending = deferred<InboxNotification>();
+    service.get.mockReturnValueOnce(pending.promise);
+    const tree = await mount();
+    await act(async () => {
+      tree.root
+        .findAllByType(Button)
+        .find(node => node.props.title === 'Open School update')!
+        .props.onPress();
+    });
+    if (change === 'account') mockUser = { ...mockUser!, id: 'other-user' };
+    if (change === 'token') mockToken = 'new-token';
+    if (change === 'role') mockUser = { ...mockUser!, role: 'parent' };
+    if (change === 'Branch')
+      mockUser = { ...mockUser!, branchId: 'other-branch' };
+    await act(async () => tree.update(<NotificationInboxScreen />));
+    await act(async () =>
+      pending.resolve({
+        ...item,
+        deepLink: {
+          type: 'chat_conversation',
+          targetId: 'abcdef0123456789abcdef01',
+        },
+      }),
+    );
+    expect(mockNavigate).not.toHaveBeenCalled();
+  },
+);

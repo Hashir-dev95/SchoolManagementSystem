@@ -18,16 +18,22 @@ import { colors, typography } from '../../theme/hiraDashboard';
 import type { ChatTransport } from '../../services/chat/chatService';
 import { useChatWorkspace } from './useChatWorkspace';
 
-export default function ChatWorkspaceScreen() {
-  return <ChatWorkspace />;
+export default function ChatWorkspaceScreen({
+  route,
+}: {
+  route?: { params?: { conversationId?: string } };
+}) {
+  return <ChatWorkspace conversationId={route?.params?.conversationId} />;
 }
 
 export function ChatWorkspace({
   transport,
   operationId,
+  conversationId,
 }: {
   transport?: ChatTransport;
   operationId?: () => string;
+  conversationId?: string;
 }) {
   const { user, accessToken, logout } = useAuth();
   const identity = JSON.stringify([
@@ -35,6 +41,7 @@ export function ChatWorkspace({
     user?.role,
     user?.branchId,
     accessToken,
+    conversationId,
   ]);
   const latest = useRef(identity);
   latest.current = identity;
@@ -53,6 +60,7 @@ export function ChatWorkspace({
       logout={logout}
       transport={transport}
       operationId={operationId}
+      initialConversationId={conversationId}
     />
   );
 }

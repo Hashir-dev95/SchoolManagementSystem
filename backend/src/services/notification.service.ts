@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { ClientSession } from 'mongoose';
 import { Types } from 'mongoose';
+import { ChatConversation, ChatMessage } from '../models/chat';
+import { authorizeChatRecipient } from './chat-authority.service';
 import {
   Notification,
   NotificationReadOperation,
@@ -51,6 +53,100 @@ const missing = () =>
     404,
     'Notification is unavailable or outside your scope',
   );
+
+/** F4-only producer: join the caller's transaction; never deliver on replay/GET.
+ * F3 remains the relationship authority. The outer writer holds its document
+ * fences and repeats its final relationship/JWT checks after this insertion.
+ */
+export async function createChatMessageNotification(
+  session: ClientSession,
+  identity: JwtPayload | undefined,
+  messageId: string,
+  authority: Awaited<ReturnType<typeof authorizeChatRecipient>>,
+) {
+  if (!session.inTransaction()) throw denied();
+  const message = await ChatMessage.findById(
+    objectIdField(messageId, 'message'),
+  )
+    .session(session)
+    .lean();
+  if (
+    !message ||
+    String(message.senderUserId) !== identity?.userId ||
+    String(message.senderUserId) !== authority.senderUserId ||
+    String(message.recipientUserId) !== authority.recipient.userId ||
+    String(message.branchId) !== authority.branchId
+  )
+    throw denied();
+  const current = await authorizeChatRecipient(
+    identity,
+    String(message.recipientUserId),
+  );
+  if (
+    current.senderUserId !== authority.senderUserId ||
+    current.branchId !== authority.branchId ||
+    current.recipient.userId !== authority.recipient.userId ||
+    current.recipient.role !== authority.recipient.role ||
+    JSON.stringify(current.relationship) !==
+      JSON.stringify(authority.relationship)
+  )
+    throw denied();
+  const conversation = await ChatConversation.findOne({
+    _id: message.conversationId,
+    branchId: message.branchId,
+    participantLow: { $in: [message.senderUserId, message.recipientUserId] },
+    participantHigh: { $in: [message.senderUserId, message.recipientUserId] },
+  })
+    .session(session)
+    .lean();
+  if (!conversation) throw denied();
+  const key = {
+    recipientUserId: message.recipientUserId,
+    sourceType: 'chat_message' as const,
+    sourceId: message._id,
+    sourceRevision: 1,
+    eventType: 'chat_message_created',
+  };
+  const content = {
+    ...key,
+    branchId: message.branchId,
+    recipientRole: current.recipient.role,
+    category: 'communication' as const,
+    title: 'New message',
+    body: 'Open Messages to view your conversation.',
+    priority: 'normal' as const,
+    availableAt: message.createdAt,
+    deepLinkType: 'chat_conversation' as const,
+    deepLinkTargetId: message.conversationId,
+  };
+  const fingerprint = hash(content);
+  const prior = await Notification.findOne(key)
+    .select('+fingerprint')
+    .session(session);
+  if (prior) {
+    if (
+      prior.fingerprint !== fingerprint ||
+      String(prior.branchId) !== current.branchId ||
+      prior.recipientRole !== current.recipient.role
+    )
+      throw new RequestContractError(
+        409,
+        'Notification event identity was reused for different content',
+      );
+    return prior;
+  }
+  const [row] = await Notification.create(
+    [
+      {
+        ...content,
+        fingerprint,
+        operationId: `${key.eventType}:${message._id}:1:${message.recipientUserId}`,
+      },
+    ],
+    { session },
+  );
+  return row!;
+}
 type Role = (typeof NOTIFICATION_RECIPIENT_ROLES)[number];
 export interface NotificationDelivery {
   recipientUserId: string;

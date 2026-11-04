@@ -81,6 +81,7 @@ function workspace(
   transport: ChatTransport,
   operationId: () => string,
   emit: (state: WorkspaceState) => void,
+  initialConversationId?: string,
 ) {
   let state = initial(),
     active = false,
@@ -90,6 +91,8 @@ function workspace(
   const operations = new Map<string, PendingSend>();
   const reads = new Map<string, 'pending' | 'done' | 'failed'>();
   const confirmedReads = new Map<string, string>();
+  let selectedId: string | undefined;
+  let initialTarget = initialConversationId;
   const update = (patch: Partial<WorkspaceState>) => {
     state = { ...state, ...patch };
     emit(state);
@@ -105,7 +108,7 @@ function workspace(
     usable() &&
     t.epoch === epoch &&
     requests.get(t.channel) === t.request &&
-    (!t.conversationId || state.selected?.conversationId === t.conversationId);
+    (!t.conversationId || selectedId === t.conversationId);
   const invalidate = () => {
     epoch += 1;
     requests.clear();
@@ -127,6 +130,7 @@ function workspace(
     if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
       const id = t.conversationId;
       invalidate();
+      selectedId = undefined;
       if (id) operations.delete(id);
       else operations.clear();
       reads.clear();
@@ -234,17 +238,19 @@ function workspace(
       if (valid(t)) update({ loading: false });
     }
   };
-  const open = async (row: ChatConversation) => {
+  const open = async (target: ChatConversation | string) => {
     if (!usable()) return;
     invalidate();
+    const id = typeof target === 'string' ? target : target.conversationId;
+    selectedId = id;
     update({
       mode: 'conversation',
-      selected: row,
+      selected: typeof target === 'string' ? null : target,
       available: false,
       messages: [],
       nextBefore: null,
       draft: '',
-      outbox: operations.get(row.conversationId) ?? null,
+      outbox: null,
       loading: true,
       error: null,
       readBusy: false,
@@ -252,14 +258,19 @@ function workspace(
       creating: false,
       listLoading: false,
     });
-    const t = ticket('detail', row.conversationId);
+    const t = ticket('detail', id);
     try {
-      const detail = await transport.detail(token, row.conversationId);
+      const detail = await transport.detail(token, id);
       if (!valid(t)) return;
-      update({ selected: detail, available: true, loading: false });
+      update({
+        selected: detail,
+        available: true,
+        loading: false,
+        outbox: operations.get(id) ?? null,
+      });
       // History does not expose operation IDs. Reconcile an unknown send outcome
       // through the exact original send before mixing it with refreshed history.
-      if (!operations.has(row.conversationId)) await history();
+      if (!operations.has(id)) await history();
     } catch (error) {
       failure(t, error, 'error');
     } finally {
@@ -375,6 +386,7 @@ function workspace(
   const back = async (contacts = false) => {
     if (!usable()) return;
     invalidate();
+    selectedId = undefined;
     update({
       mode: contacts ? 'recipients' : 'inbox',
       selected: null,
@@ -396,7 +408,11 @@ function workspace(
     focus: () => {
       active = true;
       invalidate();
-      if (state.selected) open(state.selected);
+      if (initialTarget !== undefined) {
+        const target = initialTarget;
+        initialTarget = undefined;
+        open(target);
+      } else if (selectedId) open(selectedId);
       else if (state.mode === 'recipients') recipients();
       else list();
       return () => {
@@ -432,8 +448,8 @@ function workspace(
     },
     refresh: () =>
       state.mode === 'conversation'
-        ? state.selected
-          ? open(state.selected)
+        ? selectedId
+          ? open(selectedId)
           : back()
         : state.mode === 'recipients'
         ? recipients()
@@ -458,6 +474,7 @@ export function useChatWorkspace(options: {
   logout: () => Promise<void>;
   transport?: ChatTransport;
   operationId?: () => string;
+  initialConversationId?: string;
 }) {
   const [state, setState] = useState(initial);
   const controller = useRef<ReturnType<typeof workspace> | null>(null);
@@ -470,6 +487,7 @@ export function useChatWorkspace(options: {
       options.transport ?? chatService,
       options.operationId ?? chatOperationId,
       setState,
+      options.initialConversationId,
     );
   const api = controller.current;
   useFocusEffect(useCallback(() => api.focus(), [api]));

@@ -23,10 +23,12 @@ import {
 } from '../src/models/chat';
 import { generateAccessToken } from '../src/services/jwt.service';
 import { registerSession } from '../src/services/session.service';
+import { Notification } from '../src/models/notification';
 
 let teacher: { user: Awaited<ReturnType<typeof put>>; token: string };
 let assignment: InstanceType<typeof TeacherAssignment>;
 before(ensureChatIndexes);
+before(() => Notification.createIndexes());
 beforeEach(async () => {
   const user = await put(User, {
     fullName: 'Assigned Teacher',
@@ -590,6 +592,7 @@ for (const change of [
     );
     assert.equal(await ChatMessage.countDocuments(), 0);
     assert.equal((await ChatConversation.findById(id))!.lastSequence, 0);
+    assert.equal(await Notification.countDocuments({ sourceType: 'chat_message' }), 0);
   });
 }
 
@@ -650,6 +653,7 @@ test('assignment expiry after message insertion rolls back both message and sequ
   assert.equal((await send(id)).status, 403);
   assert.equal(await ChatMessage.countDocuments(), 0);
   assert.equal((await ChatConversation.findById(id))!.lastSequence, 0);
+  assert.equal(await Notification.countDocuments({ sourceType: 'chat_message' }), 0);
 });
 
 test('message insert failure rolls back the server sequence and retry succeeds', async t => {
@@ -752,6 +756,7 @@ test('read state is recipient-owned, idempotent and independent from notificatio
     null,
   );
   assert.equal((await read(id, String(oid()))).status, 404);
+  assert.equal(await Notification.countDocuments({ sourceType: 'chat_message' }), 1);
 });
 
 test('conversation listing pages only authorized own conversations and rejects scope overrides', async () => {

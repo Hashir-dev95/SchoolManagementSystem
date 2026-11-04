@@ -12,6 +12,7 @@ export type NotificationCategory =
   | 'system';
 export type NotificationDeepLink = {
   type:
+    | 'chat_conversation'
     | 'inbox_notice'
     | 'teacher_timetable'
     | 'attendance_period'
