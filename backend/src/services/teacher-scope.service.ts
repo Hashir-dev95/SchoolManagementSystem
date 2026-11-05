@@ -19,8 +19,8 @@ export const currentAcademicActor = async (identity: JwtPayload | undefined, ses
   return actor;
 };
 
-export const requireActiveAcademicBranch = async (branchId: string | undefined) => {
-  if (!branchId || !await Branch.exists({_id: branchId, isActive: true}).read('primary')) {
+export const requireActiveAcademicBranch = async (branchId: string | undefined, session?: ClientSession) => {
+  if (!branchId || !await Branch.exists({_id: branchId, isActive: true}).session(session ?? null).read('primary')) {
     throw new RequestContractError(403, 'Active branch scope is required');
   }
   return branchId;

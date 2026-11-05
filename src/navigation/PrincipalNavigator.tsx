@@ -11,6 +11,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import type { ApprovalRequest } from '../services/principal/principalService';
 import ApprovalDetailScreen from '../screens/principal/ApprovalDetailScreen';
+import PrincipalParentLeaveReviewScreen from '../screens/principal/PrincipalParentLeaveReviewScreen';
 import NoticeDetailScreen from '../screens/principal/NoticeDetailScreen';
 import PrincipalWorkspaceScreen from '../screens/principal/PrincipalWorkspaceScreen';
 import PrincipalTasksScreen from '../screens/principal/PrincipalTasksScreen';
@@ -37,6 +38,7 @@ export type PrincipalStackParamList = {
   AttendanceSession: {periodId:string;date:string;mode?:AttendanceView};
   AttendancePatterns: {from?:string;until?:string;classId?:string;sectionId?:string;subjectId?:string;teacherId?:string} | undefined;
   ApprovalDetail: { request: ApprovalRequest };
+  ParentLeaveReview: { approvalId: string };
   NoticeDetail: { noticeId: string };
   Tasks: undefined;
   TaskDetail: { taskId: string; createdMessage?: string };
@@ -67,6 +69,7 @@ export default function PrincipalNavigator() {
         options={{headerShown:true,title:'Attendance Review'}}
       />
       <Stack.Screen name="ApprovalDetail" component={ApprovalDetailScreen} />
+      <Stack.Screen name="ParentLeaveReview" component={PrincipalParentLeaveReviewScreen} options={{headerShown: true, title: 'Parent leave review'}} />
       <Stack.Screen name="NoticeDetail" component={NoticeDetailScreen} />
       <Stack.Screen name="Tasks" component={PrincipalTasksScreen} />
       <Stack.Screen name="TaskDetail" component={PrincipalTaskDetailScreen} />

@@ -1,4 +1,5 @@
 import User from '../models/user';
+import type { ClientSession } from 'mongoose';
 import Student from '../models/student';
 import Branch from '../models/branch';
 import SchoolClass from '../models/schoolClass';
@@ -37,13 +38,15 @@ export async function resolveStudentSelf(identity: JwtPayload | undefined) {
 export async function resolveStudentReadScope(
   userId: string,
   expectedBranchId: string,
+  session?: ClientSession,
 ) {
-  const branchId = await requireActiveAcademicBranch(expectedBranchId);
+  const branchId = await requireActiveAcademicBranch(expectedBranchId, session);
   const actor = await User.findOne({ role: 'student', isActive: true })
     .where('_id')
     .equals(userId)
     .where('branchId')
     .equals(branchId)
+    .session(session ?? null)
     .read('primary')
     .lean();
   if (!actor) {
@@ -54,6 +57,7 @@ export async function resolveStudentReadScope(
     .equals(actor._id)
     .where('branchId')
     .equals(branchId)
+    .session(session ?? null)
     .read('primary')
     .lean();
   if (!student) {
@@ -66,6 +70,7 @@ export async function resolveStudentReadScope(
     effectiveTo: null,
   })
     .limit(2)
+    .session(session ?? null)
     .read('primary')
     .lean();
   if (enrollments.length !== 1) {
@@ -75,7 +80,7 @@ export async function resolveStudentReadScope(
   if (String(enrollment.branchId) !== branchId) {
     throw studentSelfForbidden();
   }
-  const [branch, schoolClass, section, period, user] = await Promise.all([
+  const reads = [
     Branch.findOne({ _id: branchId, isActive: true })
       .select('name')
       .read('primary')
@@ -116,7 +121,17 @@ export async function resolveStudentReadScope(
       .select('fullName email')
       .read('primary')
       .lean(),
-  ]);
+  ] as const;
+  // MongoDB does not support parallel operations in a transaction.
+  const [branch, schoolClass, section, period, user] = session
+    ? [
+        await reads[0].session(session),
+        await reads[1].session(session),
+        await reads[2].session(session),
+        await reads[3].session(session),
+        await reads[4].session(session),
+      ]
+    : await Promise.all(reads);
   if (!branch || !schoolClass || !section || !period || !user) {
     throw studentSelfForbidden();
   }

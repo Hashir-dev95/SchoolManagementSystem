@@ -6,6 +6,7 @@ import { requirePermission } from '../middleware/permission.middleware';
 import { requireRole } from '../middleware/rbac.middleware';
 import { PERMISSIONS } from '../constants/permissions';
 import { getPrincipalDashboardController } from '../controllers/principal-dashboard.controller';
+import { readParentLeaveReviews } from '../controllers/parent-leave-review.controller';
 import { getSafetyAlertsController, getSafetyAlertDetailController, getSafetyOfficersController } from '../controllers/safety-alert.controller';
 import { processSafetyAlertActionController } from '../controllers/safety-alert.controller';
 import {
@@ -20,6 +21,15 @@ import {
   getTaskAssigneesController,
 } from '../controllers/principal-task.controller';
 const router = Router();
+
+const parentLeaveReviewAccess = [
+  authenticateToken,
+  requireRole('principal'),
+  requirePermission(PERMISSIONS.PRINCIPAL_APPROVALS_VIEW),
+  requireBranchScope,
+];
+router.get('/parent-leave-reviews', ...parentLeaveReviewAccess, readParentLeaveReviews('queue'));
+router.get('/parent-leave-reviews/:approvalId', ...parentLeaveReviewAccess, readParentLeaveReviews('detail'));
 
 router.get(
   '/task-assignees',

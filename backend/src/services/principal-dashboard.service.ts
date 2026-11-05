@@ -18,6 +18,7 @@ import { getBranchFeeSummary } from './fee.service';
 import { getBranchSafetyAlertSummary } from './safety-alert.service';
 import { getBranchSchoolNotices } from './school-notice.service';
 import { getReviewablePendingApprovalRequests } from './approval-request.service';
+import { listParentLeaveReviews } from './parent-leave-review.service';
 
 export interface PrincipalDashboardData {
   branch: {
@@ -53,6 +54,8 @@ export interface PrincipalDashboardData {
 
   safetyAlerts: Awaited<ReturnType<typeof getBranchSafetyAlertSummary>>;
 
+  pendingParentLeaveCount: number;
+
   pendingApprovals: {
     total: number;
     byType: Record<ApprovalType, number>;
@@ -75,6 +78,7 @@ const createEmptyApprovalCounts = (): Record<ApprovalType, number> => ({
 export const getPrincipalDashboard = async (
   branchId: string,
   actorId: string,
+  token: string,
 ): Promise<PrincipalDashboardData> => {
   if (!Types.ObjectId.isValid(branchId)) {
     throw new Error('Invalid branch ID');
@@ -115,6 +119,7 @@ export const getPrincipalDashboard = async (
     totalSections,
     activeSections,
     pendingApprovals,
+    parentLeaveReviews,
     attendanceSummary,
     feeSummary,
     safetyAlerts,
@@ -151,6 +156,7 @@ export const getPrincipalDashboard = async (
     // Dashboard permission does not grant approval visibility. Skip approval
     // reads entirely when view is absent; preserve the all-zero response shape.
     canViewApprovals ? getReviewablePendingApprovalRequests(branchId, actorId) : [],
+    canViewApprovals && branch.isActive ? listParentLeaveReviews({ actorId, branchId, token }) : [],
 
     attendanceSummaryPromise,
     feeSummaryPromise,
@@ -164,6 +170,7 @@ export const getPrincipalDashboard = async (
   for (const request of pendingApprovals) {
     approvalsByType[request.approvalType] += 1;
   }
+  approvalsByType[APPROVAL_TYPES.LEAVE] += parentLeaveReviews.length;
 
   return {
     branch: {
@@ -200,8 +207,10 @@ export const getPrincipalDashboard = async (
 
     notices: schoolNotices,
 
+    pendingParentLeaveCount: parentLeaveReviews.length,
+
     pendingApprovals: {
-      total: pendingApprovals.length,
+      total: pendingApprovals.length + parentLeaveReviews.length,
       byType: approvalsByType,
     },
   };

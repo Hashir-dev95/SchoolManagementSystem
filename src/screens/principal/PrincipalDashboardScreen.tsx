@@ -184,7 +184,7 @@ export default function PrincipalDashboardScreen({
             <ListRow
               icon="✓"
               title="School approvals"
-              subtitle={`${data.pendingApprovals.total} pending requests`}
+              subtitle={`${data.pendingApprovals.total} pending requests${data.pendingParentLeaveCount > 0 ? ` · ${data.pendingParentLeaveCount} parent leave` : ''}`}
               tag="Review"
               last
               onPress={onOpenApprovals}

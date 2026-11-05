@@ -1,4 +1,5 @@
 import Student from '../models/student';
+import type { ClientSession } from 'mongoose';
 import User from '../models/user';
 import { ParentStudentLink } from '../models/parentStudentLink';
 import {
@@ -40,6 +41,15 @@ export async function verifiedChild(
   childId: unknown,
 ) {
   const parent = await parentActor(identity);
+  return resolveVerifiedParentChild(parent, childId);
+}
+
+/** Internal subject proof for callers that have independently authorized the reader. */
+export async function resolveVerifiedParentChild(
+  parent: Awaited<ReturnType<typeof parentActor>>,
+  childId: unknown,
+  session?: ClientSession,
+) {
   let id: string;
   try {
     id = objectIdField(childId, 'child ID');
@@ -53,6 +63,7 @@ export async function verifiedChild(
     branchId: parent.branchId,
   })
     .limit(2)
+    .session(session ?? null)
     .read('primary')
     .lean();
   if (
@@ -69,6 +80,7 @@ export async function verifiedChild(
     .where('_id')
     .equals(links[0].verifiedBy)
     .select('role branchId')
+    .session(session ?? null)
     .read('primary')
     .lean();
   if (
@@ -85,6 +97,7 @@ export async function verifiedChild(
     .where('branchId')
     .equals(parent.branchId)
     .select('userId')
+    .session(session ?? null)
     .read('primary')
     .lean();
   if (!student) {
@@ -93,6 +106,7 @@ export async function verifiedChild(
   const scope = await resolveStudentReadScope(
     String(student.userId),
     parent.branchId,
+    session,
   );
   if (String(scope.student._id) !== id) {
     throw denied();

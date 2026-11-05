@@ -16,10 +16,12 @@ import {
 } from '../../services/principal/principalService';
 import { colors, typography } from '../../theme/hiraDashboard';
 import { lessonReviewService } from '../../services/teacher/academicService';
+import { PrincipalParentLeaveQueue } from './PrincipalParentLeaveReviewScreen';
 
 interface PrincipalApprovalsScreenProps {
   onReview: (request: ApprovalRequest) => void;
   onOpenResults?: () => void;
+  onOpenParentLeave?: (approvalId: string) => void;
 }
 
 const entityLabel = (type: string) =>
@@ -63,6 +65,7 @@ const formatDate = (rawDate: string): string => {
 export default function PrincipalApprovalsScreen({
   onReview,
   onOpenResults,
+  onOpenParentLeave,
 }: PrincipalApprovalsScreenProps) {
   const { accessToken } = useAuth();
   const [requests, setRequests] = useState<ApprovalRequest[]>([]);
@@ -142,6 +145,7 @@ export default function PrincipalApprovalsScreen({
         subtitle={lessonHistory ? 'Read lesson decisions and actual delivery evidence in your branch.' : 'Review the requests that keep your school moving.'}
       />
       {onOpenResults ? <SectionCard title="Results"><Text style={styles.muted}>Reopen approved results awaiting publication, review pending marks or view published results.</Text><Button title="Results / Awaiting Publication" variant="secondary" onPress={onOpenResults} /></SectionCard> : null}
+      {!lessonHistory && onOpenParentLeave ? <PrincipalParentLeaveQueue onOpen={onOpenParentLeave} /> : null}
       <SectionCard title={lessonHistory ? 'Reviewed and submitted lessons' : 'Approval inbox'}>
         <Button title={lessonHistory ? 'Pending Approval Inbox' : 'Lesson History & Coverage'} variant="secondary" onPress={() => { setLessonHistory(v => !v); setTypeFilter('all'); setSelectedRequestId(null); setRequests([]); }} />
         {selectedRequestId ? (

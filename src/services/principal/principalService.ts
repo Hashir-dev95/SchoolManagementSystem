@@ -106,6 +106,7 @@ export interface PrincipalDashboardData {
     byType: Record<string, number>;
   };
   notices: SchoolNotice[];
+  pendingParentLeaveCount: number;
   pendingApprovals: {
     total: number;
     byType: Record<string, number>;

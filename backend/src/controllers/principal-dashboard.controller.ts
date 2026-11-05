@@ -3,6 +3,7 @@ import {Response} from 'express';
 import {BranchScopedRequest} from '../middleware/branch.middleware';
 import {getPrincipalDashboard} from '../services/principal-dashboard.service';
 import {ApprovalAccessError} from '../services/approval-authority.policy';
+import {RequestContractError} from '../utils/request-validation';
 
 export const getPrincipalDashboardController = async (
   req: BranchScopedRequest,
@@ -22,7 +23,7 @@ export const getPrincipalDashboardController = async (
       return;
     }
 
-    const data = await getPrincipalDashboard(req.branchId, req.user.userId);
+    const data = await getPrincipalDashboard(req.branchId, req.user.userId, req.headers.authorization?.slice(7) ?? '');
 
     res.status(200).json({
       success: true,
@@ -30,7 +31,7 @@ export const getPrincipalDashboardController = async (
       data,
     });
   } catch (error) {
-    if (error instanceof ApprovalAccessError) {
+    if (error instanceof ApprovalAccessError || error instanceof RequestContractError) {
       res.status(error.status).json({success: false, message: error.message});
       return;
     }

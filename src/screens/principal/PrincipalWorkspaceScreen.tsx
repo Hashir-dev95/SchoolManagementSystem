@@ -141,7 +141,8 @@ export default function PrincipalWorkspaceScreen() {
             onOpenAttendance={() => navigation.navigate('Attendance')}
           />
         ) : activeTab === 'approvals' ? (
-          <PrincipalApprovalsScreen onReview={openApproval} onOpenResults={() => navigation.navigate('Results')} />
+          <PrincipalApprovalsScreen onReview={openApproval} onOpenResults={() => navigation.navigate('Results')}
+            onOpenParentLeave={approvalId => navigation.navigate('ParentLeaveReview', { approvalId })} />
         ) : (
           <PrincipalInboxScreen onOpenNotice={openNotice} />
         )}
