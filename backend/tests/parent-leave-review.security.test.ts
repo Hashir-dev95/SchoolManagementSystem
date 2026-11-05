@@ -147,6 +147,7 @@ test('authorized pending queue, detail and dashboard agree with private allowlis
     ...summary,
     leaveType: 'Medical leave',
     reason: privateReason,
+    decisionVersion: { applicationRevision: 1, approvalVersion: 0 },
     history: [
       {
         action: 'draft_created',

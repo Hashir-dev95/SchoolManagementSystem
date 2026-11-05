@@ -308,8 +308,8 @@ export const mutateOccurrence = async <T = TeacherPeriodDTO>(
   try {
     return (await session.withTransaction(
       async () => {
-        await fence(session, User.collection.name, identity!.userId);
         await fence(session, Branch.collection.name, scope.branchId);
+        await fence(session, User.collection.name, identity!.userId);
         await fence(session, TimetablePeriod.collection.name, initial.periodId);
         await fence(
           session,

@@ -194,6 +194,8 @@ const eventLabels: Record<LeaveDraft['history'][number]['action'], string> = {
   draft_edited: 'Draft edited',
   submitted: 'Submitted',
   withdrawn: 'Withdrawn',
+  approved: 'Approved',
+  rejected: 'Rejected',
 };
 type LifecycleAction = 'submit' | 'withdraw';
 
@@ -686,6 +688,7 @@ function DraftWorkspace({
                 <Text key={event.revision} style={styles.body}>
                   {eventLabels[event.action]} · Revision {event.revision} ·{' '}
                   {event.at}
+                  {event.decisionReason ? ` · ${event.decisionReason}` : ''}
                 </Text>
               ))}
             </>

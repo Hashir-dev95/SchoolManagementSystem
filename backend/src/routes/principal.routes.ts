@@ -30,6 +30,8 @@ const parentLeaveReviewAccess = [
 ];
 router.get('/parent-leave-reviews', ...parentLeaveReviewAccess, readParentLeaveReviews('queue'));
 router.get('/parent-leave-reviews/:approvalId', ...parentLeaveReviewAccess, readParentLeaveReviews('detail'));
+router.post('/parent-leave-reviews/:approvalId/decisions', ...parentLeaveReviewAccess,
+  requirePermission(PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE), readParentLeaveReviews('decision'));
 
 router.get(
   '/task-assignees',

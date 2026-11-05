@@ -6,6 +6,7 @@ import {
 } from 'mongoose';
 import ApprovalRequest from './approvalRequest';
 import { ParentLeaveOperation } from './parentLeaveOperation';
+import { ParentLeaveDecisionOperation } from './parentLeaveDecisionOperation';
 import {
   parentLeaveFingerprint,
   PARENT_LEAVE_STATES,
@@ -27,6 +28,8 @@ const history = new Schema(
         'draft_edited',
         'submitted',
         'withdrawn',
+        'approved',
+        'rejected',
       ] as const,
       required: true,
     },
@@ -38,6 +41,12 @@ const history = new Schema(
       validate: Number.isSafeInteger,
     },
     at: { type: Date, required: true, immutable: true },
+    decisionReason: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      immutable: true,
+    },
   },
   { _id: false, strict: 'throw' },
 );
@@ -145,10 +154,12 @@ schema.pre('validate', function () {
   } catch {
     this.invalidate('startDate', 'Invalid leave date range');
   }
-  const linked = this.state === 'pending' || this.state === 'withdrawn';
+  const decided = this.state === 'approved' || this.state === 'rejected';
+  const linked =
+    this.state === 'pending' || this.state === 'withdrawn' || decided;
   const submittedRevision = this.submission?.revision;
   if (linked) {
-    const expected = this.revision - (this.state === 'withdrawn' ? 1 : 0);
+    const expected = this.revision - (this.state === 'pending' ? 0 : 1);
     if (
       this.isNew ||
       !this.approvalRequestId ||
@@ -186,22 +197,28 @@ schema.pre('validate', function () {
     this.invalidate('history', 'Existing leave history is immutable');
   if (
     this.history.length !== this.revision + 1 ||
-    this.history.some(
-      (entry, index) =>
-        String(entry.actorId) !== String(this.requesterId) ||
+    this.history.some((entry, index) => {
+      const decision = decided && index === this.revision;
+      const isRequester = String(entry.actorId) === String(this.requesterId);
+      return (
+        isRequester === decision ||
+        (decision && this.state === 'rejected'
+          ? (entry.decisionReason?.length ?? 0) < 10
+          : entry.decisionReason !== undefined) ||
         entry.revision !== index ||
         entry.action !==
           (index === 0
             ? 'draft_created'
             : index === submittedRevision
             ? 'submitted'
-            : linked && this.state === 'withdrawn' && index === this.revision
-            ? 'withdrawn'
+            : linked && this.state !== 'pending' && index === this.revision
+            ? this.state
             : 'draft_edited') ||
         !entry.at ||
         entry.at > new Date() ||
-        (index > 0 && entry.at < this.history[index - 1].at),
-    )
+        (index > 0 && entry.at < this.history[index - 1].at)
+      );
+    })
   )
     this.invalidate('history', 'Leave history does not match its revision');
 });
@@ -262,5 +279,6 @@ export async function ensureParentLeaveApplicationIndexes() {
   await ParentLeaveApplication.createIndexes();
   await ParentLeaveEditOperation.createIndexes();
   await ParentLeaveOperation.createIndexes();
+  await ParentLeaveDecisionOperation.createIndexes();
   await ApprovalRequest.createIndexes();
 }

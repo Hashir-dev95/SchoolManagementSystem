@@ -59,6 +59,7 @@ const detail = (row: Draft) => ({
     action: event.action,
     revision: event.revision,
     at: event.at,
+    ...(event.action === 'rejected' ? { decisionReason: event.decisionReason } : {}),
   })),
 });
 export async function listParentLeaveDrafts(

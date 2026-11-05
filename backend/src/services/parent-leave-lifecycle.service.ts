@@ -25,6 +25,7 @@ import {
   validateParentLeaveTransition,
 } from './parent-leave-application.policy';
 import { readParentLeaveDraft } from './parent-leave-draft.service';
+import { assertNoTeacherLeaveOverlap } from './attendance-parent-leave.service';
 import {
   readParentLeaveRouting,
   verifyParentLeaveQueue,
@@ -145,6 +146,7 @@ export async function changeParentLeaveLifecycle(
         )
           throw conflict();
         routing = readParentLeaveRouting(branchId);
+        await assertNoTeacherLeaveOverlap(row, session);
         const overlaps = await ParentLeaveApplication.find({
           branchId,
           studentId: child,

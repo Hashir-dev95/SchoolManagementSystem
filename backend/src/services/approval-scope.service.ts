@@ -139,7 +139,7 @@ export const assertApprovalReferences = async (
     request.entityType === 'student_leave' &&
     request.approvalType === 'leave'
   ) {
-    scoped = await StudentLeave.exists({})
+    scoped = await StudentLeave.exists({origin: {$ne: 'parent_application'}})
       .where('_id')
       .equals(request.entityId)
       .where('branchId')

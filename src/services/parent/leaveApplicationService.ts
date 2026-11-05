@@ -23,9 +23,10 @@ export interface LeaveSummary extends Omit<LeaveFields, 'reason'> {
 export interface LeaveDraft extends LeaveSummary {
   reason: string;
   history: {
-    action: 'draft_created' | 'draft_edited' | 'submitted' | 'withdrawn';
+    action: 'draft_created' | 'draft_edited' | 'submitted' | 'withdrawn' | 'approved' | 'rejected';
     revision: number;
     at: string;
+    decisionReason?: string;
   }[];
 }
 export interface LeavePage {

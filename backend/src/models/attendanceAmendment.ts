@@ -90,20 +90,56 @@ correction.index(
   { attendanceSessionId: 1, studentId: 1, approvedVersion: 1 },
   { unique: true, partialFilterExpression: { state: 'approved' } },
 );
+const teacherLeaveField = function (this: { origin?: string }) {
+  return this.origin !== 'parent_application';
+};
 const leave = new Schema(
   {
     ...common,
+    origin: {
+      type: String,
+      enum: ['teacher_occurrence', 'parent_application'],
+      immutable: true,
+    },
+    attendanceSessionId: { ...common.attendanceSessionId, required: teacherLeaveField },
+    occurrenceVersionId: { ...common.occurrenceVersionId, required: teacherLeaveField },
+    reason: { ...common.reason, required: teacherLeaveField },
+    parentApplicationId: { ...ref('ParentLeaveApplication'), required: false },
+    parentSubmissionRevision: { type: Number, min: 1, validate: Number.isSafeInteger, immutable: true },
+    enrollmentId: { ...ref('StudentEnrollment'), required: false },
+    academicPeriodId: { ...ref('AcademicPeriod'), required: false },
+    classId: { ...ref('SchoolClass'), required: false },
+    sectionId: { ...ref('Section'), required: false },
     fromDate: { type: String, required: true, immutable: true },
     untilDate: { type: String, required: true, immutable: true },
     category: {
       type: String,
       enum: ['illness', 'authorized_absence', 'other'],
-      required: true,
+      required: teacherLeaveField,
       immutable: true,
     },
   },
   { timestamps: { createdAt: true, updatedAt: false } },
 );
+leave.pre('validate', function () {
+  const provenance = [this.parentApplicationId, this.parentSubmissionRevision, this.enrollmentId,
+    this.academicPeriodId, this.classId, this.sectionId];
+  if (this.origin === 'parent_application') {
+    if (provenance.some(value => value == null) || !this.reviewedBy || !this.reviewedAt ||
+        String(this.reviewedBy) === String(this.requestedBy) || this.state !== 'approved' ||
+        this.attendanceSessionId || this.occurrenceVersionId || this.occurrenceSubstituteId ||
+        this.reason || this.reviewNote || this.category) {
+      this.invalidate('origin', 'Invalid Parent leave coverage provenance');
+    }
+  } else if (provenance.some(value => value != null)) {
+    this.invalidate('origin', 'Teacher leave cannot carry Parent coverage provenance');
+  }
+});
+leave.index({ parentApplicationId: 1 }, {
+  unique: true,
+  name: 'one_parent_leave_coverage',
+  partialFilterExpression: { origin: 'parent_application', state: 'approved' },
+});
 leave.index(
   { branchId: 1, requestedBy: 1, clientOperationId: 1 },
   { unique: true },

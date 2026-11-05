@@ -1,5 +1,5 @@
-import React, { useCallback } from 'react';
-import { ActivityIndicator, Text } from 'react-native';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Text, TextInput, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   Button,
@@ -10,9 +10,18 @@ import {
   StatusBadge,
 } from '../../components/hiraDashboard';
 import { useParentLeaveReviewRead } from '../../hooks/useParentLeaveReviewRead';
+import { useAuth } from '../../context/AuthContext';
+import {
+  AdminDialog,
+  formStyles,
+} from '../../components/hiraDashboard/AdminForm';
+import { ApiError } from '../../services/api/apiClient';
+import { leaveOperationId } from '../../services/parent/leaveApplicationService';
 import type { PrincipalStackParamList } from '../../navigation/PrincipalNavigator';
 import {
   parentLeaveReviewService,
+  type ParentLeaveDecision,
+  type ParentLeaveDecisionVersion,
   type ParentLeaveReviewDetail,
 } from '../../services/principal/parentLeaveReviewService';
 
@@ -66,26 +75,51 @@ const historyLabels: Record<
   draft_created: 'Draft created',
   draft_edited: 'Draft edited',
   submitted: 'Submitted for review',
+  approved: 'Approved',
+  rejected: 'Rejected',
 };
 
 export default function PrincipalParentLeaveReviewScreen({
   route,
 }: NativeStackScreenProps<PrincipalStackParamList, 'ParentLeaveReview'>) {
   const { approvalId } = route.params;
+  const { user, accessToken } = useAuth();
+  const scope = JSON.stringify([
+    user?.id,
+    user?.role,
+    user?.branchId,
+    accessToken,
+    approvalId,
+  ]);
+  return <Review key={scope} approvalId={approvalId} token={accessToken} />;
+}
+
+function Review({
+  approvalId,
+  token,
+}: {
+  approvalId: string;
+  token: string | null;
+}) {
   const load = useCallback(
-    (token: string) => parentLeaveReviewService.detail(token, approvalId),
+    (accessToken: string) =>
+      parentLeaveReviewService.detail(accessToken, approvalId),
     [approvalId],
   );
-  const { data, error, loading, reload } = useParentLeaveReviewRead(
+  const { data, error, loading, reload, conceal } = useParentLeaveReviewRead(
     load,
     approvalId,
   );
+  const [changed, setChanged] = useState(false);
   return (
     <DashboardShell refreshing={loading} onRefresh={reload}>
       <ScreenHeading
         title="Parent leave review"
-        subtitle="Read-only review. Decisions are not available yet."
+        subtitle="Review submitted dates, reasons and decision history."
       />
+      {changed && !error ? (
+        <Text>The request changed. Review the refreshed status.</Text>
+      ) : null}
       {loading ? (
         <ActivityIndicator accessibilityLabel="Loading parent leave detail" />
       ) : null}
@@ -98,7 +132,16 @@ export default function PrincipalParentLeaveReviewScreen({
       {data ? (
         <>
           <SectionCard title={data.studentName}>
-            <StatusBadge status="pending" label="Pending" />
+            <StatusBadge
+              status={
+                data.status === 'approved'
+                  ? 'paid'
+                  : data.status === 'rejected'
+                  ? 'unpaid'
+                  : 'pending'
+              }
+              label={data.status.charAt(0).toUpperCase() + data.status.slice(1)}
+            />
             <ListRow
               icon="▤"
               title={data.leaveType}
@@ -112,12 +155,164 @@ export default function PrincipalParentLeaveReviewScreen({
                 key={event.revision}
                 icon="•"
                 title={historyLabels[event.action]}
-                subtitle={new Date(event.at).toLocaleString('en-PK')}
+                subtitle={[
+                  new Date(event.at).toLocaleString('en-PK'),
+                  event.decisionReason,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               />
             ))}
           </SectionCard>
+          {token && data.decisionVersion && data.status === 'pending' ? (
+            <DecisionActions
+              token={token}
+              approvalId={approvalId}
+              version={data.decisionVersion}
+              onDenied={conceal}
+              onRefresh={conflict => {
+                setChanged(conflict);
+                reload().catch(() => undefined);
+              }}
+            />
+          ) : null}
         </>
       ) : null}
     </DashboardShell>
+  );
+}
+
+function DecisionActions({
+  token,
+  approvalId,
+  version,
+  onDenied,
+  onRefresh,
+}: {
+  token: string;
+  approvalId: string;
+  version: ParentLeaveDecisionVersion;
+  onDenied: () => void;
+  onRefresh: (conflict: boolean) => void;
+}) {
+  const [action, setAction] = useState<ParentLeaveDecision['action'] | null>(
+    null,
+  );
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const operation = useRef<ParentLeaveDecision | null>(null);
+  const sending = useRef(false);
+  const live = useRef(false);
+  useLayoutEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
+
+  const confirm = async () => {
+    if (!action || sending.current) return;
+    const decisionReason = reason.trim().normalize('NFC');
+    if (
+      !operation.current &&
+      action === 'reject' &&
+      decisionReason.length < 10
+    ) {
+      setError('Enter a rejection reason of at least 10 characters.');
+      return;
+    }
+    try {
+      operation.current ??= {
+        ...version,
+        action,
+        clientOperationId: leaveOperationId(),
+        ...(action === 'reject' ? { decisionReason } : {}),
+      };
+    } catch {
+      setError('A secure operation ID is unavailable. Try again.');
+      return;
+    }
+    sending.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await parentLeaveReviewService.decide(
+        token,
+        approvalId,
+        operation.current,
+      );
+      if (live.current) onRefresh(false);
+    } catch (failure) {
+      if (!live.current) return;
+      if (
+        failure instanceof ApiError &&
+        [401, 403, 404].includes(failure.status)
+      )
+        onDenied();
+      else if (failure instanceof ApiError && failure.status === 409)
+        onRefresh(true);
+      else
+        setError(
+          'Decision could not be confirmed. Retry to check the same operation.',
+        );
+    } finally {
+      sending.current = false;
+      if (live.current) setBusy(false);
+    }
+  };
+
+  const close = () => {
+    if (operation.current) onRefresh(false);
+    setAction(null);
+    setReason('');
+    setError('');
+  };
+  const reject = action === 'reject';
+  return (
+    <SectionCard title="Decision">
+      <View>
+        <Button title="Approve leave" onPress={() => setAction('approve')} />
+        <Button
+          title="Reject leave"
+          variant="secondary"
+          onPress={() => setAction('reject')}
+        />
+      </View>
+      <AdminDialog
+        visible={!!action}
+        title={reject ? 'Reject parent leave' : 'Approve parent leave'}
+        onClose={close}
+        onConfirm={confirm}
+        confirmTitle={
+          operation.current && error
+            ? 'Retry decision'
+            : reject
+            ? 'Confirm rejection'
+            : 'Confirm approval'
+        }
+        busy={busy}
+        busyLabel="Saving leave decision"
+        danger={reject}
+      >
+        <Text style={formStyles.copy}>
+          {reject
+            ? 'The Parent can read your rejection reason.'
+            : 'Approval records leave coverage. Existing attendance marks stay as recorded.'}
+        </Text>
+        {reject ? (
+          <TextInput
+            accessibilityLabel="Rejection reason"
+            value={reason}
+            onChangeText={setReason}
+            editable={!operation.current && !busy}
+            multiline
+            maxLength={500}
+            style={formStyles.input}
+          />
+        ) : null}
+        {error ? <Text accessibilityRole="alert">{error}</Text> : null}
+      </AdminDialog>
+    </SectionCard>
   );
 }

@@ -2,13 +2,14 @@ import type { Response } from 'express';
 import type { BranchScopedRequest } from '../middleware/branch.middleware';
 import { ApprovalAccessError } from '../services/approval-authority.policy';
 import {
+  decideParentLeave,
   getParentLeaveReview,
   listParentLeaveReviews,
 } from '../services/parent-leave-review.service';
 import { RequestContractError } from '../utils/request-validation';
 
 export const readParentLeaveReviews =
-  (kind: 'queue' | 'detail') =>
+  (kind: 'queue' | 'detail' | 'decision') =>
   async (req: BranchScopedRequest, res: Response): Promise<void> => {
     res.setHeader('Cache-Control', 'no-store');
     try {
@@ -24,7 +25,13 @@ export const readParentLeaveReviews =
       const data =
         kind === 'queue'
           ? { requests: await listParentLeaveReviews(reader) }
-          : await getParentLeaveReview(reader, String(req.params.approvalId));
+          : kind === 'detail'
+          ? await getParentLeaveReview(reader, String(req.params.approvalId))
+          : await decideParentLeave(
+              reader,
+              String(req.params.approvalId),
+              req.body,
+            );
       res.json({ success: true, data });
     } catch (error) {
       const expected =

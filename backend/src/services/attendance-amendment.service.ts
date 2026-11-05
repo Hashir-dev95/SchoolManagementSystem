@@ -44,6 +44,7 @@ import {
   RequestContractError,
 } from '../utils/request-validation';
 import { scheduleDate } from './school-date.service';
+import { approvedLeaveForOccurrence, assertNoParentLeaveOverlap, teacherLeaveOrigin } from './attendance-parent-leave.service';
 const missing = () =>
   new RequestContractError(
     404,
@@ -284,21 +285,14 @@ export const getTeacherAttendanceReview = async (
       StudentLeave.find({
         branchId: ctx.branchId,
         studentId,
+        origin: teacherLeaveOrigin,
         fromDate: { $lte: ctx.attendance.date },
         untilDate: { $gte: ctx.attendance.date },
       })
         .sort({ createdAt: -1, _id: -1 })
         .limit(20)
         .lean(),
-      StudentLeave.findOne({
-        branchId: ctx.branchId,
-        studentId,
-        state: 'approved',
-        fromDate: { $lte: ctx.attendance.date },
-        untilDate: { $gte: ctx.attendance.date },
-      })
-        .sort({ createdAt: -1 })
-        .lean(),
+      approvedLeaveForOccurrence(ctx.branchId, studentId, ctx.attendance),
       AttendanceCorrection.exists({ ...query, state: 'pending' }),
       User.findById(identity!.userId).select('fullName').lean(),
     ]);
@@ -441,7 +435,7 @@ export const requestAttendanceAmendment = async (
         const existing =
           kind === 'correction'
             ? await AttendanceCorrection.findOne(key).session(tx)
-            : await StudentLeave.findOne(key).session(tx);
+            : await StudentLeave.findOne({ ...key, origin: teacherLeaveOrigin }).session(tx);
         if (existing) {
           if (existing.fingerprint !== hash) throw conflict();
           return {
@@ -494,18 +488,7 @@ export const requestAttendanceAmendment = async (
           if (requestedStatus === 'leave') {
             if (
               !leaveId ||
-              !(await StudentLeave.exists({
-                state: 'approved',
-                fromDate: { $lte: current.date },
-                untilDate: { $gte: current.date },
-              })
-                .where('_id')
-                .equals(leaveId)
-                .where('branchId')
-                .equals(branchId)
-                .where('studentId')
-                .equals(studentId)
-                .session(tx))
+              !(await approvedLeaveForOccurrence(branchId, studentId, current, tx, leaveId))
             )
               throw new RequestContractError(
                 400,
@@ -550,8 +533,9 @@ export const requestAttendanceAmendment = async (
             }).session(tx)
           )
             throw conflict();
+          await assertNoParentLeaveOverlap({ branchId, studentId, startDate: fromDate, endDate: untilDate }, tx);
           await StudentLeave.create(
-            [{ ...common, fromDate, untilDate, category }],
+            [{ ...common, origin: 'teacher_occurrence', fromDate, untilDate, category }],
             { session: tx },
           );
         }
@@ -624,7 +608,7 @@ const reviewContext = async (
         .where('branchId')
         .equals(reviewer.branchId)
         .lean()
-    : await StudentLeave.findOne({})
+    : await StudentLeave.findOne({origin: teacherLeaveOrigin})
         .where('_id')
         .equals(approval.entityId)
         .where('approvalRequestId')
@@ -767,6 +751,11 @@ export const decideAttendanceAmendment = async (
         throw conflict();
       }
       if (current.revision !== revision) throw conflict();
+      if (!ctx.correction && action === 'approved') {
+        const leave = await StudentLeave.findOne({ _id: current._id, origin: teacherLeaveOrigin }).session(tx).lean();
+        if (!leave || source.date < leave.fromDate || source.date > leave.untilDate) throw conflict();
+        await assertNoParentLeaveOverlap({ branchId, studentId: leave.studentId, startDate: leave.fromDate, endDate: leave.untilDate }, tx);
+      }
       if (ctx.correction) {
         const correction = await AttendanceCorrection.findById(current._id)
           .session(tx)
@@ -789,14 +778,7 @@ export const decideAttendanceAmendment = async (
           throw conflict();
         if (correction.requestedStatus === 'leave' && action === 'approved') {
           if (
-            !(await StudentLeave.exists({
-              _id: correction.leaveId,
-              branchId,
-              studentId: correction.studentId,
-              state: 'approved',
-              fromDate: { $lte: ctx.attendance.date },
-              untilDate: { $gte: ctx.attendance.date },
-            }).session(tx))
+            !correction.leaveId || !(await approvedLeaveForOccurrence(branchId, String(correction.studentId), source, tx, correction.leaveId))
           )
             throw conflict();
           await lock(tx, StudentLeave.collection.name, correction.leaveId!, {

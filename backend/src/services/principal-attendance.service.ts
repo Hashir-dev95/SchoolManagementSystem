@@ -16,6 +16,7 @@ import {
   AttendanceCorrection,
   StudentLeave,
 } from '../models/attendanceAmendment';
+import { leaveCoverageOriginMatch, parentCoverageMembership, teacherLeaveOrigin } from './attendance-parent-leave.service';
 import {
   TimetablePeriod,
   TimetableVersion,
@@ -580,6 +581,8 @@ async function occurrencePipeline(
       let: {
         session: '$attendance._id',
         date: '$date',
+        coverageClass: '$classId',
+        coverageSection: '$sectionId',
         roster: { $ifNull: ['$attendance.rosterStudentIds', []] },
       },
       pipeline: [
@@ -614,6 +617,8 @@ async function occurrencePipeline(
                   },
                 },
               },
+              ...parentCoverageMembership('$$date', '$$coverageClass', '$$coverageSection'),
+              { $match: leaveCoverageOriginMatch },
               { $limit: 1 },
               { $project: { _id: 1 } },
             ],
@@ -1123,6 +1128,8 @@ export async function getPrincipalAttendanceOccurrence(
               $expr: { $eq: ['$studentId', '$$student'] },
             },
           },
+          ...parentCoverageMembership(date, id(String(raw.classId)), id(String(raw.sectionId))),
+          { $match: leaveCoverageOriginMatch },
           { $sort: { createdAt: -1 } },
           { $limit: 1 },
           { $project: { _id: 1 } },
@@ -1212,6 +1219,7 @@ export async function getPrincipalAttendanceOccurrence(
       $match: {
         branchId: id(branchId),
         attendanceSessionId: sessionId ?? null,
+        ...(kind === 'leave' ? { origin: teacherLeaveOrigin } : {}),
       },
     },
     {

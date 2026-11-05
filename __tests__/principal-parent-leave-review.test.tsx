@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text } from 'react-native';
+import { Text, TextInput } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import {
   Button,
@@ -10,6 +10,7 @@ import PrincipalParentLeaveReviewScreen, {
   PrincipalParentLeaveQueue,
 } from '../src/screens/principal/PrincipalParentLeaveReviewScreen';
 import { ApiError } from '../src/services/api/apiClient';
+import { AdminDialog } from '../src/components/hiraDashboard/AdminForm';
 import {
   parentLeaveReviewService,
   type ParentLeaveReviewDetail,
@@ -34,7 +35,14 @@ jest.mock('react-native-safe-area-context', () => ({
 }));
 jest.mock('../src/context/AuthContext', () => ({ useAuth: () => mockAuth }));
 jest.mock('../src/services/principal/parentLeaveReviewService', () => ({
-  parentLeaveReviewService: { list: jest.fn(), detail: jest.fn() },
+  parentLeaveReviewService: {
+    list: jest.fn(),
+    detail: jest.fn(),
+    decide: jest.fn(),
+  },
+}));
+jest.mock('../src/services/parent/leaveApplicationService', () => ({
+  leaveOperationId: () => 'principal-op-0001',
 }));
 
 const { FocusContext } = jest.requireMock('@react-navigation/native');
@@ -46,7 +54,10 @@ const primary = {
 let mockAuth = primary;
 let tree: Renderer.ReactTestRenderer;
 
-const review = (id: string, name: string): ParentLeaveReviewDetail => ({
+const review = (
+  id: string,
+  name: string,
+): ParentLeaveReviewDetail & { status: 'pending' } => ({
   approvalId: id,
   source: 'parent_leave_application',
   studentName: name,
@@ -61,6 +72,17 @@ const review = (id: string, name: string): ParentLeaveReviewDetail => ({
 
 const a = review('a', 'Student A');
 const b = review('b', 'Student B');
+const pending = {
+  ...a,
+  decisionVersion: { applicationRevision: 1, approvalVersion: 0 },
+};
+const ack = {
+  approvalId: 'a',
+  state: 'approved' as const,
+  revision: 2,
+  decidedAt: a.submittedAt,
+  replayed: false,
+};
 const onOpen = jest.fn();
 
 function detail(approvalId: string) {
@@ -189,3 +211,120 @@ test('a stale denial cannot clear the newer request', async () => {
   expect(text(b.reason)).toBe(true);
   expect(text('Parent leave unavailable')).toBe(false);
 });
+
+const confirmDecision = () =>
+  tree.root.findByType(AdminDialog).props.onConfirm();
+
+test('approval confirmation waits for acknowledgment and refreshes the current authorized detail', async () => {
+  const decision = deferred<typeof ack>();
+  service.detail
+    .mockResolvedValueOnce(pending)
+    .mockResolvedValueOnce({ ...a, status: 'approved' });
+  service.decide.mockReturnValueOnce(decision.promise);
+  await act(async () => {
+    tree = Renderer.create(detail('a'));
+  });
+  act(() => retry('Approve leave'));
+  expect(tree.root.findByType(AdminDialog).props.visible).toBe(true);
+  expect(service.decide).not.toHaveBeenCalled();
+  act(() => {
+    confirmDecision();
+  });
+  expect(service.decide).toHaveBeenCalledWith('token-a', 'a', {
+    ...pending.decisionVersion,
+    action: 'approve',
+    clientOperationId: 'principal-op-0001',
+  });
+  expect(text('Approved')).toBe(false);
+  await act(async () => decision.resolve(ack));
+  expect(text('Approved')).toBe(true);
+  expect(service.detail).toHaveBeenCalledTimes(2);
+});
+
+test('rejection validates the reason and an uncertain retry reuses the identical operation', async () => {
+  const reason = 'Documentation does not cover the requested dates.';
+  service.detail
+    .mockResolvedValueOnce(pending)
+    .mockResolvedValueOnce({ ...a, status: 'rejected' });
+  service.decide
+    .mockRejectedValueOnce(new Error('Connection lost'))
+    .mockResolvedValueOnce({ ...ack, state: 'rejected' });
+  await act(async () => {
+    tree = Renderer.create(detail('a'));
+  });
+  act(() => retry('Reject leave'));
+  await act(async () => confirmDecision());
+  expect(service.decide).not.toHaveBeenCalled();
+  act(() => tree.root.findByType(TextInput).props.onChangeText(reason));
+  await act(async () => confirmDecision());
+  expect(tree.root.findByType(AdminDialog).props.confirmTitle).toBe(
+    'Retry decision',
+  );
+  expect(text('Rejected')).toBe(false);
+  await act(async () => confirmDecision());
+  expect(service.decide.mock.calls[0]).toEqual(service.decide.mock.calls[1]);
+  expect(service.decide.mock.calls[0][2].decisionReason).toBe(reason);
+  expect(text('Rejected')).toBe(true);
+});
+
+test.each([401, 403, 404])(
+  'decision denial %i conceals current protected detail',
+  async status => {
+    service.detail.mockResolvedValueOnce(pending);
+    service.decide.mockRejectedValueOnce(
+      new ApiError(status, 'Protected failure'),
+    );
+    await act(async () => {
+      tree = Renderer.create(detail('a'));
+    });
+    act(() => retry('Approve leave'));
+    await act(async () => confirmDecision());
+    expect(text(a.reason)).toBe(false);
+    expect(text('Protected failure')).toBe(false);
+    expect(text('Parent leave unavailable')).toBe(true);
+  },
+);
+
+test('decision conflict refreshes the current request without resubmitting', async () => {
+  service.detail
+    .mockResolvedValueOnce(pending)
+    .mockResolvedValueOnce({ ...a, status: 'rejected' });
+  service.decide.mockRejectedValueOnce(new ApiError(409, 'Conflict'));
+  await act(async () => {
+    tree = Renderer.create(detail('a'));
+  });
+  act(() => retry('Approve leave'));
+  await act(async () => confirmDecision());
+  expect(text('The request changed. Review the refreshed status.')).toBe(true);
+  expect(text('Rejected')).toBe(true);
+  expect(service.decide).toHaveBeenCalledTimes(1);
+  expect(service.detail).toHaveBeenLastCalledWith('token-a', 'a');
+});
+
+test.each(['success', 'denial'])(
+  'late decision %s cannot alter the new account and approval',
+  async result => {
+    const old = deferred<typeof ack>();
+    service.detail.mockResolvedValueOnce(pending).mockResolvedValueOnce(b);
+    service.decide.mockReturnValueOnce(old.promise);
+    await act(async () => {
+      tree = Renderer.create(detail('a'));
+    });
+    act(() => retry('Approve leave'));
+    act(() => {
+      confirmDecision();
+    });
+    mockAuth = {
+      user: { ...primary.user, id: 'principal-b', branchId: 'branch-b' },
+      accessToken: 'token-b',
+    };
+    await act(async () => tree.update(detail('b')));
+    await act(async () => {
+      if (result === 'success') old.resolve(ack);
+      else old.reject(new ApiError(403, 'Old denial'));
+    });
+    expect(text(b.reason)).toBe(true);
+    expect(text('Approved')).toBe(false);
+    expect(service.detail).toHaveBeenCalledTimes(2);
+  },
+);

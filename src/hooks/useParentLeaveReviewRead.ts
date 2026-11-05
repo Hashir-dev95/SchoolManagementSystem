@@ -57,6 +57,15 @@ export function useParentLeaveReviewRead<T>(
     }
   }, [accessToken, allowed, load, scope]);
 
+  const conceal = useCallback(() => {
+    if (!focused.current) return;
+    ++generation.current;
+    setResult({
+      scope,
+      error: 'Parent leave review is unavailable for this session.',
+    });
+  }, [scope]);
+
   useFocusEffect(
     useCallback(() => {
       focused.current = true;
@@ -75,5 +84,6 @@ export function useParentLeaveReviewRead<T>(
     error: current?.error,
     loading: !current,
     reload,
+    conceal,
   };
 }

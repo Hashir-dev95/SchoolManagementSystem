@@ -1,4 +1,5 @@
 import mongoose, { Types, type ClientSession } from 'mongoose';
+import { createHash } from 'node:crypto';
 import { PERMISSIONS } from '../constants/permissions';
 import { ROLE_PERMISSIONS } from '../constants/rolePermissions';
 import ApprovalRequest, {
@@ -7,14 +8,37 @@ import ApprovalRequest, {
 } from '../models/approvalRequest';
 import { ParentLeaveApplication } from '../models/parentLeaveApplication';
 import Session from '../models/session';
+import Student from '../models/student';
 import User from '../models/user';
-import { RequestContractError } from '../utils/request-validation';
+import SchoolClass from '../models/schoolClass';
+import Section from '../models/section';
+import { AcademicPeriod } from '../models/academicPeriod';
+import { StudentEnrollment } from '../models/studentEnrollment';
+import { ParentStudentLink } from '../models/parentStudentLink';
+import { ParentLeaveDecisionOperation } from '../models/parentLeaveDecisionOperation';
+import {
+  enumField,
+  objectBody,
+  RequestContractError,
+  textField,
+} from '../utils/request-validation';
 import {
   ApprovalAccessError,
   assertApprovalAuthority,
 } from './approval-authority.policy';
 import { verifyAccessToken } from './jwt.service';
-import { parentLeaveFingerprint } from './parent-leave-application.policy';
+import {
+  assertParentLeaveRevision,
+  parentLeaveFingerprint,
+  validateParentLeaveTransition,
+} from './parent-leave-application.policy';
+import {
+  assertCoverageRange,
+  assertNoTeacherLeaveOverlap,
+  createParentLeaveCoverage,
+} from './attendance-parent-leave.service';
+import { withAcademicCatalogLock } from './academic-catalog-lock.service';
+import { communicationFence } from './teacher-communication-access.service';
 import { readParentLeaveRouting } from './parent-leave-routing.policy';
 import { resolveVerifiedParentChild } from './parent-scope.service';
 import {
@@ -29,6 +53,20 @@ const unavailable = () =>
   new ApprovalAccessError(404, 'Parent leave review is unavailable');
 const invalidSession = () =>
   new ApprovalAccessError(401, 'Session is unavailable');
+const conflict = () =>
+  new RequestContractError(
+    409,
+    'Leave request changed; refresh and review again',
+  );
+const canManage = () =>
+  ROLE_PERMISSIONS.principal.includes(PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE);
+const requireManage = () => {
+  if (!canManage())
+    throw new ApprovalAccessError(
+      403,
+      'Principal leave decisions are unavailable',
+    );
+};
 
 function routingFor(reader: ReviewReader) {
   try {
@@ -84,10 +122,18 @@ async function assertReader(reader: ReviewReader, session?: ClientSession) {
     );
   }
   await requireActiveAcademicBranch(reader.branchId, session);
+  return login._id;
 }
 
-// G3a exposes only the live pending inbox. The same candidate selection and
-// record proof govern queue, detail and count. Configuration must match exactly.
+const parentApprovals = (reader: ReviewReader) => ({
+  branchId: reader.branchId,
+  entityType: PARENT_LEAVE_APPROVAL_ENTITY,
+  approvalType: 'leave' as const,
+  requesterId: { $ne: reader.actorId },
+});
+
+// The inbox and count are pending-only. Detail also uses the same proof for
+// decided records. Configuration must match the submitted version exactly.
 async function readPendingReviews(
   reader: ReviewReader,
   approvalId?: Types.ObjectId,
@@ -101,25 +147,60 @@ async function readPendingReviews(
         const visible = [];
         if (routing) {
           const approvals = await ApprovalRequest.find({
-            branchId: reader.branchId,
-            entityType: PARENT_LEAVE_APPROVAL_ENTITY,
-            approvalType: 'leave',
-            status: 'pending',
-            requesterId: { $ne: reader.actorId },
-            ...(approvalId ? { _id: approvalId } : {}),
+            ...parentApprovals(reader),
+            ...(approvalId
+              ? {
+                  _id: approvalId,
+                  status: { $in: ['pending', 'approved', 'rejected'] },
+                }
+              : { status: 'pending' }),
           })
             .sort({ createdAt: -1, _id: -1 })
             .session(session)
             .lean();
           for (const approval of approvals) {
-            const review = await visibleReview(
+            const proof = await linkedReview(
               reader.branchId,
               routing,
               approval,
               session,
-              Boolean(approvalId),
             );
-            if (review) visible.push(review);
+            if (!proof) continue;
+            const { application, subject, submittedAt } = proof;
+            const summary = {
+              approvalId: String(approval._id),
+              source: PARENT_LEAVE_APPROVAL_ENTITY,
+              studentName: subject.scope.user.fullName,
+              startDate: application.startDate,
+              endDate: application.endDate,
+              status: application.state,
+              submittedAt,
+            };
+            const detail = approvalId
+              ? {
+                  ...summary,
+                  leaveType: application.leaveType,
+                  reason: application.reason,
+                  decisionVersion:
+                    application.state === 'pending' &&
+                    canManage() &&
+                    Number.isSafeInteger(approval.__v)
+                      ? {
+                          applicationRevision: application.revision,
+                          approvalVersion: approval.__v!,
+                        }
+                      : null,
+                  history: application.history.map(
+                    ({ action, revision, at, decisionReason }) => ({
+                      action,
+                      revision,
+                      at,
+                      ...(action === 'rejected' ? { decisionReason } : {}),
+                    }),
+                  ),
+                }
+              : undefined;
+            visible.push({ summary, detail });
           }
         }
         return { visible, routing };
@@ -131,6 +212,10 @@ async function readPendingReviews(
     // revocation during a queue scan cannot release its result.
     await assertReader(reader);
     const current = routingFor(reader);
+    if (!canManage()) {
+      for (const item of result.visible)
+        if (item.detail) item.detail.decisionVersion = null;
+    }
     return current &&
       result.routing &&
       current.version === result.routing.version
@@ -141,15 +226,20 @@ async function readPendingReviews(
   }
 }
 
-async function visibleReview(
+async function linkedReview(
   branchId: string,
   routing: Routing,
   approval: IApprovalRequest & { _id: Types.ObjectId },
   session: ClientSession,
-  includeDetail: boolean,
 ) {
   const submittedRevision = approval.parentLeaveRevision;
+  const { status } = approval;
+  const pending = status === 'pending';
   if (
+    (status !== 'pending' &&
+      status !== 'approved' &&
+      status !== 'rejected' &&
+      status !== 'withdrawn') ||
     !approval.entityId ||
     !submittedRevision ||
     !Number.isSafeInteger(submittedRevision) ||
@@ -158,10 +248,11 @@ async function visibleReview(
     approval.delegatedTo ||
     approval.delegatedBy ||
     approval.delegationExpiresAt ||
-    approval.reviewedBy ||
-    approval.reviewedAt ||
-    approval.withdrawnBy ||
-    approval.withdrawnAt
+    (pending &&
+      (approval.reviewedBy ||
+        approval.reviewedAt ||
+        approval.withdrawnBy ||
+        approval.withdrawnAt))
   )
     return null;
 
@@ -170,15 +261,14 @@ async function visibleReview(
     approvalRequestId: approval._id,
     requesterId: approval.requesterId,
     branchId,
-    state: 'pending',
-    revision: submittedRevision,
+    state: status,
+    revision: pending ? submittedRevision : submittedRevision + 1,
     'submission.revision': submittedRevision,
     'submission.policy': routing.policy,
     'submission.version': routing.version,
   })
     .select('+submission +reason')
-    .session(session)
-    .lean();
+    .session(session);
   if (
     !application?.reason ||
     !Types.ObjectId.isValid(application.studentId) ||
@@ -187,7 +277,7 @@ async function visibleReview(
   )
     return null;
 
-  const submitted = application.history?.at(-1);
+  const submitted = application.history?.[submittedRevision];
   if (
     submitted?.action !== 'submitted' ||
     submitted.revision !== submittedRevision ||
@@ -198,13 +288,51 @@ async function visibleReview(
     return null;
   const approvalEvent = approval.history?.[0];
   if (
-    approval.history?.length !== 1 ||
+    approval.history?.length !== (pending ? 1 : 2) ||
     approvalEvent?.action !== 'submitted' ||
     String(approvalEvent.performedBy) !== String(application.requesterId) ||
     !(approvalEvent.createdAt instanceof Date) ||
     approvalEvent.createdAt.getTime() !== submitted.at.getTime()
   )
     return null;
+  if (
+    application.history.length !== application.revision + 1 ||
+    application.history
+      .slice(0, submittedRevision)
+      .some(
+        (event, index) =>
+          event.action !== (index === 0 ? 'draft_created' : 'draft_edited') ||
+          event.revision !== index ||
+          String(event.actorId) !== String(application.requesterId),
+      )
+  )
+    return null;
+  if (!pending) {
+    const last = application.history.at(-1);
+    const decision = approval.history[1];
+    const reviewer =
+      status === 'withdrawn' ? approval.withdrawnBy : approval.reviewedBy;
+    const time =
+      status === 'withdrawn' ? approval.withdrawnAt : approval.reviewedAt;
+    if (
+      !reviewer ||
+      !time ||
+      !last ||
+      last.action !== status ||
+      last.revision !== application.revision ||
+      (String(reviewer) === String(application.requesterId)) !==
+        (status === 'withdrawn') ||
+      decision?.action !== status ||
+      String(decision.performedBy) !== String(reviewer) ||
+      String(last.actorId) !== String(reviewer) ||
+      last.at?.getTime() !== time.getTime() ||
+      !(decision.createdAt instanceof Date) ||
+      (status !== 'withdrawn' &&
+        decision.createdAt.getTime() !== time.getTime()) ||
+      last.decisionReason !== decision.reason
+    )
+      return null;
+  }
 
   const actor = await User.findOne({
     _id: application.requesterId,
@@ -218,11 +346,12 @@ async function visibleReview(
     .lean();
   if (!actor) return null;
   try {
-    const { link, scope } = await resolveVerifiedParentChild(
+    const subject = await resolveVerifiedParentChild(
       { actor, branchId },
       String(application.studentId),
       session,
     );
+    const { link, scope } = subject;
     const { enrollment } = scope;
     if (
       String(link._id) !== String(application.parentStudentLinkId) ||
@@ -234,30 +363,12 @@ async function visibleReview(
     )
       return null;
 
-    const summary = {
-      approvalId: String(approval._id),
-      source: PARENT_LEAVE_APPROVAL_ENTITY,
-      studentName: scope.user.fullName,
-      startDate: application.startDate,
-      endDate: application.endDate,
-      status: 'pending' as const,
+    return {
+      application,
+      subject,
       submittedAt: submitted.at.toISOString(),
+      submittedRevision,
     };
-    const detail = includeDetail
-      ? {
-          ...summary,
-          leaveType: application.leaveType,
-          reason: application.reason,
-          history: application.history
-            .filter(event =>
-              ['draft_created', 'draft_edited', 'submitted'].includes(
-                event.action,
-              ),
-            )
-            .map(({ action, revision, at }) => ({ action, revision, at })),
-        }
-      : undefined;
-    return { summary, detail };
   } catch (error) {
     if (error instanceof RequestContractError && error.status === 403)
       return null;
@@ -280,4 +391,252 @@ export async function getParentLeaveReview(
   );
   if (!review?.detail) throw unavailable();
   return review.detail;
+}
+
+export async function decideParentLeave(
+  reader: ReviewReader,
+  approvalId: string,
+  raw: unknown,
+) {
+  if (!Types.ObjectId.isValid(approvalId)) throw unavailable();
+  const body = objectBody(raw, [
+    'action',
+    'applicationRevision',
+    'approvalVersion',
+    'clientOperationId',
+    'decisionReason',
+  ]);
+  const action = enumField(body.action, 'decision', [
+    'approve',
+    'reject',
+  ] as const);
+  const decisionReason =
+    action === 'reject'
+      ? textField(
+          typeof body.decisionReason === 'string'
+            ? body.decisionReason.normalize('NFC')
+            : body.decisionReason,
+          'rejection reason',
+          500,
+          10,
+        )
+      : undefined;
+  if (action === 'approve' && body.decisionReason !== undefined)
+    throw new RequestContractError(
+      400,
+      'A reason is supported for rejection only',
+    );
+  assertParentLeaveRevision(body.applicationRevision, body.applicationRevision);
+  assertParentLeaveRevision(body.approvalVersion, body.approvalVersion);
+  const clientOperationId = textField(
+    body.clientOperationId,
+    'operation ID',
+    120,
+    1,
+  );
+  const id = new Types.ObjectId(approvalId);
+
+  return withAcademicCatalogLock(reader.branchId, async session => {
+    const loginId = await assertReader(reader, session);
+    requireManage();
+    const routing = routingFor(reader);
+    if (!routing) throw unavailable();
+    const approval = await ApprovalRequest.findOne({
+      ...parentApprovals(reader),
+      _id: id,
+    })
+      .session(session)
+      .lean();
+    const proof =
+      approval &&
+      (await linkedReview(reader.branchId, routing, approval, session));
+    if (!approval || !proof) throw unavailable();
+    const { application, subject, submittedRevision } = proof;
+    const { link, scope } = subject;
+
+    await communicationFence(session, Session.collection.name, String(loginId));
+    const users = new Set([
+      reader.actorId,
+      String(application.requesterId),
+      String(link.verifiedBy),
+      String(scope.actor._id),
+    ]);
+    for (const userId of [...users].sort())
+      await communicationFence(session, User.collection.name, userId);
+    for (const [collection, objectId] of [
+      [Student.collection.name, application.studentId],
+      [ParentStudentLink.collection.name, application.parentStudentLinkId],
+      [StudentEnrollment.collection.name, application.enrollmentId],
+      [AcademicPeriod.collection.name, application.academicPeriodId],
+      [SchoolClass.collection.name, application.classId],
+      [Section.collection.name, application.sectionId],
+    ] as const)
+      await communicationFence(session, collection, String(objectId));
+
+    const finish = async () => {
+      if (String(await assertReader(reader, session)) !== String(loginId))
+        throw invalidSession();
+      requireManage();
+      const current = routingFor(reader);
+      if (
+        !current ||
+        current.policy !== routing.policy ||
+        current.version !== routing.version
+      )
+        throw unavailable();
+    };
+    const fingerprint = createHash('sha256')
+      .update(
+        JSON.stringify([
+          'parent_leave_decision_v1',
+          String(id),
+          String(application._id),
+          action,
+          body.applicationRevision,
+          body.approvalVersion,
+          decisionReason,
+        ]),
+      )
+      .digest('hex');
+    const key = { reviewerId: reader.actorId, clientOperationId };
+    const existing = await ParentLeaveDecisionOperation.findOne(key)
+      .select('+fingerprint')
+      .session(session)
+      .lean();
+    if (existing) {
+      if (
+        existing.fingerprint !== fingerprint ||
+        String(existing.branchId) !== reader.branchId
+      )
+        throw conflict();
+      await finish();
+      return {
+        approvalId: String(existing.approvalId),
+        state: existing.action === 'approve' ? 'approved' : 'rejected',
+        revision: existing.applicationRevision + 1,
+        decidedAt: existing.decidedAt,
+        replayed: true,
+      } as const;
+    }
+
+    if (
+      approval.status !== 'pending' ||
+      application.state !== 'pending' ||
+      approval.__v !== body.approvalVersion ||
+      !Number.isSafeInteger(approval.__v) ||
+      approval.__v! >= Number.MAX_SAFE_INTEGER
+    )
+      throw conflict();
+    const state = action === 'approve' ? 'approved' : 'rejected';
+    const { revision } = validateParentLeaveTransition({
+      from: 'pending',
+      to: state,
+      capability: 'current_domain_reviewer',
+      revision: application.revision,
+      expectedRevision: body.applicationRevision,
+      decisionReason,
+    });
+    await assertCoverageRange(
+      application,
+      scope.enrollment,
+      scope.period,
+      session,
+    );
+    await assertNoTeacherLeaveOverlap(application, session);
+
+    const now = new Date();
+    const reviewer = new Types.ObjectId(reader.actorId);
+    application.$where = {
+      state: 'pending',
+      revision: application.revision,
+      approvalRequestId: id,
+      'submission.revision': submittedRevision,
+    };
+    application.state = state;
+    application.revision = revision;
+    application.history.push({
+      action: state,
+      actorId: reviewer,
+      at: now,
+      revision,
+      decisionReason,
+    });
+    await application.save({ session });
+    // A native CAS preserves the shared decision instant. Mongoose's nested
+    // timestamp middleware overwrites createdAt on pushed history entries.
+    const linked = await ApprovalRequest.db
+      .collection<IApprovalRequest>(ApprovalRequest.collection.name)
+      .updateOne(
+        {
+          _id: id,
+          entityId: application._id,
+          entityType: PARENT_LEAVE_APPROVAL_ENTITY,
+          approvalType: 'leave',
+          branchId: application.branchId,
+          requesterId: application.requesterId,
+          status: 'pending',
+          __v: approval.__v,
+          parentLeaveRevision: submittedRevision,
+        },
+        {
+          $set: {
+            status: state,
+            reviewedBy: reviewer,
+            reviewedAt: now,
+            updatedAt: now,
+          },
+          $inc: { __v: 1 },
+          $push: {
+            history: {
+              _id: new Types.ObjectId(),
+              action: state,
+              performedBy: reviewer,
+              authority: 'direct',
+              ...(decisionReason ? { reason: decisionReason } : {}),
+              createdAt: now,
+            },
+          },
+        },
+        { session },
+      );
+    if (linked.modifiedCount !== 1) throw conflict();
+
+    const coverageId =
+      action === 'approve'
+        ? await createParentLeaveCoverage(
+            application,
+            id,
+            submittedRevision,
+            reader.actorId,
+            now,
+            fingerprint,
+            session,
+          )
+        : undefined;
+    await ParentLeaveDecisionOperation.create(
+      [
+        {
+          ...key,
+          branchId: reader.branchId,
+          approvalId: id,
+          applicationId: application._id,
+          fingerprint,
+          action,
+          applicationRevision: revision - 1,
+          approvalVersion: body.approvalVersion,
+          decidedAt: now,
+          coverageId,
+        },
+      ],
+      { session },
+    );
+    await finish();
+    return {
+      approvalId: String(id),
+      state,
+      revision,
+      decidedAt: now,
+      replayed: false,
+    } as const;
+  });
 }

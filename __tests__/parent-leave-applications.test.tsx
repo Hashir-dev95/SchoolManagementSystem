@@ -346,6 +346,45 @@ test('verified child list, Draft status and private details/history load only on
   for (const title of ['Submit', 'Approve', 'Withdraw'])
     expect(button(title)).toBeUndefined();
 });
+test.each(['approved', 'rejected'] as const)(
+  'Parent can read the confirmed %s outcome and its history',
+  async status => {
+    const reason = 'Documentation does not cover the selected dates.';
+    const current = page();
+    transport.list.mockResolvedValueOnce({
+      ...current,
+      items: current.items.map(item => ({ ...item, state: status })),
+    });
+    transport.detail.mockResolvedValueOnce(
+      draft('draft-A', {
+        state: status,
+        revision: 2,
+        history: [
+          {
+            action: 'draft_created',
+            revision: 0,
+            at: '2026-11-01T10:00:00.000Z',
+          },
+          { action: 'submitted', revision: 1, at: '2026-11-01T11:00:00.000Z' },
+          {
+            action: status,
+            revision: 2,
+            at: '2026-11-02T10:00:00.000Z',
+            ...(status === 'rejected' ? { decisionReason: reason } : {}),
+          },
+        ],
+      }),
+    );
+    await mount();
+    expect(text()).not.toContain(reason);
+    await press('Open application draft-A');
+    expect(text()).toContain(status === 'approved' ? 'Approved' : 'Rejected');
+    expect(text()).toContain('2026-11-02T10:00:00.000Z');
+    expect(text().includes(reason)).toBe(status === 'rejected');
+    expect(button('Withdraw')).toBeUndefined();
+  },
+);
+
 test('field feedback blocks invalid date ranges and missing required fields', async () => {
   await mount();
   await press('New leave draft');
