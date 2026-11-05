@@ -9,7 +9,13 @@ export interface LeaveFields {
 export interface LeaveSummary extends Omit<LeaveFields, 'reason'> {
   applicationId: string;
   studentId: string;
-  state: 'draft';
+  state:
+    | 'draft'
+    | 'pending'
+    | 'withdrawn'
+    | 'approved'
+    | 'rejected'
+    | 'changes_requested';
   revision: number;
   createdAt: string;
   updatedAt: string;
@@ -17,7 +23,7 @@ export interface LeaveSummary extends Omit<LeaveFields, 'reason'> {
 export interface LeaveDraft extends LeaveSummary {
   reason: string;
   history: {
-    action: 'draft_created' | 'draft_edited';
+    action: 'draft_created' | 'draft_edited' | 'submitted' | 'withdrawn';
     revision: number;
     at: string;
   }[];
@@ -33,6 +39,10 @@ export interface LeaveSave {
   replayed: boolean;
   operationRevision?: number;
   application: LeaveDraft;
+}
+export interface LeaveLifecycleResult extends LeaveSave {
+  operationState: 'pending' | 'withdrawn';
+  operationRevision: number;
 }
 export const leaveOperationId = () => {
   const runtime = globalThis as typeof globalThis & {
@@ -94,6 +104,36 @@ export const leaveApplicationService = {
       method: 'PATCH',
       body: { ...fields, revision, clientOperationId },
     }),
+  submit: (
+    token: string,
+    child: string,
+    id: string,
+    revision: number,
+    clientOperationId: string,
+  ) =>
+    request<LeaveLifecycleResult>(
+      token,
+      `${path(child)}/${encodeURIComponent(id)}/submit`,
+      {
+        method: 'POST',
+        body: { revision, clientOperationId },
+      },
+    ),
+  withdraw: (
+    token: string,
+    child: string,
+    id: string,
+    revision: number,
+    clientOperationId: string,
+  ) =>
+    request<LeaveLifecycleResult>(
+      token,
+      `${path(child)}/${encodeURIComponent(id)}/withdraw`,
+      {
+        method: 'POST',
+        body: { revision, clientOperationId },
+      },
+    ),
 };
 export type LeaveTransport = typeof leaveApplicationService;
 

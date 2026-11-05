@@ -476,14 +476,15 @@ test('pagination is bounded and scope cannot be supplied in queries', async () =
   ])
     assert.equal((await http('GET', query)).status, 400);
 });
-test('no approval/attendance/notification mutation or lifecycle endpoints', async () => {
+test('draft editing has no approval, attendance, notification or implicit lifecycle effect', async () => {
   await seedOccurrence();
   const records = await PeriodAttendanceRecord.find({}).lean(),
     sessions = await AttendanceSession.find({}).lean();
   const id = await draftId();
   await http('PATCH', '/' + id, editBody());
-  for (const action of ['submit', 'withdraw', 'approve'])
-    assert.equal((await http('POST', '/' + id + '/' + action, {})).status, 403);
+  for (const action of ['submit', 'withdraw'])
+    assert.equal((await http('POST', '/' + id + '/' + action, {})).status, 400);
+  assert.equal((await http('POST', '/' + id + '/approve', {})).status, 403);
   assert.equal(await ApprovalRequest.countDocuments(), 0);
   assert.equal(await AttendanceCorrection.countDocuments(), 0);
   assert.equal(await StudentLeave.countDocuments(), 0);

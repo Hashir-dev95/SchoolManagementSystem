@@ -1,5 +1,7 @@
 import { Schema, model, Types } from 'mongoose';
 
+export const PARENT_LEAVE_APPROVAL_ENTITY = 'parent_leave_application';
+
 export const APPROVAL_TYPES = {
   LEAVE: 'leave',
   LESSON_PLAN: 'lesson_plan',
@@ -19,11 +21,14 @@ export type ApprovalStatus =
   | 'pending'
   | 'approved'
   | 'rejected'
-  | 'changes_requested';
+  | 'changes_requested'
+  | 'withdrawn';
 
 export interface IApprovalHistory {
   _id?: Types.ObjectId;
   action:
+    | 'submitted'
+    | 'withdrawn'
     | 'approved'
     | 'rejected'
     | 'changes_requested'
@@ -45,6 +50,7 @@ export interface IApprovalRequest {
   entityId?: Types.ObjectId;
   lessonPlanRevision?: number;
   resultRevision?: number;
+  parentLeaveRevision?: number;
 
   approvalType: ApprovalType;
 
@@ -60,6 +66,8 @@ export interface IApprovalRequest {
 
   reviewedBy?: Types.ObjectId;
   reviewedAt?: Date;
+  withdrawnBy?: Types.ObjectId;
+  withdrawnAt?: Date;
 
   delegatedTo?: Types.ObjectId;
   delegatedBy?: Types.ObjectId;
@@ -76,6 +84,8 @@ const approvalHistorySchema = new Schema<IApprovalHistory>(
     action: {
       type: String,
       enum: [
+        'submitted',
+        'withdrawn',
         'approved',
         'rejected',
         'changes_requested',
@@ -133,6 +143,11 @@ const approvalRequestSchema = new Schema<IApprovalRequest>(
     },
     lessonPlanRevision: { type: Number, min: 1 },
     resultRevision: { type: Number, min: 1 },
+    parentLeaveRevision: {
+      type: Number,
+      min: 1,
+      validate: Number.isSafeInteger,
+    },
 
     approvalType: {
       type: String,
@@ -174,7 +189,13 @@ const approvalRequestSchema = new Schema<IApprovalRequest>(
 
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected', 'changes_requested'],
+      enum: [
+        'pending',
+        'approved',
+        'rejected',
+        'changes_requested',
+        'withdrawn',
+      ],
       default: 'pending',
       required: true,
       index: true,
@@ -188,6 +209,8 @@ const approvalRequestSchema = new Schema<IApprovalRequest>(
     reviewedAt: {
       type: Date,
     },
+    withdrawnBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    withdrawnAt: Date,
 
     delegatedTo: {
       type: Schema.Types.ObjectId,
@@ -220,6 +243,18 @@ approvalRequestSchema.index({
   approvalType: 1,
   status: 1,
 });
+
+approvalRequestSchema.index(
+  { entityId: 1 },
+  {
+    unique: true,
+    name: 'one_approval_per_parent_leave',
+    partialFilterExpression: {
+      entityType: PARENT_LEAVE_APPROVAL_ENTITY,
+      entityId: { $type: 'objectId' },
+    },
+  },
+);
 
 const ApprovalRequest = model<IApprovalRequest>(
   'ApprovalRequest',

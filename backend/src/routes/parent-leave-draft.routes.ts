@@ -7,6 +7,7 @@ import {
   readParentLeaveDraft,
   saveNewParentLeaveDraft,
 } from '../services/parent-leave-draft.service';
+import { changeParentLeaveLifecycle } from '../services/parent-leave-lifecycle.service';
 
 // Mounted exclusively inside the JWT/Parent guarded, no-store Parent router.
 const router = Router({ mergeParams: true });
@@ -90,4 +91,19 @@ router.patch(
     ),
   ),
 );
+for (const kind of ['submit', 'withdraw'] as const) {
+  router.post(
+    `/:applicationId/${kind}`,
+    handle((req, token) =>
+      changeParentLeaveLifecycle(
+        kind,
+        req.user,
+        token,
+        param(req, 'studentId'),
+        param(req, 'applicationId'),
+        req.body,
+      ),
+    ),
+  );
+}
 export default router;

@@ -1,0 +1,22 @@
+warning: in the working copy of '__tests__/parent-leave-applications.test.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '__tests__/parent-leave-service.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/models/approvalRequest.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/models/parentLeaveApplication.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/routes/parent-leave-draft.routes.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/services/parent-leave-draft.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/parent-leave-draft.security.test.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/screens/parent/ParentLeaveApplicationsScreen.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/services/parent/leaveApplicationService.ts', LF will be replaced by CRLF the next time Git touches it
+ __tests__/parent-leave-applications.test.tsx       | 147 [32m++++++++++++[m
+ __tests__/parent-leave-service.test.ts             |  13 [32m++[m
+ backend/src/models/approvalRequest.ts              |  39 [32m+++[m[31m-[m
+ backend/src/models/parentLeaveApplication.ts       | 105 [32m++++++++[m[31m-[m
+ backend/src/routes/parent-leave-draft.routes.ts    |  16 [32m++[m
+ backend/src/services/approval-request.service.ts   |   8 [32m+[m[31m-[m
+ .../src/services/approval-resubmission.service.ts  |   5 [32m+[m[31m-[m
+ backend/src/services/parent-leave-draft.service.ts |  18 [32m+[m[31m-[m
+ backend/tests/parent-leave-draft.security.test.ts  |   7 [32m+[m[31m-[m
+ .../parent/ParentLeaveApplicationsScreen.tsx       | 257 [32m++++++++++++++++[m[31m-----[m
+ src/services/parent/leaveApplicationService.ts     |  44 [32m+++[m[31m-[m
+ src/services/principal/principalService.ts         |   4 [32m+[m[31m-[m
+ 12 files changed, 582 insertions(+), 81 deletions(-)

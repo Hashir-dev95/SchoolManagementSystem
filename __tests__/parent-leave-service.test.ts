@@ -54,6 +54,19 @@ test('transport failures propagate to scoped screen handling', async () => {
   request.mockRejectedValueOnce(new Error('offline'));
   await expect(service.list('token', 'child')).rejects.toThrow('offline');
 });
+test('lifecycle transports send only revision and receipt to the scoped action', async () => {
+  for (const kind of ['submit', 'withdraw'] as const) {
+    await service[kind]('token', 'child/id', 'draft/id', 3, 'action-op');
+    expect(request).toHaveBeenLastCalledWith(
+      `/parent/me/children/child%2Fid/leave-applications/draft%2Fid/${kind}`,
+      {
+        token: 'token',
+        method: 'POST',
+        body: { revision: 3, clientOperationId: 'action-op' },
+      },
+    );
+  }
+});
 test('field feedback validates calendar/date order without inventing catalogue or duration policy', () => {
   expect(leaveFieldErrors(fields)).toEqual({});
   expect(leaveFieldErrors({ ...fields, endDate: '2030-01-01' })).toEqual({});

@@ -28,11 +28,6 @@ type Draft = InferSchemaType<typeof ParentLeaveApplication.schema> & {
 };
 const unavailable = () =>
   new RequestContractError(404, 'Application or child access is unavailable');
-const filter = (access: Access) => ({
-  ...access.provenance,
-  state: 'draft' as const,
-  approvalRequestId: null,
-});
 const same = (a: Access, b: Access) =>
   JSON.stringify([
     a.provenance,
@@ -49,7 +44,7 @@ const same = (a: Access, b: Access) =>
 const summary = (row: Draft) => ({
   applicationId: String(row._id),
   studentId: String(row.studentId),
-  state: 'draft' as const,
+  state: row.state,
   leaveType: row.leaveType,
   startDate: row.startDate,
   endDate: row.endDate,
@@ -88,7 +83,7 @@ export async function listParentLeaveDrafts(
     limit = number(body.limit, 25, 50);
   if (!limit) throw new RequestContractError(400, 'Invalid page');
   const initial = await authorizeParentApplication(identity, token, studentId);
-  const scope = filter(initial);
+  const scope = initial.provenance;
   const [rows, total] = await Promise.all([
     ParentLeaveApplication.find(scope)
       .sort({ createdAt: -1, _id: -1 })
@@ -118,7 +113,7 @@ export async function readParentLeaveDraft(
   );
   const row = await ParentLeaveApplication.findOne({
     _id: applicationId,
-    ...filter(initial),
+    ...initial.provenance,
   })
     .select('+reason')
     .read('primary')
@@ -220,10 +215,15 @@ export async function editParentLeaveDraft(
       }
       const row = await ParentLeaveApplication.findOne({
         _id: id,
-        ...filter(access),
+        ...access.provenance,
       }).session(session);
       if (!row) throw unavailable();
       assertParentLeaveRevision(row.revision, revision);
+      if (row.state !== 'draft' || row.approvalRequestId)
+        throw new RequestContractError(
+          409,
+          'Only an unsubmitted draft can be edited',
+        );
       // save() validates the entire history and the draft-only invariant. Both the
       // explicit revision and Mongoose __v CAS protect this trusted mutation.
       row.set(payload);

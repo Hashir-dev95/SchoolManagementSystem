@@ -49,6 +49,8 @@ const transport: jest.Mocked<LeaveTransport> = {
   detail: jest.fn(),
   create: jest.fn(),
   edit: jest.fn(),
+  submit: jest.fn(),
+  withdraw: jest.fn(),
 };
 const childrenTransport = { children: jest.fn() };
 const operationId = jest.fn();
@@ -177,15 +179,160 @@ beforeEach(() => {
     operationRevision: 1,
     application: draft('draft-A', { revision: 1 }),
   });
+  transport.submit.mockReset().mockResolvedValue(lifecycleResult('pending'));
+  transport.withdraw
+    .mockReset()
+    .mockResolvedValue(lifecycleResult('withdrawn'));
   operationId
     .mockReset()
     .mockReturnValueOnce('operation-1')
     .mockReturnValue('operation-next');
   mockLogout.mockResolvedValue(undefined);
 });
+function lifecycleResult(state: 'pending' | 'withdrawn') {
+  const value = draft();
+  const history = [
+    ...value.history,
+    { action: 'submitted' as const, revision: 1, at: value.updatedAt },
+  ];
+  const revision = state === 'pending' ? 1 : 2;
+  return {
+    applicationId: value.applicationId,
+    operationRevision: revision,
+    operationState: state,
+    replayed: false,
+    application: {
+      ...value,
+      state,
+      revision,
+      history:
+        state === 'pending'
+          ? history
+          : [
+              ...history,
+              {
+                action: 'withdrawn' as const,
+                revision,
+                at: value.updatedAt,
+              },
+            ],
+    },
+  };
+}
 afterEach(async () => {
   if (tree) await act(async () => tree.unmount());
 });
+
+test('saved drafts require confirmation and show pending and withdrawn only after server responses', async () => {
+  await mount();
+  await press('Open draft draft-A');
+  await press('Submit for Approval');
+  expect(transport.submit).not.toHaveBeenCalled();
+  expect(text()).not.toContain('Application submitted for approval.');
+  await press('Cancel');
+  expect(button('Confirm submission')).toBeUndefined();
+  await press('Submit for Approval');
+  await press('Confirm submission');
+  expect(transport.submit).toHaveBeenCalledWith(
+    'token-A',
+    'A',
+    'draft-A',
+    0,
+    'operation-1',
+  );
+  expect(text()).toContain('Application submitted for approval.');
+  expect(text()).toContain('Pending');
+  expect(button('Save draft')).toBeUndefined();
+  await press('Withdraw');
+  expect(transport.withdraw).not.toHaveBeenCalled();
+  await press('Confirm withdrawal');
+  expect(transport.withdraw).toHaveBeenCalledWith(
+    'token-A',
+    'A',
+    'draft-A',
+    1,
+    'operation-next',
+  );
+  expect(text()).toContain('Application withdrawn.');
+  expect(text()).toContain('Application history');
+  expect(button('Withdraw')).toBeUndefined();
+});
+
+test('unsaved edits cannot be submitted and uncertain submission reuses the same operation', async () => {
+  transport.submit.mockRejectedValueOnce(new Error('network failure'));
+  await mount();
+  await press('Open draft draft-A');
+  await change('Private reason', 'Changed locally');
+  expect(button('Submit for Approval').props.disabled).toBe(true);
+  await press('Reload draft');
+  await press('Submit for Approval');
+  await press('Confirm submission');
+  expect(text()).not.toContain('Application submitted for approval.');
+  await press('Retry action');
+  expect(transport.submit.mock.calls[0]).toEqual(
+    transport.submit.mock.calls[1],
+  );
+  expect(text()).toContain('Application submitted for approval.');
+});
+
+test('withdrawal conflict requires reload and does not report success', async () => {
+  transport.detail.mockResolvedValue(lifecycleResult('pending').application);
+  transport.withdraw.mockRejectedValueOnce(
+    new ApiError(409, 'Application changed'),
+  );
+  await mount();
+  await press('Open draft draft-A');
+  await press('Withdraw');
+  await press('Confirm withdrawal');
+  expect(text()).not.toContain('Application withdrawn.');
+  expect(button('Withdraw').props.disabled).toBe(true);
+  await press('Reload application');
+  expect(button('Withdraw').props.disabled).not.toBe(true);
+});
+
+for (const status of [401, 403, 404]) {
+  test(`current lifecycle denial ${status} conceals private detail`, async () => {
+    transport.submit.mockRejectedValueOnce(new ApiError(status, 'Denied'));
+    await mount();
+    await press('Open draft draft-A');
+    await press('Submit for Approval');
+    await press('Confirm submission');
+    expect(text()).not.toContain('PRIVATE draft-A');
+    expect(text()).not.toContain('Application submitted for approval.');
+    expect(button('Confirm submission')).toBeUndefined();
+  });
+}
+
+for (const scope of ['child', 'account', 'token', 'branch'] as const) {
+  test(`late submission response cannot publish into a new ${scope} scope`, async () => {
+    const slow = deferred<Awaited<ReturnType<LeaveTransport['submit']>>>();
+    transport.submit.mockReturnValueOnce(slow.promise);
+    await mount();
+    await press('Open draft draft-A');
+    await press('Submit for Approval');
+    await act(async () => {
+      button('Confirm submission').props.onPress();
+    });
+    if (scope === 'child') {
+      await act(async () => {
+        const tabs = tree.root.findByType(WorkspaceTabs);
+        tabs.props.onSelect(tabs.props.items[1]);
+      });
+    } else {
+      if (scope === 'account') mockUser = { ...mockUser!, id: 'parent-B' };
+      if (scope === 'token') mockToken = 'token-B';
+      if (scope === 'branch') mockUser = { ...mockUser!, branchId: 'other' };
+      await act(async () => {
+        tree.update(element());
+      });
+    }
+    await act(async () => {
+      slow.resolve(lifecycleResult('pending'));
+    });
+    expect(text()).not.toContain('Application submitted for approval.');
+    expect(text()).not.toContain('PRIVATE draft-A');
+  });
+}
 
 test('verified child list, Draft status and private details/history load only on open', async () => {
   await mount();

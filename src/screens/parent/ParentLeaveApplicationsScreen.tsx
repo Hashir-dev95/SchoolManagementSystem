@@ -133,11 +133,11 @@ function Applications({
     <DashboardShell keyboardShouldPersistTaps="handled">
       <ScreenHeading
         title="Leave applications"
-        subtitle="Private drafts for your verified children"
+        subtitle="Private leave applications for your verified children"
       />
       <Text style={styles.body}>
-        Save and review a draft here. Applications are not sent for approval
-        yet.
+        Save a draft before submitting it to your Branch approval queue. Pending
+        applications can be withdrawn here.
       </Text>
       <Button
         title="Refresh verified children"
@@ -181,6 +181,22 @@ function Applications({
     </DashboardShell>
   );
 }
+const leaveLabels: Record<LeaveDraft['state'], string> = {
+  draft: 'Draft',
+  pending: 'Pending',
+  withdrawn: 'Withdrawn',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  changes_requested: 'Changes requested',
+};
+const eventLabels: Record<LeaveDraft['history'][number]['action'], string> = {
+  draft_created: 'Draft created',
+  draft_edited: 'Draft edited',
+  submitted: 'Submitted',
+  withdrawn: 'Withdrawn',
+};
+type LifecycleAction = 'submit' | 'withdraw';
+
 function DraftWorkspace({
   token,
   child,
@@ -199,6 +215,7 @@ function DraftWorkspace({
     inFlight = useRef(false);
   const pending = useRef<{
     operation: string;
+    kind: 'save' | LifecycleAction;
     fields: LeaveFields;
     id?: string;
     revision?: number;
@@ -214,6 +231,17 @@ function DraftWorkspace({
     [notice, setNotice] = useState('');
   const [uncertain, setUncertain] = useState(false),
     [conflict, setConflict] = useState(false);
+  const [confirmation, setConfirmation] = useState<LifecycleAction | null>(
+    null,
+  );
+  const editable = !detail || detail.state === 'draft';
+  const savedFieldsMatch =
+    form &&
+    detail &&
+    form.leaveType === detail.leaveType &&
+    form.startDate === detail.startDate &&
+    form.endDate === detail.endDate &&
+    form.reason === detail.reason;
   const current = (request: number) =>
     alive.current && request === generation.current;
   useEffect(
@@ -253,6 +281,7 @@ function DraftWorkspace({
     load();
   }, [load]);
   const showDetail = (value: LeaveDraft) => {
+    setConfirmation(null);
     setDetail(value);
     setForm({
       leaveType: value.leaveType,
@@ -271,6 +300,7 @@ function DraftWorkspace({
     setBusy(true);
     setError(null);
     setNotice('');
+    setConfirmation(null);
     // Conceal an earlier draft immediately while authorizing the new detail.
     setDetail(null);
     setForm(null);
@@ -290,12 +320,23 @@ function DraftWorkspace({
       }
     }
   };
-  const save = async () => {
+  const run = async (kind: 'save' | LifecycleAction) => {
     if (inFlight.current || !form || conflict) return;
-    const fieldErrors = leaveFieldErrors(form);
-    setErrors(fieldErrors);
-    if (Object.keys(fieldErrors).length) return;
+    if (!pending.current) {
+      if (kind === 'save') {
+        if (!editable) return;
+        const fieldErrors = leaveFieldErrors(form);
+        setErrors(fieldErrors);
+        if (Object.keys(fieldErrors).length) return;
+      } else if (
+        !detail ||
+        !savedFieldsMatch ||
+        detail.state !== (kind === 'submit' ? 'draft' : 'pending')
+      )
+        return;
+    }
     inFlight.current = true;
+    setConfirmation(null);
     setBusy(true);
     setError(null);
     setNotice('');
@@ -304,30 +345,58 @@ function DraftWorkspace({
     try {
       const attempt = pending.current ?? {
         operation: operationId(),
+        kind,
         fields: { ...form },
         id: detail?.applicationId,
         revision: detail?.revision,
       };
       pending.current = attempt;
-      const result = attempt.id
-        ? await transport.edit(
-            token,
-            child.studentId,
-            attempt.id,
-            attempt.fields,
-            attempt.revision!,
-            attempt.operation,
-          )
-        : await transport.create(
-            token,
-            child.studentId,
-            attempt.fields,
-            attempt.operation,
-          );
+      const result =
+        attempt.kind !== 'save'
+          ? await transport[attempt.kind](
+              token,
+              child.studentId,
+              attempt.id!,
+              attempt.revision!,
+              attempt.operation,
+            )
+          : attempt.id
+          ? await transport.edit(
+              token,
+              child.studentId,
+              attempt.id,
+              attempt.fields,
+              attempt.revision!,
+              attempt.operation,
+            )
+          : await transport.create(
+              token,
+              child.studentId,
+              attempt.fields,
+              attempt.operation,
+            );
       if (!current(request)) return;
       showDetail(result.application);
       saved = true;
-      setNotice('Draft saved. It has not been submitted.');
+      if (attempt.kind === 'submit') {
+        setNotice(
+          result.application.state === 'pending'
+            ? 'Application submitted for approval.'
+            : `Submission confirmed. Current status: ${
+                leaveLabels[result.application.state]
+              }.`,
+        );
+      } else if (attempt.kind === 'withdraw') {
+        setNotice('Application withdrawn.');
+      } else {
+        setNotice(
+          result.application.state === 'draft'
+            ? 'Draft saved. It has not been submitted.'
+            : `Save confirmed. Current status: ${
+                leaveLabels[result.application.state]
+              }.`,
+        );
+      }
       // Refresh counts/order from the server; a failed refresh cannot undo save.
       const refreshed = await transport.list(token, child.studentId, 0);
       if (current(request)) setPage(refreshed);
@@ -343,19 +412,40 @@ function DraftWorkspace({
         pending.current = null;
         setUncertain(false);
         setConflict(true);
-        setError('This draft changed. Reload it before editing again.');
+        setError(
+          kind === 'save'
+            ? 'This draft changed. Reload it before editing again.'
+            : 'The application changed or overlaps another leave request. Reload it before trying again.',
+        );
       } else if (failure instanceof ApiError && failure.status === 400) {
         pending.current = null;
         setUncertain(false);
-        setError('Check the leave fields and date range, then save again.');
+        setError(
+          kind === 'save'
+            ? 'Check the leave fields and date range, then save again.'
+            : 'Reload the application and try again.',
+        );
       } else if (pending.current) {
         setUncertain(true);
-        setError(
-          'Save not confirmed. Retry save safely with the same operation.',
-        );
+        if (
+          kind === 'submit' &&
+          failure instanceof ApiError &&
+          failure.status === 503
+        )
+          setError(
+            'Leave submission is unavailable. Retry with the same operation when service returns.',
+          );
+        else
+          setError(
+            kind === 'save'
+              ? 'Save not confirmed. Retry save safely with the same operation.'
+              : 'The action could not be confirmed. Retry with the same operation.',
+          );
       } else
         setError(
-          saved
+          saved && kind !== 'save'
+            ? 'Action confirmed. Close this application and refresh the list.'
+            : saved
             ? 'Draft saved, but the list could not refresh. Close the editor and refresh drafts.'
             : 'Could not start a secure save. Please retry.',
         );
@@ -366,9 +456,11 @@ function DraftWorkspace({
       }
     }
   };
+  const save = () => run('save');
+  const retry = () => run(pending.current?.kind ?? 'save');
   return (
     <>
-      <SectionCard title={`${child.fullName} · Leave drafts`}>
+      <SectionCard title={`${child.fullName} · Leave applications`}>
         <View style={styles.actions}>
           <Button
             title="New leave draft"
@@ -379,6 +471,7 @@ function DraftWorkspace({
               setErrors({});
               setError(null);
               setNotice('');
+              setConfirmation(null);
               setConflict(false);
               pending.current = null;
             }}
@@ -394,7 +487,7 @@ function DraftWorkspace({
           loading={busy}
           error={error}
           onRetry={async () => {
-            if (uncertain) await save();
+            if (uncertain) await retry();
             else if (conflict && detail) await open(detail.applicationId);
             else await load(page?.offset ?? 0);
           }}
@@ -419,13 +512,15 @@ function DraftWorkspace({
         ) : null}
         {page?.items.map(item => (
           <View key={item.applicationId} style={styles.record}>
-            <StatusBadge status="pending" label="Draft" />
+            <StatusBadge status="pending" label={leaveLabels[item.state]} />
             <Text style={styles.title}>{item.leaveType}</Text>
             <Text style={styles.body}>
               {item.startDate} – {item.endDate} · Revision {item.revision}
             </Text>
             <Button
-              title={`Open draft ${item.applicationId}`}
+              title={`Open ${
+                item.state === 'draft' ? 'draft' : 'application'
+              } ${item.applicationId}`}
               variant="secondary"
               disabled={busy || uncertain}
               onPress={() => open(item.applicationId)}
@@ -435,7 +530,7 @@ function DraftWorkspace({
         {page ? (
           <View style={styles.actions}>
             <Text style={styles.body}>
-              {page.total} draft{page.total === 1 ? '' : 's'}
+              {page.total} application{page.total === 1 ? '' : 's'}
             </Text>
             <Button
               title="Previous drafts"
@@ -455,11 +550,22 @@ function DraftWorkspace({
         ) : null}
       </SectionCard>
       {form ? (
-        <SectionCard title={detail ? 'Edit leave draft' : 'New leave draft'}>
-          <StatusBadge status="pending" label="Draft" />
+        <SectionCard
+          title={
+            !editable
+              ? 'Leave application'
+              : detail
+              ? 'Edit leave draft'
+              : 'New leave draft'
+          }
+        >
+          <StatusBadge
+            status="pending"
+            label={leaveLabels[detail?.state ?? 'draft']}
+          />
           <Text style={styles.body}>
-            Private to your current authorized account. Medical attachments and
-            submission are not available yet.
+            Private to your current authorized account. This application
+            supports text only.
           </Text>
           {(['leaveType', 'startDate', 'endDate', 'reason'] as const).map(
             key => {
@@ -478,7 +584,13 @@ function DraftWorkspace({
                   <TextInput
                     accessibilityLabel={name}
                     value={form[key]}
-                    editable={!busy && !uncertain && !conflict}
+                    editable={
+                      editable &&
+                      !busy &&
+                      !uncertain &&
+                      !conflict &&
+                      !confirmation
+                    }
                     multiline={key === 'reason'}
                     maxLength={
                       key === 'reason' ? 500 : key === 'leaveType' ? 80 : 10
@@ -498,23 +610,42 @@ function DraftWorkspace({
             },
           )}
           <View style={styles.actions}>
-            <Button
-              title={uncertain ? 'Retry save' : 'Save draft'}
-              disabled={busy || conflict}
-              onPress={save}
-            />
+            {editable && (!uncertain || pending.current?.kind === 'save') ? (
+              <Button
+                title={uncertain ? 'Retry save' : 'Save draft'}
+                disabled={busy || conflict || !!confirmation}
+                onPress={save}
+              />
+            ) : null}
+            {detail?.state === 'draft' && !uncertain && !confirmation ? (
+              <Button
+                title="Submit for Approval"
+                disabled={busy || conflict || !savedFieldsMatch}
+                onPress={() => setConfirmation('submit')}
+              />
+            ) : null}
+            {detail?.state === 'pending' && !uncertain && !confirmation ? (
+              <Button
+                title="Withdraw"
+                disabled={busy || conflict}
+                onPress={() => setConfirmation('withdraw')}
+              />
+            ) : null}
+            {uncertain && pending.current?.kind !== 'save' ? (
+              <Button title="Retry action" disabled={busy} onPress={retry} />
+            ) : null}
             {detail ? (
               <Button
-                title="Reload draft"
+                title={editable ? 'Reload draft' : 'Reload application'}
                 variant="secondary"
-                disabled={busy || uncertain}
+                disabled={busy || uncertain || !!confirmation}
                 onPress={() => open(detail.applicationId)}
               />
             ) : null}
             <Button
               title="Close editor"
               variant="secondary"
-              disabled={busy || uncertain}
+              disabled={busy || uncertain || !!confirmation}
               onPress={() => {
                 setForm(null);
                 setDetail(null);
@@ -524,15 +655,37 @@ function DraftWorkspace({
               }}
             />
           </View>
+          {confirmation ? (
+            <View style={styles.field}>
+              <Text style={styles.body}>
+                {confirmation === 'submit'
+                  ? 'Send the saved dates and reason to your Branch approval queue? You can withdraw while it is pending.'
+                  : 'Withdraw this pending application? Its history will be retained.'}
+              </Text>
+              <Button
+                title={
+                  confirmation === 'submit'
+                    ? 'Confirm submission'
+                    : 'Confirm withdrawal'
+                }
+                onPress={() => run(confirmation)}
+              />
+              <Button
+                title="Cancel"
+                variant="secondary"
+                onPress={() => setConfirmation(null)}
+              />
+            </View>
+          ) : null}
           {detail ? (
             <>
-              <Text style={styles.title}>Draft history</Text>
+              <Text style={styles.title}>
+                {editable ? 'Draft history' : 'Application history'}
+              </Text>
               {detail.history.map(event => (
                 <Text key={event.revision} style={styles.body}>
-                  {event.action === 'draft_created'
-                    ? 'Draft created'
-                    : 'Draft edited'}{' '}
-                  · Revision {event.revision} · {event.at}
+                  {eventLabels[event.action]} · Revision {event.revision} ·{' '}
+                  {event.at}
                 </Text>
               ))}
             </>

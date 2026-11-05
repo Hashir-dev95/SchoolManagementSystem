@@ -23,7 +23,7 @@ export interface DelegationInput {
 
 export interface ApprovalHistoryEntry {
   _id?: string;
-  action: ApprovalAction | 'delegated' | 'resubmitted';
+  action: ApprovalAction | 'delegated' | 'resubmitted' | 'submitted' | 'withdrawn';
   performedBy: string | PrincipalRequester;
   reason?: string;
   createdAt: string;
@@ -40,7 +40,7 @@ export interface ApprovalRequest {
   approvalType: string;
   amount?: number;
   reason: string;
-  status: 'pending' | 'approved' | 'rejected' | 'changes_requested';
+  status: 'pending' | 'approved' | 'rejected' | 'changes_requested' | 'withdrawn';
   reviewedBy?: string | PrincipalRequester;
   reviewedAt?: string;
   delegatedTo?: string | PrincipalRequester;
