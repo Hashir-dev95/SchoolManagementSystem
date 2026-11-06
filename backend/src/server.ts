@@ -1,8 +1,9 @@
+import 'dotenv/config';
+import {once} from 'node:events';
 import {ensureStaffSelfServiceIndexes} from './models/staffSelfService';
 import {ensureLiveLessonIndexes} from './models/liveLessonSession';
 import {liveLessonService} from './services/live-lesson.service';
 import {ensureAttendanceAmendmentIndexes} from './models/attendanceAmendment';
-import 'dotenv/config';
 import {Syllabus} from './models/syllabus';
 import {LessonPlan} from './models/lessonPlan';
 import {LessonDelivery} from './models/lessonDelivery';
@@ -30,24 +31,37 @@ import {ensureAssignmentAdminIndexes} from './services/teacher-assignment-admin.
 import {ensureChatIndexes} from './models/chat';
 import {ensureParentLeaveApplicationIndexes} from './models/parentLeaveApplication';
 
-const PORT = process.env.PORT || 5000;
+class StartupError extends Error {}
+const configuredPort = process.env.PORT || '5000';
+const port = Number(configuredPort);
+let startupStep = 'validating configuration';
 
 const startServer = async (): Promise<void> => {
+  if (!/^\d+$/.test(configuredPort) || port < 1 || port > 65535) {
+    throw new StartupError('PORT must be an integer between 1 and 65535.');
+  }
+  if (!process.env.MONGODB_URI) {
+    throw new StartupError('Set MONGODB_URI in backend/.env or the process environment.');
+  }
+  if (!process.env.JWT_SECRET) {
+    throw new StartupError('Set JWT_SECRET in backend/.env or the process environment.');
+  }
+
+  startupStep = 'connecting to MongoDB';
   await connectDatabase();
+
+  startupStep = 'checking MongoDB topology';
+  const topology = await mongoose.connection.db!.admin().command({hello: 1});
+  if (!topology.setName && topology.msg !== 'isdbgrid') {
+    throw new StartupError('HIRA transactions require a MongoDB replica set or sharded cluster.');
+  }
+
+  startupStep = 'initializing required database indexes';
   await ensureFinanceIndexes();
   await ensureAcademicSetupIndexes();
   await ensureStaffSelfServiceIndexes();
   await ensureParentLeaveApplicationIndexes();
   await ensureLiveLessonIndexes();
-  let classroomMaintenance = false;
-  const classroomTimer = setInterval(() => {
-    if (classroomMaintenance) return;
-    classroomMaintenance = true;
-    liveLessonService.maintainClassrooms().catch(() => {
-      console.warn(JSON.stringify({operation: 'live.classroom.maintenance', category: 'unavailable'}));
-    }).finally(() => { classroomMaintenance = false; });
-  }, 10000);
-  classroomTimer.unref();
   await ensureTeacherAccountIndex();
   await ensureAttendanceAmendmentIndexes();
   await ensureAssignmentAdminIndexes();
@@ -62,18 +76,35 @@ const startServer = async (): Promise<void> => {
   // deployments with autoIndex disabled. Only the documented legacy issue index is replaced.
   await Promise.all([Subject.createIndexes(), TeacherAssignment.createIndexes(), ensureTimetableIndexes(), ensureAttendanceIndexes(), ensureTeacherNoticeIndexes(), AssignedWork.createIndexes(), Student.createIndexes(), SchoolNotice.createIndexes()]);
 
-  const topology = await mongoose.connection.db!.admin().command({hello: 1});
-  if (!topology.setName && topology.msg !== 'isdbgrid') throw new Error('Academic setup, Teacher Assignment and Timetable mutations require a MongoDB replica set or sharded cluster');
+  console.log('Required database indexes initialized');
 
-  const PORT_NUM = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
+  startupStep = 'binding the HTTP listener';
+  const server = app.listen(port, '0.0.0.0');
+  await once(server, 'listening');
+  console.log(`Backend server listening on port ${port}`);
 
-  if (isNaN(PORT_NUM)) {
-    throw new Error('Invalid PORT');
-  }
-
-  app.listen(PORT_NUM, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+  let classroomMaintenance = false;
+  const classroomTimer = setInterval(() => {
+    if (classroomMaintenance) return;
+    classroomMaintenance = true;
+    liveLessonService.maintainClassrooms().catch(() => {
+      console.warn(JSON.stringify({operation: 'live.classroom.maintenance', category: 'unavailable'}));
+    }).finally(() => { classroomMaintenance = false; });
+  }, 10000);
+  classroomTimer.unref();
 };
 
-startServer();
+startServer().catch(async (error: unknown) => {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  let detail = typeof code === 'number' ? `MongoDB error code ${code}.` : '';
+  if (error instanceof StartupError) detail = error.message;
+  else if (code === 'EADDRINUSE') detail = `Port ${port} is already in use (EADDRINUSE).`;
+  else if (code === 'EACCES' && startupStep === 'binding the HTTP listener') detail = `Permission denied for port ${port} (EACCES).`;
+  else if (startupStep === 'connecting to MongoDB' && !detail) {
+    detail = 'Check MONGODB_URI, database access, and network connectivity.';
+  }
+  // Driver error messages can include connection strings and index key values.
+  console.error(`[startup] Failed while ${startupStep}.${detail ? ` ${detail}` : ''}`);
+  process.exitCode = 1;
+  await mongoose.disconnect().catch(() => console.error('[startup] MongoDB cleanup failed.'));
+});
