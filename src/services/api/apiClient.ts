@@ -1,4 +1,4 @@
-import {getApiBaseUrl} from './apiConfig';
+const API_BASE_URL = 'http://192.168.18.32:5000/api';
 const DEFAULT_TIMEOUT_MS = 10000;
 
 export class ApiError extends Error {
@@ -21,7 +21,6 @@ export const apiClient = {
     options: ApiOptions = {},
   ): Promise<T> => {
     const { method = 'GET', body, token, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
-    const apiBaseUrl = getApiBaseUrl();
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
@@ -29,7 +28,7 @@ export const apiClient = {
     }, timeoutMs);
 
     try {
-      const response = await fetch(`${apiBaseUrl}${endpoint}`, {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method,
         headers: {
           'Content-Type': 'application/json',
