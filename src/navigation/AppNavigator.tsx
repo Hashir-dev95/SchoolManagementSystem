@@ -11,6 +11,7 @@ import TeacherNavigator from './TeacherNavigator';
 import StudentNavigator from './StudentNavigator';
 import ParentNavigator from './ParentNavigator';
 import FinanceNavigator from './FinanceNavigator';
+import GateFoundationScreen from '../screens/gate/GateFoundationScreen';
 import DeveloperPreview from '../devPreview/DeveloperPreview';
 const RoleNavigator = () => {
   const { user } = useAuth();
@@ -32,6 +33,8 @@ const RoleNavigator = () => {
       return <ParentNavigator />;
     case USER_ROLES.FINANCE:
       return <FinanceNavigator />;
+    case USER_ROLES.GATE_STAFF:
+      return <GateFoundationScreen />;
 
     default:
       return <AuthNavigator />;

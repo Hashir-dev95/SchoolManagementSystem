@@ -46,6 +46,7 @@ test.each([
   [null, 'Auth'],
   [USER_ROLES.PRINCIPAL, 'Principal'],
   [USER_ROLES.SUPER_ADMIN, 'SuperAdmin'],
+  [USER_ROLES.GATE_STAFF, 'Gate Staff'],
 ])(
   'role %s preserves its existing destination and a single root container',
   async (role, expected) => {

@@ -465,6 +465,7 @@ test('Principal dangerous permissions are removed, supporting reads and Super Ad
   // Role-specific safety/class reads must not broaden Super Admin; trusted
   // Teacher assignment management is an intentional administrative grant.
   assert.deepEqual(ROLE_PERMISSIONS.super_admin, Object.values(PERMISSIONS).filter(permission =>
+    (!permission.startsWith('gate.') || [PERMISSIONS.GATE_REGISTRY_MANAGE, PERMISSIONS.GATE_ASSIGNMENTS_MANAGE, PERMISSIONS.GATE_OPERATORS_PROVISION, PERMISSIONS.GATE_CUSTODY_MANAGE].some(grant => grant === permission)) &&
     !permission.startsWith('liveLesson.') &&
     !permission.startsWith('staff.') &&
     !permission.startsWith('teacher.academic.') && !permission.startsWith('teacher.lessons.') &&
@@ -474,6 +475,9 @@ test('Principal dangerous permissions are removed, supporting reads and Super Ad
     permission !== PERMISSIONS.TEACHER_CLASSES_VIEW && permission !== PERMISSIONS.TEACHER_TIMETABLE_VIEW &&
     permission !== PERMISSIONS.TEACHER_ATTENDANCE_VIEW && permission !== PERMISSIONS.TEACHER_ATTENDANCE_MANAGE &&
     permission !== PERMISSIONS.TEACHER_TIMETABLE_ACKNOWLEDGE && permission !== PERMISSIONS.TEACHER_TIMETABLE_ISSUE));
+  for (const permission of [PERMISSIONS.GATE_TASKS_VIEW, PERMISSIONS.GATE_ENTRY_RECORD, PERMISSIONS.GATE_PICKUP_VERIFY, PERMISSIONS.GATE_EXIT_CONFIRM, PERMISSIONS.GATE_INCIDENT_ESCALATE]) {
+    assert.equal(ROLE_PERMISSIONS.super_admin.includes(permission), false);
+  }
 });
 
 test('approval routes enforce permission middleware in addition to role and grant', async () => {

@@ -30,6 +30,7 @@ import {ensureTeacherAccountIndex} from './services/teacher-provisioning.service
 import {ensureAssignmentAdminIndexes} from './services/teacher-assignment-admin.service';
 import {ensureChatIndexes} from './models/chat';
 import {ensureParentLeaveApplicationIndexes} from './models/parentLeaveApplication';
+import {ensureGateFoundationIndexes} from './models/gateFoundation';
 
 class StartupError extends Error {}
 const configuredPort = process.env.PORT || '5000';
@@ -61,6 +62,7 @@ const startServer = async (): Promise<void> => {
   await ensureAcademicSetupIndexes();
   await ensureStaffSelfServiceIndexes();
   await ensureParentLeaveApplicationIndexes();
+  await ensureGateFoundationIndexes();
   await ensureLiveLessonIndexes();
   await ensureTeacherAccountIndex();
   await ensureAttendanceAmendmentIndexes();

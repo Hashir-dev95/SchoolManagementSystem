@@ -1,4 +1,5 @@
 import staffSelfServiceRoutes from './routes/staff-self-service.routes';
+import {gateAdministrationRouter, gateFoundationRouter, gateFoundationParseError} from './routes/gate-foundation.routes';
 import studentSelfRoutes from './routes/student-self.routes';
 import parentSelfRoutes from './routes/parent-self.routes';
 import financeRoutes, {createProviderCallbackRouter} from './routes/finance.routes';
@@ -53,6 +54,10 @@ app.get('/', (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/gate-admin', gateAdministrationRouter);
+app.use('/api/gate', gateFoundationRouter);
+app.use('/api/gate-admin', gateFoundationParseError);
+app.use('/api/gate', gateFoundationParseError);
 app.use('/api/student/me', studentSelfRoutes);
 app.use('/api/parent/me', parentSelfRoutes);
 app.use('/api/finance/me', financeRoutes);

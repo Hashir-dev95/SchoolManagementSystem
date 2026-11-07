@@ -1,4 +1,13 @@
 export const PERMISSIONS = {
+  GATE_REGISTRY_MANAGE: 'gate.registry.manage',
+  GATE_ASSIGNMENTS_MANAGE: 'gate.assignments.manage',
+  GATE_OPERATORS_PROVISION: 'gate.operators.provision',
+  GATE_CUSTODY_MANAGE: 'gate.custody.manage',
+  GATE_TASKS_VIEW: 'gate.tasks.view',
+  GATE_ENTRY_RECORD: 'gate.entry.record',
+  GATE_PICKUP_VERIFY: 'gate.pickup.verify',
+  GATE_EXIT_CONFIRM: 'gate.exit.confirm',
+  GATE_INCIDENT_ESCALATE: 'gate.incident.escalate',
   ACADEMIC_ROOMS_VIEW: 'academic.rooms.view',
   ACADEMIC_ROOMS_MANAGE: 'academic.rooms.manage',
   LIVE_LESSON_VIEW: 'liveLesson.view',

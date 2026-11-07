@@ -14,6 +14,7 @@ import { StudentLeave } from '../src/models/attendanceAmendment';
 import { ParentLeaveDecisionOperation } from '../src/models/parentLeaveDecisionOperation';
 import Session from '../src/models/session';
 import { createUser } from '../src/services/auth.service';
+import {Gate, GateStaffAssignment, StudentCustodyState, GateAdminOperation} from '../src/models/gateFoundation';
 
 const databaseName = 'startup_security_tests';
 const jwtSecret = 'startup-test-fixture-only-secret';
@@ -94,6 +95,9 @@ test('the real server waits for required indexes and accepts canonical login on 
     assert.match(running.output(), /MongoDB connected successfully[\s\S]*Required database indexes initialized[\s\S]*Backend server listening/);
     assert.ok((await StudentLeave.collection.indexes()).some(index => index.name === 'one_parent_leave_coverage'));
     assert.ok((await ParentLeaveDecisionOperation.collection.indexes()).some(index => index.name === 'parent_leave_principal_operation'));
+    for (const [model, name] of [[Gate, 'gate_branch_code_unique'], [GateStaffAssignment, 'gate_operator_active_unique'], [StudentCustodyState, 'custody_student_branch_unique'], [GateAdminOperation, 'gate_admin_operation_unique']] as const) {
+      assert.ok((await model.collection.indexes()).some(index => index.name === name && index.unique));
+    }
     assert.equal((await fetch(url)).status, 200);
     assert.equal((await postLogin({})).status, 400);
     assert.equal((await postLogin({ email, password: 'wrong password' })).status, 401);

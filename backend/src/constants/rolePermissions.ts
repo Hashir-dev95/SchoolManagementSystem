@@ -2,11 +2,18 @@ import { UserRole, USER_ROLES } from '../models/user';
 import { PERMISSIONS } from './permissions';
 import type { Permission } from './permissions';
 
+const gateAdministrationPermissions: readonly Permission[] = [
+  PERMISSIONS.GATE_REGISTRY_MANAGE, PERMISSIONS.GATE_ASSIGNMENTS_MANAGE,
+  PERMISSIONS.GATE_OPERATORS_PROVISION, PERMISSIONS.GATE_CUSTODY_MANAGE,
+];
+
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
+  [USER_ROLES.GATE_STAFF]: [], // Gate operations remain disabled in G4b.
   [USER_ROLES.FINANCE]: [PERMISSIONS.FINANCE_VIEW, PERMISSIONS.FEE_MANAGE, PERMISSIONS.PAYMENT_RECORD, PERMISSIONS.PAYMENT_VERIFY],
   [USER_ROLES.PARENT]: [], // Child reads require a verified relationship, not Student/staff grants.
   // Principal safety grants do not broaden the existing administrative role.
   [USER_ROLES.SUPER_ADMIN]: Object.values(PERMISSIONS).filter(permission =>
+    (!permission.startsWith('gate.') || gateAdministrationPermissions.includes(permission)) &&
     !permission.startsWith('liveLesson.') &&
     !permission.startsWith('staff.') && !permission.startsWith('teacher.academic.') && !permission.startsWith('teacher.lessons.') &&
     !permission.startsWith('teacher.assessments.') &&
