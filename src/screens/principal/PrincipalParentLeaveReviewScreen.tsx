@@ -75,6 +75,8 @@ const historyLabels: Record<
   draft_created: 'Draft created',
   draft_edited: 'Draft edited',
   submitted: 'Submitted for review',
+  resubmitted: 'Resubmitted for review',
+  changes_requested: 'Changes requested',
   approved: 'Approved',
   rejected: 'Rejected',
 };
@@ -140,7 +142,11 @@ function Review({
                   ? 'unpaid'
                   : 'pending'
               }
-              label={data.status.charAt(0).toUpperCase() + data.status.slice(1)}
+              label={
+                data.status === 'changes_requested'
+                  ? 'Changes requested'
+                  : data.status.charAt(0).toUpperCase() + data.status.slice(1)
+              }
             />
             <ListRow
               icon="▤"
@@ -150,6 +156,17 @@ function Review({
             <Text>{data.reason}</Text>
           </SectionCard>
           <SectionCard title="Request history">
+            {data.priorCycles?.map(cycle => (
+              <ListRow
+                key={`cycle-${cycle.cycle}`}
+                icon="▤"
+                title={`Submission ${cycle.cycle} · ${cycle.leaveType}`}
+                subtitle={[
+                  dateRange(cycle.startDate, cycle.endDate),
+                  cycle.reason,
+                ].join(' · ')}
+              />
+            ))}
             {data.history.map(event => (
               <ListRow
                 key={event.revision}
@@ -216,10 +233,14 @@ function DecisionActions({
     const decisionReason = reason.trim().normalize('NFC');
     if (
       !operation.current &&
-      action === 'reject' &&
+      action !== 'approve' &&
       decisionReason.length < 10
     ) {
-      setError('Enter a rejection reason of at least 10 characters.');
+      setError(
+        action === 'reject'
+          ? 'Enter a rejection reason of at least 10 characters.'
+          : 'Explain what the Parent should change (at least 10 characters).',
+      );
       return;
     }
     try {
@@ -227,7 +248,7 @@ function DecisionActions({
         ...version,
         action,
         clientOperationId: leaveOperationId(),
-        ...(action === 'reject' ? { decisionReason } : {}),
+        ...(action !== 'approve' ? { decisionReason } : {}),
       };
     } catch {
       setError('A secure operation ID is unavailable. Try again.');
@@ -269,6 +290,7 @@ function DecisionActions({
     setError('');
   };
   const reject = action === 'reject';
+  const requestChanges = action === 'request_changes';
   return (
     <SectionCard title="Decision">
       <View>
@@ -278,15 +300,28 @@ function DecisionActions({
           variant="secondary"
           onPress={() => setAction('reject')}
         />
+        <Button
+          title="Request changes"
+          variant="secondary"
+          onPress={() => setAction('request_changes')}
+        />
       </View>
       <AdminDialog
         visible={!!action}
-        title={reject ? 'Reject parent leave' : 'Approve parent leave'}
+        title={
+          requestChanges
+            ? 'Request changes to parent leave'
+            : reject
+            ? 'Reject parent leave'
+            : 'Approve parent leave'
+        }
         onClose={close}
         onConfirm={confirm}
         confirmTitle={
           operation.current && error
             ? 'Retry decision'
+            : requestChanges
+            ? 'Confirm request for changes'
             : reject
             ? 'Confirm rejection'
             : 'Confirm approval'
@@ -296,13 +331,17 @@ function DecisionActions({
         danger={reject}
       >
         <Text style={formStyles.copy}>
-          {reject
+          {requestChanges
+            ? 'Explain the changes needed before the Parent resubmits.'
+            : reject
             ? 'The Parent can read your rejection reason.'
             : 'Approval records leave coverage. Existing attendance marks stay as recorded.'}
         </Text>
-        {reject ? (
+        {reject || requestChanges ? (
           <TextInput
-            accessibilityLabel="Rejection reason"
+            accessibilityLabel={
+              requestChanges ? 'Requested changes' : 'Rejection reason'
+            }
             value={reason}
             onChangeText={setReason}
             editable={!operation.current && !busy}

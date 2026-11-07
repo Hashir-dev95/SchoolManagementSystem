@@ -45,11 +45,13 @@ export async function assertNoTeacherLeaveOverlap(
 export async function assertNoParentLeaveOverlap(
   range: LeaveRange,
   session: ClientSession,
+  excludingApplication?: Types.ObjectId,
 ) {
   if (
     await ParentLeaveApplication.exists({
       branchId: range.branchId,
       studentId: range.studentId,
+      ...(excludingApplication ? { _id: { $ne: excludingApplication } } : {}),
       state: { $in: ['pending', 'approved', 'changes_requested'] },
       startDate: { $lte: range.endDate },
       endDate: { $gte: range.startDate },

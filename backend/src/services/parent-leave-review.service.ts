@@ -29,9 +29,13 @@ import {
 import { verifyAccessToken } from './jwt.service';
 import {
   assertParentLeaveRevision,
-  parentLeaveFingerprint,
   validateParentLeaveTransition,
 } from './parent-leave-application.policy';
+import {
+  matchesParentLeaveReview,
+  parentLeaveHistory,
+  parentLeavePriorCycles,
+} from './parent-leave-review-history';
 import {
   assertCoverageRange,
   assertNoTeacherLeaveOverlap,
@@ -58,6 +62,12 @@ const conflict = () =>
     409,
     'Leave request changed; refresh and review again',
   );
+const decisionState = (action: 'approve' | 'reject' | 'request_changes') =>
+  action === 'approve'
+    ? 'approved'
+    : action === 'reject'
+    ? 'rejected'
+    : 'changes_requested';
 const canManage = () =>
   ROLE_PERMISSIONS.principal.includes(PERMISSIONS.PRINCIPAL_APPROVALS_MANAGE);
 const requireManage = () => {
@@ -151,7 +161,14 @@ async function readPendingReviews(
             ...(approvalId
               ? {
                   _id: approvalId,
-                  status: { $in: ['pending', 'approved', 'rejected'] },
+                  status: {
+                    $in: [
+                      'pending',
+                      'approved',
+                      'rejected',
+                      'changes_requested',
+                    ],
+                  },
                 }
               : { status: 'pending' }),
           })
@@ -190,14 +207,10 @@ async function readPendingReviews(
                           approvalVersion: approval.__v!,
                         }
                       : null,
-                  history: application.history.map(
-                    ({ action, revision, at, decisionReason }) => ({
-                      action,
-                      revision,
-                      at,
-                      ...(action === 'rejected' ? { decisionReason } : {}),
-                    }),
-                  ),
+                  history: parentLeaveHistory(application),
+                  ...(application.priorSubmissions?.length
+                    ? { priorCycles: parentLeavePriorCycles(application) }
+                    : {}),
                 }
               : undefined;
             visible.push({ summary, detail });
@@ -236,23 +249,10 @@ async function linkedReview(
   const { status } = approval;
   const pending = status === 'pending';
   if (
-    (status !== 'pending' &&
-      status !== 'approved' &&
-      status !== 'rejected' &&
-      status !== 'withdrawn') ||
     !approval.entityId ||
     !submittedRevision ||
     !Number.isSafeInteger(submittedRevision) ||
-    submittedRevision < 1 ||
-    approval.amount != null ||
-    approval.delegatedTo ||
-    approval.delegatedBy ||
-    approval.delegationExpiresAt ||
-    (pending &&
-      (approval.reviewedBy ||
-        approval.reviewedAt ||
-        approval.withdrawnBy ||
-        approval.withdrawnAt))
+    submittedRevision < 1
   )
     return null;
 
@@ -267,72 +267,11 @@ async function linkedReview(
     'submission.policy': routing.policy,
     'submission.version': routing.version,
   })
-    .select('+submission +reason')
+    .select('+submission +reason +priorSubmissions')
     .session(session);
-  if (
-    !application?.reason ||
-    !Types.ObjectId.isValid(application.studentId) ||
-    application.submission?.fingerprint !==
-      parentLeaveFingerprint(String(application.studentId), application)
-  )
+  if (!application || !(await matchesParentLeaveReview(application, approval)))
     return null;
-
-  const submitted = application.history?.[submittedRevision];
-  if (
-    submitted?.action !== 'submitted' ||
-    submitted.revision !== submittedRevision ||
-    String(submitted.actorId) !== String(application.requesterId) ||
-    !(submitted.at instanceof Date) ||
-    !Number.isFinite(submitted.at.getTime())
-  )
-    return null;
-  const approvalEvent = approval.history?.[0];
-  if (
-    approval.history?.length !== (pending ? 1 : 2) ||
-    approvalEvent?.action !== 'submitted' ||
-    String(approvalEvent.performedBy) !== String(application.requesterId) ||
-    !(approvalEvent.createdAt instanceof Date) ||
-    approvalEvent.createdAt.getTime() !== submitted.at.getTime()
-  )
-    return null;
-  if (
-    application.history.length !== application.revision + 1 ||
-    application.history
-      .slice(0, submittedRevision)
-      .some(
-        (event, index) =>
-          event.action !== (index === 0 ? 'draft_created' : 'draft_edited') ||
-          event.revision !== index ||
-          String(event.actorId) !== String(application.requesterId),
-      )
-  )
-    return null;
-  if (!pending) {
-    const last = application.history.at(-1);
-    const decision = approval.history[1];
-    const reviewer =
-      status === 'withdrawn' ? approval.withdrawnBy : approval.reviewedBy;
-    const time =
-      status === 'withdrawn' ? approval.withdrawnAt : approval.reviewedAt;
-    if (
-      !reviewer ||
-      !time ||
-      !last ||
-      last.action !== status ||
-      last.revision !== application.revision ||
-      (String(reviewer) === String(application.requesterId)) !==
-        (status === 'withdrawn') ||
-      decision?.action !== status ||
-      String(decision.performedBy) !== String(reviewer) ||
-      String(last.actorId) !== String(reviewer) ||
-      last.at?.getTime() !== time.getTime() ||
-      !(decision.createdAt instanceof Date) ||
-      (status !== 'withdrawn' &&
-        decision.createdAt.getTime() !== time.getTime()) ||
-      last.decisionReason !== decision.reason
-    )
-      return null;
-  }
+  const submitted = application.history[submittedRevision];
 
   const actor = await User.findOne({
     _id: application.requesterId,
@@ -409,14 +348,15 @@ export async function decideParentLeave(
   const action = enumField(body.action, 'decision', [
     'approve',
     'reject',
+    'request_changes',
   ] as const);
   const decisionReason =
-    action === 'reject'
+    action !== 'approve'
       ? textField(
           typeof body.decisionReason === 'string'
             ? body.decisionReason.normalize('NFC')
             : body.decisionReason,
-          'rejection reason',
+          action === 'reject' ? 'rejection reason' : 'requested changes',
           500,
           10,
         )
@@ -424,7 +364,7 @@ export async function decideParentLeave(
   if (action === 'approve' && body.decisionReason !== undefined)
     throw new RequestContractError(
       400,
-      'A reason is supported for rejection only',
+      'A reason is supported for rejection or requested changes only',
     );
   assertParentLeaveRevision(body.applicationRevision, body.applicationRevision);
   assertParentLeaveRevision(body.approvalVersion, body.approvalVersion);
@@ -512,7 +452,7 @@ export async function decideParentLeave(
       await finish();
       return {
         approvalId: String(existing.approvalId),
-        state: existing.action === 'approve' ? 'approved' : 'rejected',
+        state: decisionState(existing.action),
         revision: existing.applicationRevision + 1,
         decidedAt: existing.decidedAt,
         replayed: true,
@@ -527,7 +467,7 @@ export async function decideParentLeave(
       approval.__v! >= Number.MAX_SAFE_INTEGER
     )
       throw conflict();
-    const state = action === 'approve' ? 'approved' : 'rejected';
+    const state = decisionState(action);
     const { revision } = validateParentLeaveTransition({
       from: 'pending',
       to: state,
@@ -536,13 +476,15 @@ export async function decideParentLeave(
       expectedRevision: body.applicationRevision,
       decisionReason,
     });
-    await assertCoverageRange(
-      application,
-      scope.enrollment,
-      scope.period,
-      session,
-    );
-    await assertNoTeacherLeaveOverlap(application, session);
+    if (action !== 'request_changes') {
+      await assertCoverageRange(
+        application,
+        scope.enrollment,
+        scope.period,
+        session,
+      );
+      await assertNoTeacherLeaveOverlap(application, session);
+    }
 
     const now = new Date();
     const reviewer = new Types.ObjectId(reader.actorId);

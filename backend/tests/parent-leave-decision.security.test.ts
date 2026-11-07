@@ -21,6 +21,7 @@ import {
   ensureParentLeaveApplicationIndexes,
 } from '../src/models/parentLeaveApplication';
 import { ParentLeaveDecisionOperation } from '../src/models/parentLeaveDecisionOperation';
+import { ParentLeaveOperation } from '../src/models/parentLeaveOperation';
 import { ParentStudentLink } from '../src/models/parentStudentLink';
 import { StudentEnrollment } from '../src/models/studentEnrollment';
 import { Notification } from '../src/models/notification';
@@ -75,14 +76,14 @@ const grant = () =>
 const root = () =>
   `/parent/me/children/${state.student._id}/leave-applications`;
 const body = (
-  action: 'approve' | 'reject' = 'approve',
+  action: 'approve' | 'reject' | 'request_changes' = 'approve',
   clientOperationId = 'decision-op',
 ) => ({
   action,
   clientOperationId,
   applicationRevision: 1,
   approvalVersion: 0,
-  ...(action === 'reject' ? { decisionReason: publicReason } : {}),
+  ...(action !== 'approve' ? { decisionReason: publicReason } : {}),
 });
 const decide = (
   approvalId: string,
@@ -495,6 +496,8 @@ async function teacherOccurrence() {
   const attendance = `/teacher/attendance/sessions/${session._id}/students/${state.student._id}`;
   return {
     teacher,
+    teacherId: String(period.teacherId),
+    sessionId: String(session._id),
     attendance,
     create: () =>
       apiHttp(`${attendance}/leaves`, teacher, {
@@ -779,6 +782,7 @@ function worker(
   operationId: string,
   hold: boolean,
   reviewer = { userId: String(parentState.verifier._id), token },
+  payload?: Record<string, unknown>,
 ) {
   const client = mongoose.connection.getClient();
   const input: DecisionWorkerInput = {
@@ -793,7 +797,8 @@ function worker(
     action,
     operationId,
     hold,
-    ...(action === 'withdraw'
+    payload: payload ?? (action === 'resubmit' ? revisionFields() : undefined),
+    ...(action === 'withdraw' || action === 'resubmit'
       ? { userId: String(parentState.parent._id), token: parentState.token }
       : reviewer),
   };
@@ -916,6 +921,552 @@ test(
     await assertOutcome(record.id, record.approvalId, 'approved');
   },
 );
+
+test('G3c protects existing physical attendance and fails closed on generic access or invalid revised dates', async () => {
+  await teacherOccurrence();
+  const marks = await PeriodAttendanceRecord.find().sort({ _id: 1 }).lean();
+  const sessions = await AttendanceSession.find().sort({ _id: 1 }).lean();
+  const record = await returned();
+  assert.equal(
+    (await apiHttp(`/approval-requests/${record.approvalId}`, token)).status,
+    403,
+  );
+  assert.equal(
+    (
+      await apiHttp(
+        `/approval-requests/${record.approvalId}/eligible-delegates`,
+        token,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await apiHttp(
+        `/approval-requests/${record.approvalId}/resubmission`,
+        parentState.token,
+      )
+    ).status,
+    403,
+  );
+  assert.equal((await resubmit(record.id, revisionFields(-5))).status, 409);
+  assert.equal(
+    (await ParentLeaveApplication.findById(record.id).orFail()).startDate,
+    state.today,
+  );
+  assert.equal((await resubmit(record.id)).status, 200);
+  assert.deepEqual(
+    await PeriodAttendanceRecord.find().sort({ _id: 1 }).lean(),
+    marks,
+  );
+  assert.deepEqual(
+    await AttendanceSession.find().sort({ _id: 1 }).lean(),
+    sessions,
+  );
+  assert.equal(await StudentLeave.countDocuments(), 0);
+  assert.equal(await Notification.countDocuments(), 0);
+});
+
+for (const opponent of [
+  'approve',
+  'reject',
+  'withdraw',
+  'request_changes',
+] as const) {
+  for (const returnFirst of opponent === 'request_changes'
+    ? [true]
+    : [true, false]) {
+    test(
+      `G3c independent request-changes versus ${opponent}, return first: ${returnFirst}`,
+      { timeout: 30000 },
+      async () => {
+        const record = await pending();
+        const [winner, loser] = await orderedRace(
+          record,
+          returnFirst ? 'request_changes' : opponent,
+          returnFirst ? opponent : 'request_changes',
+        );
+        assert.equal(winner.status, 200, winner.message);
+        assert.equal(loser.status, 409, loser.message);
+        const expected = returnFirst
+          ? 'changes_requested'
+          : {
+              approve: 'approved',
+              reject: 'rejected',
+              withdraw: 'withdrawn',
+              request_changes: 'changes_requested',
+            }[opponent];
+        const approval = await ApprovalRequest.findById(record.approvalId)
+          .orFail()
+          .lean();
+        const application = await ParentLeaveApplication.findById(record.id)
+          .orFail()
+          .lean();
+        assert.equal(approval.status, expected);
+        assert.equal(application.state, expected);
+        assert.equal(approval.history.length, 2);
+        assert.equal(application.history.length, 3);
+        assert.equal(
+          await StudentLeave.countDocuments(),
+          expected === 'approved' ? 1 : 0,
+        );
+      },
+    );
+  }
+}
+
+for (const duplicate of [true, false]) {
+  test(
+    `G3c independent Parent resubmissions, identical operation: ${duplicate}`,
+    { timeout: 30000 },
+    async () => {
+      const record = await returned();
+      const [winner, loser] = await orderedRace(
+        record,
+        'resubmit',
+        'resubmit',
+        duplicate,
+      );
+      assert.equal(winner.status, 200, winner.message);
+      assert.equal(loser.status, duplicate ? 200 : 409, loser.message);
+      if (duplicate) assert.equal(loser.replayed, true);
+      assert.equal(
+        await ParentLeaveOperation.countDocuments({ kind: 'resubmit' }),
+        1,
+      );
+      const latest = await ParentLeaveApplication.findById(record.id)
+        .select('+priorSubmissions')
+        .orFail()
+        .lean();
+      assert.equal(latest.revision, 3);
+      assert.equal(latest.priorSubmissions?.length, 1);
+    },
+  );
+}
+
+async function waitForOverlap(
+  first: ReturnType<typeof worker>,
+  next: () => ReturnType<typeof worker>,
+) {
+  let second: ReturnType<typeof worker> | undefined;
+  try {
+    await first.until('locked');
+    second = next();
+    await second.until('attempting');
+    first.release();
+    const [winner, loser] = await Promise.all([
+      first.complete,
+      second.complete,
+    ]);
+    assert.equal(winner.status, 200, winner.message);
+    assert.equal(loser.status, 409, loser.message);
+  } finally {
+    first.terminate();
+    second?.terminate();
+  }
+}
+
+for (const resubmitFirst of [true, false]) {
+  test(
+    `G3c resubmission versus another verified guardian's submission, resubmit first: ${resubmitFirst}`,
+    { timeout: 30000 },
+    async () => {
+      const record = await returned();
+      await ParentStudentLink.create({
+        branchId: state.branch._id,
+        studentId: state.student._id,
+        parentUserId: parentState.otherParent._id,
+        relationship: 'guardian',
+        status: 'verified',
+        isActive: true,
+        verifiedBy: parentState.verifier._id,
+        createdBy: parentState.verifier._id,
+        verifiedAt: new Date(),
+      });
+      assert.equal(
+        (await resubmit(record.id, revisionFields(), parentState.otherToken))
+          .status,
+        404,
+      );
+      const revised = revisionFields();
+      const other = await apiHttp(root(), parentState.otherToken, {
+        leaveType: revised.leaveType,
+        startDate: revised.startDate,
+        endDate: revised.endDate,
+        reason: 'Another guardian applies for the same dates',
+        clientOperationId: 'other-guardian-draft',
+      });
+      assert.equal(other.status, 200);
+      const guardian = (hold: boolean) =>
+        worker(
+          { id: other.json.data.applicationId, approvalId: '' },
+          'submit',
+          'other-guardian-submit',
+          hold,
+          {
+            userId: String(parentState.otherParent._id),
+            token: parentState.otherToken,
+          },
+        );
+      const parent = (hold: boolean) =>
+        worker(record, 'resubmit', 'replace-reservation', hold);
+      await waitForOverlap(resubmitFirst ? parent(true) : guardian(true), () =>
+        resubmitFirst ? guardian(false) : parent(false),
+      );
+      const current = await ParentLeaveApplication.findById(record.id)
+        .orFail()
+        .lean();
+      assert.equal(
+        current.state,
+        resubmitFirst ? 'pending' : 'changes_requested',
+      );
+      assert.equal(
+        current.startDate,
+        resubmitFirst ? revised.startDate : state.today,
+      );
+    },
+  );
+
+  test(
+    `G3c resubmission versus Teacher leave creation, resubmit first: ${resubmitFirst}`,
+    { timeout: 30000 },
+    async () => {
+      const occurrence = await teacherOccurrence();
+      const originalStart = addScheduleDays(state.today, 4);
+      const record = await returned(
+        originalStart,
+        addScheduleDays(originalStart, 1),
+      );
+      const teacher = (hold: boolean) =>
+        worker(
+          { id: occurrence.sessionId, approvalId: '' },
+          'teacher_leave',
+          String(oid()),
+          hold,
+          { userId: occurrence.teacherId, token: occurrence.teacher },
+          {
+            fromDate: state.today,
+            untilDate: state.today,
+            reason: 'Teacher requested leave for the student',
+            category: 'other',
+          },
+        );
+      const parent = (hold: boolean) =>
+        worker(
+          record,
+          'resubmit',
+          'replace-reservation',
+          hold,
+          undefined,
+          revisionFields(0),
+        );
+      await waitForOverlap(resubmitFirst ? parent(true) : teacher(true), () =>
+        resubmitFirst ? teacher(false) : parent(false),
+      );
+      const current = await ParentLeaveApplication.findById(record.id)
+        .orFail()
+        .lean();
+      assert.equal(
+        current.startDate,
+        resubmitFirst ? state.today : originalStart,
+      );
+      assert.equal(
+        await StudentLeave.countDocuments({ origin: 'teacher_occurrence' }),
+        resubmitFirst ? 0 : 1,
+      );
+      assert.equal(
+        await StudentLeave.countDocuments({ origin: 'parent_application' }),
+        0,
+      );
+    },
+  );
+}
+
+for (const revoke of ['enrollment', 'link'] as const) {
+  test(
+    `G3c resubmission fails on committed ${revoke} revocation during the Branch-locked attempt`,
+    { timeout: 30000 },
+    async () => {
+      const record = await returned();
+      const child = worker(record, 'resubmit', 'revocation-race', true);
+      try {
+        await child.until('locked');
+        if (revoke === 'link')
+          await ParentStudentLink.updateOne(
+            { _id: parentState.link._id },
+            { status: 'revoked', isActive: false },
+          );
+        else
+          await StudentEnrollment.updateOne(
+            { _id: state.enrollment._id },
+            { status: 'transferred', effectiveTo: new Date() },
+          );
+        child.release();
+        const result = await child.complete;
+        assert.equal(result.status, 404, result.message);
+        assert.equal(
+          (await ApprovalRequest.findById(record.approvalId).orFail()).status,
+          'changes_requested',
+        );
+        assert.equal(
+          (await ParentLeaveApplication.findById(record.id).orFail()).startDate,
+          state.today,
+        );
+        assert.equal(
+          await ParentLeaveOperation.countDocuments({ kind: 'resubmit' }),
+          0,
+        );
+      } finally {
+        child.terminate();
+      }
+    },
+  );
+}
+
+for (const kind of ['request_changes', 'resubmit'] as const) {
+  for (const write of ['application', 'approval', 'receipt'] as const) {
+    test(`G3c ${kind} rolls back linked writes and reservation when ${write} fails`, async () => {
+      const record = kind === 'resubmit' ? await returned() : await pending();
+      const collection =
+        write === 'application'
+          ? ParentLeaveApplication.collection
+          : write === 'approval'
+          ? ApprovalRequest.collection
+          : kind === 'resubmit'
+          ? ParentLeaveOperation.collection
+          : ParentLeaveDecisionOperation.collection;
+      mock.method(
+        collection,
+        write === 'receipt' ? 'insertOne' : 'updateOne',
+        async () => {
+          throw new Error('injected linked write failure');
+        },
+      );
+      const result =
+        kind === 'resubmit'
+          ? await resubmit(record.id)
+          : await decide(record.approvalId, body('request_changes'));
+      assert.equal(result.status, 500);
+      const expected = kind === 'resubmit' ? 'changes_requested' : 'pending';
+      const application = await ParentLeaveApplication.findById(record.id)
+        .select('+priorSubmissions')
+        .orFail()
+        .lean();
+      assert.equal(application.state, expected);
+      assert.equal(application.startDate, state.today);
+      assert.equal(application.priorSubmissions?.length ?? 0, 0);
+      const approval = await ApprovalRequest.findById(record.approvalId)
+        .orFail()
+        .lean();
+      assert.equal(approval.status, expected);
+      assert.equal(approval.history.length, kind === 'resubmit' ? 2 : 1);
+      assert.equal(
+        await ParentLeaveOperation.countDocuments({ kind: 'resubmit' }),
+        0,
+      );
+      assert.equal(
+        await ParentLeaveDecisionOperation.countDocuments(),
+        kind === 'resubmit' ? 1 : 0,
+      );
+      assert.equal(await StudentLeave.countDocuments(), 0);
+    });
+  }
+}
+
+test('G3c pinned routing version blocks resubmit, and revoked ownership blocks later receipt replay', async () => {
+  const record = await returned();
+  process.env[keys[0]] = routing(8);
+  assert.equal((await resubmit(record.id)).status, 409);
+  assert.equal(
+    (await ParentLeaveApplication.findById(record.id).orFail()).state,
+    'changes_requested',
+  );
+  process.env[keys[0]] = routing();
+  assert.equal((await resubmit(record.id)).status, 200);
+  await ParentStudentLink.updateOne(
+    { _id: parentState.link._id },
+    { status: 'revoked', isActive: false },
+  );
+  assert.equal((await resubmit(record.id)).status, 404);
+  assert.equal(
+    (await decide(record.approvalId, body('request_changes', 'return-first')))
+      .status,
+    404,
+  );
+});
+
+const revisionFields = (
+  offset = 4,
+  revision = 2,
+  operation = 'parent-resubmit',
+) => ({
+  leaveType: 'Revised family leave',
+  startDate: addScheduleDays(state.today, offset),
+  endDate: addScheduleDays(state.today, offset + 1),
+  reason: 'Revised private submitted evidence',
+  applicationRevision: revision,
+  approvalVersion: revision - 1,
+  clientOperationId: operation,
+});
+const resubmit = (
+  id: string,
+  fields: unknown = revisionFields(),
+  parent = parentState.token,
+) => apiHttp(`${root()}/${id}/resubmit`, parent, fields);
+async function returned(startDate?: string, endDate?: string) {
+  const record = await pending(startDate, endDate);
+  const result = await decide(
+    record.approvalId,
+    body('request_changes', 'return-first'),
+  );
+  assert.equal(result.status, 200, JSON.stringify(result.json));
+  assert.equal(result.json.data.state, 'changes_requested');
+  return record;
+}
+
+for (const finalAction of ['approve', 'reject'] as const) {
+  test(`G3c retains both IDs and immutable evidence through resubmission and ${finalAction}`, async () => {
+    const { id, approvalId } = await returned();
+    const detail = await apiHttp(`${root()}/${id}`, parentState.token);
+    assert.deepEqual(detail.json.data.resubmitVersion, {
+      applicationRevision: 2,
+      approvalVersion: 1,
+    });
+    assert.equal(detail.json.data.history.at(-1).decisionReason, publicReason);
+    const principal = await apiHttp(`${reviewPath}/${approvalId}`, token);
+    assert.equal(principal.json.data.status, 'changes_requested');
+    assert.equal(principal.json.data.decisionVersion, null);
+    assert.equal(
+      (await apiHttp('/principal/dashboard', token)).json.data
+        .pendingParentLeaveCount,
+      0,
+    );
+    assert.equal(await StudentLeave.countDocuments(), 0);
+    assert.equal((await submit(await draft())).status, 409);
+    assert.equal(
+      (await resubmit(id, { ...revisionFields(), reviewerId: oid() })).status,
+      400,
+    );
+    assert.equal(
+      (await resubmit(id, revisionFields(), parentState.otherToken)).status,
+      404,
+    );
+    const result = await resubmit(id);
+    assert.equal(result.status, 200, JSON.stringify(result.json));
+    assert.equal(result.json.data.application.applicationId, id);
+    assert.equal(result.json.data.operationCycle, 2);
+    assert.equal(result.json.data.operationRevision, 3);
+    assert.equal(result.json.data.application.state, 'pending');
+    const [cycle] = result.json.data.application.priorCycles;
+    assert.equal(cycle.reason, privateReason);
+    assert.equal(cycle.decisionReason, publicReason);
+    assert.equal(cycle.revision, 1);
+    assert.ok(!('fingerprint' in cycle));
+    assert.equal((await submit(await draft())).status, 200);
+    const list = await apiHttp(reviewPath, token);
+    assert.ok(
+      list.json.data.requests.some(
+        (item: { approvalId: string }) => item.approvalId === approvalId,
+      ),
+    );
+    assert.doesNotMatch(
+      JSON.stringify(list.json),
+      /Private family medical|Revised private submitted evidence/,
+    );
+    const oldDecision = await decide(
+      approvalId,
+      body('request_changes', 'return-first'),
+    );
+    assert.equal(oldDecision.json.data.state, 'changes_requested');
+    assert.equal(oldDecision.json.data.replayed, true);
+    assert.equal((await decide(approvalId, body(finalAction))).status, 409);
+    const oldReceipt = await resubmit(id);
+    assert.equal(oldReceipt.json.data.operationRevision, 3);
+    assert.equal(oldReceipt.json.data.replayed, true);
+    assert.equal(
+      (
+        await resubmit(id, {
+          ...revisionFields(),
+          reason: 'Different private payload',
+        })
+      ).status,
+      409,
+    );
+    const actual = await decide(approvalId, {
+      ...body(finalAction),
+      applicationRevision: 3,
+      approvalVersion: 2,
+    });
+    assert.equal(actual.status, 200, JSON.stringify(actual.json));
+    const approval = await ApprovalRequest.findById(approvalId).orFail().lean();
+    assert.equal(String(approval.entityId), id);
+    assert.equal(approval.parentLeaveRevision, 3);
+    assert.deepEqual(
+      approval.history.map(event => event.action),
+      [
+        'submitted',
+        'changes_requested',
+        'resubmitted',
+        finalAction === 'approve' ? 'approved' : 'rejected',
+      ],
+    );
+    assert.doesNotMatch(
+      JSON.stringify(approval),
+      /Private family medical|Revised private submitted evidence/,
+    );
+    assert.equal(
+      await StudentLeave.countDocuments({ parentApplicationId: id }),
+      finalAction === 'approve' ? 1 : 0,
+    );
+    assert.equal(await PeriodAttendanceRecord.countDocuments(), 0);
+    assert.equal(await Notification.countDocuments(), 0);
+  });
+}
+
+test('G3c repeated returns preserve earlier cycles, receipts, and G2b withdrawal', async () => {
+  const { id, approvalId } = await returned();
+  assert.equal((await resubmit(id)).status, 200);
+  assert.equal(
+    (
+      await decide(approvalId, {
+        ...body('request_changes', 'return-second'),
+        applicationRevision: 3,
+        approvalVersion: 2,
+      })
+    ).status,
+    200,
+  );
+  const later = await resubmit(
+    id,
+    revisionFields(8, 4, 'parent-resubmit-second'),
+  );
+  assert.equal(later.status, 200, JSON.stringify(later.json));
+  assert.equal(later.json.data.operationCycle, 3);
+  assert.deepEqual(
+    later.json.data.application.priorCycles.map(
+      (entry: { revision: number }) => entry.revision,
+    ),
+    [1, 3],
+  );
+  const replay = await resubmit(id);
+  assert.equal(replay.status, 200);
+  assert.equal(replay.json.data.operationCycle, 2);
+  assert.equal(replay.json.data.application.revision, 5);
+  const withdrawn = await apiHttp(
+    `${root()}/${id}/withdraw`,
+    parentState.token,
+    { revision: 5, clientOperationId: 'cycle-three-withdraw' },
+  );
+  assert.equal(withdrawn.status, 200, JSON.stringify(withdrawn.json));
+  assert.equal(withdrawn.json.data.application.state, 'withdrawn');
+  assert.equal(await ApprovalRequest.countDocuments(), 1);
+  assert.equal(await StudentLeave.countDocuments(), 0);
+  const archive = await ParentLeaveApplication.findById(id)
+    .select('+priorSubmissions +submission +reason')
+    .orFail();
+  archive.priorSubmissions![0].reason = 'attempted rewrite';
+  await assert.rejects(archive.validate(), /immutable|history/);
+});
 
 test(
   'two different Principals cannot commit competing decisions',

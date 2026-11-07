@@ -87,7 +87,7 @@ export async function changeParentLeaveLifecycle(
         _id: id,
         ...access.provenance,
       })
-        .select('+reason +submission +protectedAttachmentIds')
+        .select('+reason +submission +protectedAttachmentIds +priorSubmissions')
         .session(session);
       if (!row)
         throw new RequestContractError(

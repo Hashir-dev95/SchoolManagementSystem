@@ -1,4 +1,5 @@
 import { ApiError, apiClient } from '../api/apiClient';
+import type { LeaveReviewCycle } from '../parent/leaveApplicationService';
 
 export interface ParentLeaveReviewSummary {
   approvalId: string;
@@ -16,14 +17,15 @@ export interface ParentLeaveDecisionVersion {
 }
 
 export interface ParentLeaveDecision extends ParentLeaveDecisionVersion {
-  action: 'approve' | 'reject';
+  action: 'approve' | 'reject' | 'request_changes';
   clientOperationId: string;
   decisionReason?: string;
 }
 
 export interface ParentLeaveReviewDetail
   extends Omit<ParentLeaveReviewSummary, 'status'> {
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'changes_requested';
+  priorCycles?: LeaveReviewCycle[];
   decisionVersion?: ParentLeaveDecisionVersion | null;
   leaveType: string;
   reason: string;
@@ -32,6 +34,8 @@ export interface ParentLeaveReviewDetail
       | 'draft_created'
       | 'draft_edited'
       | 'submitted'
+      | 'resubmitted'
+      | 'changes_requested'
       | 'approved'
       | 'rejected';
     revision: number;
@@ -70,7 +74,7 @@ export const parentLeaveReviewService = {
     const { data } = await apiClient.request<{
       data: {
         approvalId: string;
-        state: 'approved' | 'rejected';
+        state: 'approved' | 'rejected' | 'changes_requested';
         revision: number;
         decidedAt: string;
         replayed: boolean;
@@ -82,7 +86,12 @@ export const parentLeaveReviewService = {
     });
     if (
       data.approvalId !== approvalId ||
-      data.state !== (body.action === 'approve' ? 'approved' : 'rejected')
+      data.state !==
+        (body.action === 'approve'
+          ? 'approved'
+          : body.action === 'reject'
+          ? 'rejected'
+          : 'changes_requested')
     ) {
       throw new ApiError(404, 'Parent leave review is unavailable');
     }

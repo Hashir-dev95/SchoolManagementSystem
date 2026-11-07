@@ -1,9 +1,16 @@
 import { createHash } from 'node:crypto';
-import type { InferSchemaType, Types } from 'mongoose';
+import mongoose, { type InferSchemaType, type Types } from 'mongoose';
 import {
   ParentLeaveApplication,
   ParentLeaveEditOperation,
+  type ParentLeaveDocument,
 } from '../models/parentLeaveApplication';
+import {
+  parentLeaveHistory,
+  parentLeavePriorCycles,
+  readLinkedParentLeaveApproval,
+} from './parent-leave-review-history';
+import { readParentLeaveRouting } from './parent-leave-routing.policy';
 import {
   authorizeParentApplication,
   createParentLeaveDraft,
@@ -52,15 +59,13 @@ const summary = (row: Draft) => ({
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 });
-const detail = (row: Draft) => ({
+const detail = (row: ParentLeaveDocument) => ({
   ...summary(row),
   reason: row.reason,
-  history: row.history.map(event => ({
-    action: event.action,
-    revision: event.revision,
-    at: event.at,
-    ...(event.action === 'rejected' ? { decisionReason: event.decisionReason } : {}),
-  })),
+  history: parentLeaveHistory(row),
+  ...(row.priorSubmissions?.length
+    ? { priorCycles: parentLeavePriorCycles(row) }
+    : {}),
 });
 export async function listParentLeaveDrafts(
   identity: Identity,
@@ -112,15 +117,59 @@ export async function readParentLeaveDraft(
     studentId,
     applicationId,
   );
-  const row = await ParentLeaveApplication.findOne({
-    _id: applicationId,
-    ...initial.provenance,
-  })
-    .select('+reason')
-    .read('primary')
-    .lean();
+  const session = await mongoose.startSession();
+  const result = await session
+    .withTransaction(
+      async () => {
+        const row = await ParentLeaveApplication.findOne({
+          _id: applicationId,
+          ...initial.provenance,
+        })
+          .select('+reason +submission +priorSubmissions')
+          .session(session)
+          .read('primary');
+        if (!row) return null;
+        let resubmitVersion:
+          | { applicationRevision: number; approvalVersion: number }
+          | undefined;
+        if (row.state === 'changes_requested' || row.priorSubmissions?.length) {
+          const approval = await readLinkedParentLeaveApproval(row, session);
+          if (!approval) return null;
+          if (
+            row.state === 'changes_requested' &&
+            Number.isSafeInteger(approval.__v)
+          ) {
+            try {
+              const routing = readParentLeaveRouting(
+                initial.provenance.branchId,
+              );
+              if (
+                routing.policy === row.submission?.policy &&
+                routing.version === row.submission?.version
+              ) {
+                resubmitVersion = {
+                  applicationRevision: row.revision,
+                  approvalVersion: approval.__v!,
+                };
+              }
+            } catch (error) {
+              if (
+                !(error instanceof RequestContractError && error.status === 503)
+              )
+                throw error;
+            }
+          }
+        }
+        return {
+          ...detail(row),
+          ...(resubmitVersion ? { resubmitVersion } : {}),
+        };
+      },
+      { readPreference: 'primary', readConcern: { level: 'snapshot' } },
+    )
+    .finally(() => session.endSession());
   if (
-    !row ||
+    !result ||
     !same(
       initial,
       await authorizeParentApplication(
@@ -132,7 +181,7 @@ export async function readParentLeaveDraft(
     )
   )
     throw unavailable();
-  return detail(row);
+  return result;
 }
 export async function saveNewParentLeaveDraft(
   identity: Identity,

@@ -3,6 +3,8 @@ import { once } from 'node:events';
 import Branch from '../../src/models/branch';
 import { decideParentLeave } from '../../src/services/parent-leave-review.service';
 import { changeParentLeaveLifecycle } from '../../src/services/parent-leave-lifecycle.service';
+import { resubmitParentLeave } from '../../src/services/parent-leave-resubmission.service';
+import { requestAttendanceAmendment } from '../../src/services/attendance-amendment.service';
 
 export interface DecisionWorkerInput {
   uri: string;
@@ -13,9 +15,17 @@ export interface DecisionWorkerInput {
   token: string;
   userId: string;
   branchId: string;
-  action: 'approve' | 'reject' | 'withdraw';
+  action:
+    | 'approve'
+    | 'reject'
+    | 'withdraw'
+    | 'request_changes'
+    | 'resubmit'
+    | 'submit'
+    | 'teacher_leave';
   operationId: string;
   hold: boolean;
+  payload?: Record<string, unknown>;
 }
 
 async function run(input: DecisionWorkerInput) {
@@ -40,14 +50,34 @@ async function run(input: DecisionWorkerInput) {
       return result;
     };
     const result =
-      input.action === 'withdraw'
-        ? await changeParentLeaveLifecycle(
-            'withdraw',
+      input.action === 'resubmit'
+        ? await resubmitParentLeave(
             { userId: input.userId, role: 'parent' },
             input.token,
             input.studentId,
             input.applicationId,
-            { revision: 1, clientOperationId: input.operationId },
+            { ...input.payload, clientOperationId: input.operationId },
+          )
+        : input.action === 'teacher_leave'
+        ? await requestAttendanceAmendment(
+            { userId: input.userId, role: 'teacher' },
+            input.token,
+            'leave',
+            input.applicationId,
+            input.studentId,
+            { ...input.payload, clientOperationId: input.operationId },
+          )
+        : input.action === 'withdraw' || input.action === 'submit'
+        ? await changeParentLeaveLifecycle(
+            input.action,
+            { userId: input.userId, role: 'parent' },
+            input.token,
+            input.studentId,
+            input.applicationId,
+            {
+              revision: input.action === 'withdraw' ? 1 : 0,
+              clientOperationId: input.operationId,
+            },
           )
         : await decideParentLeave(
             {
@@ -61,7 +91,7 @@ async function run(input: DecisionWorkerInput) {
               applicationRevision: 1,
               approvalVersion: 0,
               clientOperationId: input.operationId,
-              ...(input.action === 'reject'
+              ...(input.action !== 'approve'
                 ? {
                     decisionReason:
                       'The requested dates could not be approved.',

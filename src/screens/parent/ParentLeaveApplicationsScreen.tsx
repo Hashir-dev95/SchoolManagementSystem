@@ -14,6 +14,7 @@ import {
   type LeaveDraft,
   type LeaveFields,
   type LeavePage,
+  type LeaveReviewVersion,
   type LeaveTransport,
 } from '../../services/parent/leaveApplicationService';
 import {
@@ -193,11 +194,13 @@ const eventLabels: Record<LeaveDraft['history'][number]['action'], string> = {
   draft_created: 'Draft created',
   draft_edited: 'Draft edited',
   submitted: 'Submitted',
+  resubmitted: 'Resubmitted',
+  changes_requested: 'Changes requested',
   withdrawn: 'Withdrawn',
   approved: 'Approved',
   rejected: 'Rejected',
 };
-type LifecycleAction = 'submit' | 'withdraw';
+type LifecycleAction = 'submit' | 'withdraw' | 'resubmit';
 
 function DraftWorkspace({
   token,
@@ -221,6 +224,7 @@ function DraftWorkspace({
     fields: LeaveFields;
     id?: string;
     revision?: number;
+    resubmitVersion?: LeaveReviewVersion;
   } | null>(null);
   const [page, setPage] = useState<LeavePage | null>(null),
     [detail, setDetail] = useState<LeaveDraft | null>(null);
@@ -233,10 +237,13 @@ function DraftWorkspace({
     [notice, setNotice] = useState('');
   const [uncertain, setUncertain] = useState(false),
     [conflict, setConflict] = useState(false);
+  const [refreshedConflict, setRefreshedConflict] = useState(false);
   const [confirmation, setConfirmation] = useState<LifecycleAction | null>(
     null,
   );
   const editable = !detail || detail.state === 'draft';
+  const canResubmit =
+    detail?.state === 'changes_requested' && !!detail.resubmitVersion;
   const savedFieldsMatch =
     form &&
     detail &&
@@ -293,10 +300,11 @@ function DraftWorkspace({
     });
     setErrors({});
     setConflict(false);
+    setRefreshedConflict(false);
     setUncertain(false);
     pending.current = null;
   };
-  const open = async (id: string) => {
+  const open = async (id: string, keepWorkingCopy = false) => {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
@@ -304,12 +312,19 @@ function DraftWorkspace({
     setNotice('');
     setConfirmation(null);
     // Conceal an earlier draft immediately while authorizing the new detail.
-    setDetail(null);
-    setForm(null);
+    if (!keepWorkingCopy) {
+      setDetail(null);
+      setForm(null);
+    }
     const request = ++generation.current;
     try {
       const result = await transport.detail(token, child.studentId, id);
-      if (current(request)) showDetail(result);
+      if (current(request)) {
+        if (keepWorkingCopy) {
+          setDetail(result);
+          setRefreshedConflict(true);
+        } else showDetail(result);
+      }
     } catch (failure) {
       if (current(request)) {
         if (denied(failure)) onDenied(failure);
@@ -325,8 +340,8 @@ function DraftWorkspace({
   const run = async (kind: 'save' | LifecycleAction) => {
     if (inFlight.current || !form || conflict) return;
     if (!pending.current) {
-      if (kind === 'save') {
-        if (!editable) return;
+      if (kind === 'save' || kind === 'resubmit') {
+        if (kind === 'save' ? !editable : !canResubmit) return;
         const fieldErrors = leaveFieldErrors(form);
         setErrors(fieldErrors);
         if (Object.keys(fieldErrors).length) return;
@@ -351,10 +366,20 @@ function DraftWorkspace({
         fields: { ...form },
         id: detail?.applicationId,
         revision: detail?.revision,
+        resubmitVersion: detail?.resubmitVersion,
       };
       pending.current = attempt;
       const result =
-        attempt.kind !== 'save'
+        attempt.kind === 'resubmit'
+          ? await transport.resubmit(
+              token,
+              child.studentId,
+              attempt.id!,
+              attempt.fields,
+              attempt.resubmitVersion!,
+              attempt.operation,
+            )
+          : attempt.kind !== 'save'
           ? await transport[attempt.kind](
               token,
               child.studentId,
@@ -380,10 +405,12 @@ function DraftWorkspace({
       if (!current(request)) return;
       showDetail(result.application);
       saved = true;
-      if (attempt.kind === 'submit') {
+      if (attempt.kind === 'submit' || attempt.kind === 'resubmit') {
         setNotice(
           result.application.state === 'pending'
-            ? 'Application submitted for approval.'
+            ? attempt.kind === 'resubmit'
+              ? 'Application resubmitted for approval.'
+              : 'Application submitted for approval.'
             : `Submission confirmed. Current status: ${
                 leaveLabels[result.application.state]
               }.`,
@@ -414,11 +441,31 @@ function DraftWorkspace({
         pending.current = null;
         setUncertain(false);
         setConflict(true);
+        setRefreshedConflict(false);
         setError(
           kind === 'save'
             ? 'This draft changed. Reload it before editing again.'
             : 'The application changed or overlaps another leave request. Reload it before trying again.',
         );
+        if (kind === 'resubmit' && detail) {
+          try {
+            const latest = await transport.detail(
+              token,
+              child.studentId,
+              detail.applicationId,
+            );
+            if (current(request)) {
+              setDetail(latest);
+              setRefreshedConflict(true);
+              setError(
+                'The application or date reservation changed. Review the current submission before trying again.',
+              );
+            }
+          } catch (refreshFailure) {
+            if (current(request) && denied(refreshFailure))
+              onDenied(refreshFailure);
+          }
+        }
       } else if (failure instanceof ApiError && failure.status === 400) {
         pending.current = null;
         setUncertain(false);
@@ -554,7 +601,9 @@ function DraftWorkspace({
       {form ? (
         <SectionCard
           title={
-            !editable
+            canResubmit
+              ? 'Revise leave application'
+              : !editable
               ? 'Leave application'
               : detail
               ? 'Edit leave draft'
@@ -569,6 +618,30 @@ function DraftWorkspace({
             Private to your current authorized account. This application
             supports text only.
           </Text>
+          {detail?.state === 'changes_requested' ? (
+            <View style={styles.field}>
+              <Text style={styles.title}>Latest submitted application</Text>
+              <Text style={styles.body}>
+                {[
+                  detail.leaveType,
+                  detail.startDate,
+                  detail.endDate,
+                  detail.reason,
+                ].join(' · ')}
+              </Text>
+              <Text style={styles.body}>
+                {detail.history.at(-1)?.decisionReason}
+              </Text>
+            </View>
+          ) : null}
+          {conflict &&
+          refreshedConflict &&
+          detail?.state !== 'changes_requested' ? (
+            <Text style={styles.body}>
+              The server status is current. The values below are your unsent
+              working copy.
+            </Text>
+          ) : null}
           {(['leaveType', 'startDate', 'endDate', 'reason'] as const).map(
             key => {
               const name = {
@@ -587,7 +660,7 @@ function DraftWorkspace({
                     accessibilityLabel={name}
                     value={form[key]}
                     editable={
-                      editable &&
+                      (editable || canResubmit) &&
                       !busy &&
                       !uncertain &&
                       !conflict &&
@@ -633,6 +706,24 @@ function DraftWorkspace({
                 onPress={() => setConfirmation('withdraw')}
               />
             ) : null}
+            {canResubmit && !uncertain && !confirmation ? (
+              <Button
+                title="Resubmit for Approval"
+                disabled={busy || conflict}
+                onPress={() => setConfirmation('resubmit')}
+              />
+            ) : null}
+            {conflict && refreshedConflict && canResubmit ? (
+              <Button
+                title="Keep edits and review again"
+                disabled={busy}
+                variant="secondary"
+                onPress={() => {
+                  setConflict(false);
+                  setError(null);
+                }}
+              />
+            ) : null}
             {uncertain && pending.current?.kind !== 'save' ? (
               <Button title="Retry action" disabled={busy} onPress={retry} />
             ) : null}
@@ -641,7 +732,12 @@ function DraftWorkspace({
                 title={editable ? 'Reload draft' : 'Reload application'}
                 variant="secondary"
                 disabled={busy || uncertain || !!confirmation}
-                onPress={() => open(detail.applicationId)}
+                onPress={() =>
+                  open(
+                    detail.applicationId,
+                    conflict && detail.state === 'changes_requested',
+                  )
+                }
               />
             ) : null}
             <Button
@@ -662,12 +758,16 @@ function DraftWorkspace({
               <Text style={styles.body}>
                 {confirmation === 'submit'
                   ? 'Send the saved dates and reason to your Branch approval queue? You can withdraw while it is pending.'
+                  : confirmation === 'resubmit'
+                  ? 'Send your revised application to the Branch approval queue? Earlier submissions will remain in the history.'
                   : 'Withdraw this pending application? Its history will be retained.'}
               </Text>
               <Button
                 title={
                   confirmation === 'submit'
                     ? 'Confirm submission'
+                    : confirmation === 'resubmit'
+                    ? 'Confirm resubmission'
                     : 'Confirm withdrawal'
                 }
                 onPress={() => run(confirmation)}
@@ -684,6 +784,20 @@ function DraftWorkspace({
               <Text style={styles.title}>
                 {editable ? 'Draft history' : 'Application history'}
               </Text>
+              {detail.priorCycles?.map(cycle => (
+                <View key={cycle.cycle} style={styles.field}>
+                  <Text style={styles.title}>Submission {cycle.cycle}</Text>
+                  <Text style={styles.body}>
+                    {[
+                      cycle.leaveType,
+                      cycle.startDate,
+                      cycle.endDate,
+                      cycle.reason,
+                    ].join(' · ')}
+                  </Text>
+                  <Text style={styles.body}>{cycle.decisionReason}</Text>
+                </View>
+              ))}
               {detail.history.map(event => (
                 <Text key={event.revision} style={styles.body}>
                   {eventLabels[event.action]} · Revision {event.revision} ·{' '}

@@ -6,6 +6,17 @@ const id = {
   immutable: true,
 };
 
+const resubmitField = function (this: { kind: string }) {
+  return this.kind === 'resubmit';
+};
+const resubmitRevision = {
+  type: Number,
+  min: 0,
+  validate: Number.isSafeInteger,
+  immutable: true,
+  required: resubmitField,
+};
+
 const schema = new Schema(
   {
     requesterId: id,
@@ -15,7 +26,7 @@ const schema = new Schema(
     approvalRequestId: id,
     kind: {
       type: String,
-      enum: ['submit', 'withdraw'] as const,
+      enum: ['submit', 'withdraw', 'resubmit'] as const,
       required: true,
       immutable: true,
     },
@@ -39,6 +50,9 @@ const schema = new Schema(
       required: true,
       immutable: true,
     },
+    applicationRevision: resubmitRevision,
+    approvalVersion: resubmitRevision,
+    resultCycle: { ...resubmitRevision, min: 2 },
   },
   { timestamps: { createdAt: true, updatedAt: false }, strict: 'throw' },
 );

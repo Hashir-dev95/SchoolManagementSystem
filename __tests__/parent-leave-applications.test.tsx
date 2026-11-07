@@ -51,6 +51,7 @@ const transport: jest.Mocked<LeaveTransport> = {
   edit: jest.fn(),
   submit: jest.fn(),
   withdraw: jest.fn(),
+  resubmit: jest.fn(),
 };
 const childrenTransport = { children: jest.fn() };
 const operationId = jest.fn();
@@ -612,4 +613,129 @@ test('Parent navigation registers and opens the leave screen', async () => {
   await mount(<ParentWorkspaceScreen />);
   await press('Leave applications');
   expect(mockNavigate).toHaveBeenCalledWith('ParentLeaveApplications');
+});
+
+const requestedChanges =
+  'Explain the revised dates and the family circumstances.';
+const returnedLeave = (version = 1): LeaveDraft => {
+  const value = lifecycleResult('pending').application;
+  return {
+    ...value,
+    state: 'changes_requested',
+    revision: version + 1,
+    resubmitVersion: {
+      applicationRevision: version + 1,
+      approvalVersion: version,
+    },
+    history: [
+      ...value.history,
+      {
+        action: 'changes_requested',
+        revision: version + 1,
+        at: value.updatedAt,
+        decisionReason: requestedChanges,
+      },
+    ],
+  };
+};
+async function openReturnedLeave() {
+  const listing = page();
+  listing.items[0].state = 'changes_requested';
+  transport.list.mockResolvedValueOnce(listing);
+  transport.detail.mockResolvedValueOnce(returnedLeave());
+  await mount();
+  await press('Open application draft-A');
+}
+
+test('G3c Parent sees submitted evidence and can confirm and safely retry revised content', async () => {
+  await openReturnedLeave();
+  expect(text()).toContain(requestedChanges);
+  expect(text()).toContain('Latest submitted application');
+  expect(button('Save draft')).toBeUndefined();
+  await change('Private reason', 'Revised working copy stays local');
+  await press('Resubmit for Approval');
+  expect(transport.resubmit).not.toHaveBeenCalled();
+  const pending = lifecycleResult('pending');
+  transport.resubmit
+    .mockRejectedValueOnce(new Error('connection lost'))
+    .mockResolvedValueOnce({
+      ...pending,
+      operationRevision: 3,
+      operationCycle: 2,
+      application: {
+        ...pending.application,
+        revision: 3,
+        reason: 'Revised working copy stays local',
+      },
+    });
+  await press('Confirm resubmission');
+  expect(text()).not.toContain('Application resubmitted for approval.');
+  expect(text()).toContain('Revised working copy stays local');
+  await press('Retry action');
+  expect(transport.resubmit.mock.calls[0]).toEqual(
+    transport.resubmit.mock.calls[1],
+  );
+  expect(transport.resubmit.mock.calls[0].slice(4)).toEqual([
+    { applicationRevision: 2, approvalVersion: 1 },
+    'operation-1',
+  ]);
+  expect(text()).toContain('Application resubmitted for approval.');
+});
+
+test('G3c Parent conflict refreshes only the selected application and preserves the working copy', async () => {
+  await openReturnedLeave();
+  await change('Private reason', 'Unsaved revised reason survives');
+  transport.resubmit.mockRejectedValueOnce(new ApiError(409, 'conflict'));
+  transport.detail.mockResolvedValueOnce(returnedLeave(3));
+  await press('Resubmit for Approval');
+  await press('Confirm resubmission');
+  expect(transport.detail).toHaveBeenLastCalledWith('token-A', 'A', 'draft-A');
+  expect(transport.resubmit).toHaveBeenCalledTimes(1);
+  expect(text()).toContain('Unsaved revised reason survives');
+  expect(button('Resubmit for Approval').props.disabled).toBe(true);
+  await press('Keep edits and review again');
+  expect(button('Resubmit for Approval').props.disabled).toBe(false);
+  expect(text()).toContain('Unsaved revised reason survives');
+});
+
+test.each([401, 403, 404])(
+  'G3c Parent denied resubmission %i conceals submitted and working evidence',
+  async status => {
+    await openReturnedLeave();
+    await change('Private reason', 'Unsaved revised reason must be concealed');
+    transport.resubmit.mockRejectedValueOnce(new ApiError(status, 'denied'));
+    await press('Resubmit for Approval');
+    await press('Confirm resubmission');
+    expect(text()).not.toContain('Unsaved revised reason must be concealed');
+    expect(text()).not.toContain(requestedChanges);
+  },
+);
+
+test('G3c a late successful resubmission cannot reveal evidence after an account switch', async () => {
+  await openReturnedLeave();
+  await change('Private reason', 'Old account working copy');
+  const result = lifecycleResult('pending');
+  const response = deferred<typeof result & { operationCycle: number }>();
+  transport.resubmit.mockReturnValueOnce(response.promise);
+  await press('Resubmit for Approval');
+  act(() => {
+    button('Confirm resubmission').props.onPress();
+  });
+  expect(transport.resubmit).toHaveBeenCalledTimes(1);
+  mockToken = 'token-B';
+  mockUser = { ...mockUser!, id: 'parent-B', branchId: 'branch-B' };
+  await act(async () => tree.update(element()));
+  await act(async () =>
+    response.resolve({
+      ...result,
+      operationCycle: 2,
+      application: {
+        ...result.application,
+        reason: 'Private old account response',
+      },
+    }),
+  );
+  expect(text()).not.toContain('Private old account response');
+  expect(text()).not.toContain('Application resubmitted for approval.');
+  expect(text()).not.toContain('Old account working copy');
 });

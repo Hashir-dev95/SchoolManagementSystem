@@ -328,3 +328,44 @@ test.each(['success', 'denial'])(
     expect(service.detail).toHaveBeenCalledTimes(2);
   },
 );
+
+test('G3c Principal confirms an actionable return and refreshes only after acknowledgement', async () => {
+  const reason = 'Please explain the revised dates before resubmitting.';
+  const returned: ParentLeaveReviewDetail = {
+    ...pending,
+    status: 'changes_requested',
+    decisionVersion: null,
+    history: [
+      ...pending.history,
+      {
+        action: 'changes_requested',
+        revision: 2,
+        at: ack.decidedAt,
+        decisionReason: reason,
+      },
+    ],
+  };
+  service.detail.mockResolvedValueOnce(pending).mockResolvedValueOnce(returned);
+  service.decide
+    .mockRejectedValueOnce(new Error('connection lost'))
+    .mockResolvedValueOnce({ ...ack, state: 'changes_requested' });
+  await act(async () => {
+    tree = Renderer.create(detail('a'));
+  });
+  act(() => retry('Request changes'));
+  await act(async () => confirmDecision());
+  expect(service.decide).not.toHaveBeenCalled();
+  act(() => tree.root.findByType(TextInput).props.onChangeText(reason));
+  await act(async () => confirmDecision());
+  expect(text('Changes requested')).toBe(false);
+  await act(async () => confirmDecision());
+  expect(service.decide.mock.calls[0]).toEqual(service.decide.mock.calls[1]);
+  expect(service.decide.mock.calls[0][2]).toEqual({
+    ...pending.decisionVersion,
+    action: 'request_changes',
+    decisionReason: reason,
+    clientOperationId: 'principal-op-0001',
+  });
+  expect(text('Changes requested')).toBe(true);
+  expect(service.detail).toHaveBeenCalledTimes(2);
+});

@@ -29,7 +29,7 @@ const receipt = new Schema(
     },
     action: {
       type: String,
-      enum: ['approve', 'reject'] as const,
+      enum: ['approve', 'reject', 'request_changes'] as const,
       required: true,
       immutable: true,
     },

@@ -22,12 +22,33 @@ export interface LeaveSummary extends Omit<LeaveFields, 'reason'> {
 }
 export interface LeaveDraft extends LeaveSummary {
   reason: string;
+  priorCycles?: LeaveReviewCycle[];
+  resubmitVersion?: LeaveReviewVersion;
   history: {
-    action: 'draft_created' | 'draft_edited' | 'submitted' | 'withdrawn' | 'approved' | 'rejected';
+    action:
+      | 'draft_created'
+      | 'draft_edited'
+      | 'submitted'
+      | 'withdrawn'
+      | 'approved'
+      | 'rejected'
+      | 'resubmitted'
+      | 'changes_requested';
     revision: number;
     at: string;
     decisionReason?: string;
   }[];
+}
+export interface LeaveReviewVersion {
+  applicationRevision: number;
+  approvalVersion: number;
+}
+export interface LeaveReviewCycle extends LeaveFields {
+  cycle: number;
+  revision: number;
+  submittedAt: string;
+  changesRequestedAt: string;
+  decisionReason: string;
 }
 export interface LeavePage {
   items: LeaveSummary[];
@@ -133,6 +154,22 @@ export const leaveApplicationService = {
       {
         method: 'POST',
         body: { revision, clientOperationId },
+      },
+    ),
+  resubmit: (
+    token: string,
+    child: string,
+    id: string,
+    fields: LeaveFields,
+    version: LeaveReviewVersion,
+    clientOperationId: string,
+  ) =>
+    request<LeaveLifecycleResult & { operationCycle: number }>(
+      token,
+      `${path(child)}/${encodeURIComponent(id)}/resubmit`,
+      {
+        method: 'POST',
+        body: { ...fields, ...version, clientOperationId },
       },
     ),
 };
