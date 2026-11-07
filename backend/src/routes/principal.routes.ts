@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import {principalPickupRouter} from './pickup-authorization.routes';
 
 import { authenticateToken } from '../middleware/auth.middleware';
 import { requireBranchScope } from '../middleware/branch.middleware';
@@ -21,6 +22,7 @@ import {
   getTaskAssigneesController,
 } from '../controllers/principal-task.controller';
 const router = Router();
+router.use('/pickup-authorizations', principalPickupRouter);
 
 const parentLeaveReviewAccess = [
   authenticateToken,

@@ -1,8 +1,10 @@
 import { Schema, model, Types } from 'mongoose';
 
 export const PARENT_LEAVE_APPROVAL_ENTITY = 'parent_leave_application';
+export const PICKUP_AUTHORIZATION_APPROVAL_ENTITY = 'pickup_authorization';
 
 export const APPROVAL_TYPES = {
+  PICKUP_AUTHORIZATION: 'pickup_authorization',
   LEAVE: 'leave',
   LESSON_PLAN: 'lesson_plan',
   ATTENDANCE_CORRECTION: 'attendance_correction',
@@ -51,6 +53,7 @@ export interface IApprovalRequest {
   lessonPlanRevision?: number;
   resultRevision?: number;
   parentLeaveRevision?: number;
+  pickupRevision?: number;
 
   approvalType: ApprovalType;
 
@@ -148,6 +151,7 @@ const approvalRequestSchema = new Schema<IApprovalRequest>(
       min: 1,
       validate: Number.isSafeInteger,
     },
+    pickupRevision: {type: Number, min: 1, validate: Number.isSafeInteger},
 
     approvalType: {
       type: String,
@@ -255,6 +259,11 @@ approvalRequestSchema.index(
     },
   },
 );
+
+approvalRequestSchema.index({entityId: 1}, {
+  unique: true, name: 'one_approval_per_pickup_authorization',
+  partialFilterExpression: {entityType: PICKUP_AUTHORIZATION_APPROVAL_ENTITY, entityId: {$type: 'objectId'}},
+});
 
 const ApprovalRequest = model<IApprovalRequest>(
   'ApprovalRequest',

@@ -1,5 +1,5 @@
 import {HydratedDocument} from 'mongoose';
-import ApprovalRequest, {IApprovalRequest, PARENT_LEAVE_APPROVAL_ENTITY} from '../models/approvalRequest';
+import ApprovalRequest, {IApprovalRequest, PARENT_LEAVE_APPROVAL_ENTITY, PICKUP_AUTHORIZATION_APPROVAL_ENTITY} from '../models/approvalRequest';
 import User from '../models/user';
 import {ApprovalAccessError} from './approval-authority.policy';
 import {assertApprovalReferences, validateApprovalId} from './approval-scope.service';
@@ -17,7 +17,7 @@ const requesterRecord = async (requestId: string, actorId: string, branchId: str
   const request = await ApprovalRequest.findOne({_id: requestId, branchId});
   if (!request) throw new ApprovalAccessError(404, 'Approval request not found');
   if (!request.requesterId.equals(actor._id)) throw new ApprovalAccessError(403, 'Only the original requester may resubmit');
-  if (request.entityType === PARENT_LEAVE_APPROVAL_ENTITY) {
+  if ([PARENT_LEAVE_APPROVAL_ENTITY, PICKUP_AUTHORIZATION_APPROVAL_ENTITY].includes(request.entityType)) {
     throw new ApprovalAccessError(403, 'Typed resubmission is unavailable');
   }
   await assertApprovalReferences(request);

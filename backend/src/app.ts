@@ -1,4 +1,5 @@
 import staffSelfServiceRoutes from './routes/staff-self-service.routes';
+import {pickupParseError} from './routes/pickup-authorization.routes';
 import {gateAdministrationRouter, gateFoundationRouter, gateFoundationParseError} from './routes/gate-foundation.routes';
 import studentSelfRoutes from './routes/student-self.routes';
 import parentSelfRoutes from './routes/parent-self.routes';
@@ -60,6 +61,7 @@ app.use('/api/gate-admin', gateFoundationParseError);
 app.use('/api/gate', gateFoundationParseError);
 app.use('/api/student/me', studentSelfRoutes);
 app.use('/api/parent/me', parentSelfRoutes);
+app.use('/api/parent/me/children/:studentId/pickup-authorizations', pickupParseError);
 app.use('/api/finance/me', financeRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/chat', chatRoutes);
