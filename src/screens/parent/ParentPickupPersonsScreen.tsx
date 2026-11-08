@@ -372,7 +372,7 @@ function ChildPickups({
     }
   };
   const begin = (kind: Action) => {
-    if (sending.current || uncertain || conflict) return;
+    if (sending.current || uncertain || conflict || (detailId.current && !detail)) return;
     if (
       (kind === 'create' || kind === 'edit' || kind === 'resubmit') &&
       fields
@@ -647,6 +647,7 @@ function ChildPickups({
             }
             disabled={
               disabled ||
+              (!!detailId.current && !detail) ||
               (!!detail &&
                 !detail.capabilities.canEditDraft &&
                 !detail.capabilities.canResubmit)

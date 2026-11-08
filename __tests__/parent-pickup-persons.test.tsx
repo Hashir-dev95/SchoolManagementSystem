@@ -2,7 +2,7 @@ import React from 'react';
 import Renderer, { act } from 'react-test-renderer';
 import { TextInput } from 'react-native';
 import Screen from '../src/screens/parent/ParentPickupPersonsScreen';
-import { Button, WorkspaceTabs } from '../src/components/hiraDashboard';
+import { Button, DashboardStateCard, WorkspaceTabs } from '../src/components/hiraDashboard';
 import { ApiError } from '../src/services/api/apiClient';
 import type {
   PickupTransport,
@@ -507,4 +507,32 @@ test('routing-disabled draft exposes no enabled submit action', async () => {
   await press(`View ${pickupFields.fullName}`);
   expect(button('Submit proposal')).toBeUndefined();
   expect(output()).toContain('not available for this branch yet');
+});
+
+test('failed ordinary detail refresh cannot turn a retained draft edit into a new create', async () => {
+  await mount();
+  await press(`View ${pickupFields.fullName}`);
+  await press('Edit draft');
+  await change('Full name', 'Retained edit');
+  transport.write.mockRejectedValueOnce(new ApiError(400, 'Check fields'));
+  await press('Save draft');
+  transport.detail.mockRejectedValueOnce(new Error('Refresh timed out'));
+  await act(async () => {
+    await tree.root.findAllByType(DashboardStateCard)
+      .find(node => node.props.error)!.props.onRetry();
+  });
+  expect(output()).toContain('Retained edit');
+  expect(button('Save draft').props.disabled).toBe(true);
+  await act(async () => { await button('Save draft').props.onPress(); });
+  expect(transport.write).toHaveBeenCalledTimes(1);
+  transport.detail.mockResolvedValueOnce(pickupDetail({ revision: 3, personRevision: 2 }));
+  await act(async () => {
+    await tree.root.findAllByType(DashboardStateCard)
+      .find(node => node.props.error)!.props.onRetry();
+  });
+  await press('Save draft');
+  expect(transport.write.mock.calls[1][2]).toEqual({
+    kind: 'edit', id: 'proposal-A',
+    body: { ...pickupFields, fullName: 'Retained edit', applicationRevision: 3, personRevision: 2, clientOperationId: 'uuid-next' },
+  });
 });
