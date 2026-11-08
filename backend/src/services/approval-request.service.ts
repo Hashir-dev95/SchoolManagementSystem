@@ -1,5 +1,5 @@
 import {Types, UpdateQuery} from 'mongoose';
-import ApprovalRequest, {IApprovalRequest, PARENT_LEAVE_APPROVAL_ENTITY, PICKUP_AUTHORIZATION_APPROVAL_ENTITY} from '../models/approvalRequest';
+import ApprovalRequest, {IApprovalRequest, PARENT_LEAVE_APPROVAL_ENTITY, PICKUP_AUTHORIZATION_APPROVAL_ENTITY, EARLY_EXIT_APPROVAL_ENTITY} from '../models/approvalRequest';
 import User from '../models/user';
 import {PERMISSIONS} from '../constants/permissions';
 import {ROLE_PERMISSIONS} from '../constants/rolePermissions';
@@ -34,7 +34,7 @@ const authorizeReview = async (
   currentActor?: Awaited<ReturnType<typeof authorizedActor>>,
 ) => {
   const actor = currentActor ?? await authorizedActor(actorId, branchId);
-  if ([PARENT_LEAVE_APPROVAL_ENTITY, PICKUP_AUTHORIZATION_APPROVAL_ENTITY].includes(request.entityType)) {
+  if ([PARENT_LEAVE_APPROVAL_ENTITY, PICKUP_AUTHORIZATION_APPROVAL_ENTITY, EARLY_EXIT_APPROVAL_ENTITY].includes(request.entityType)) {
     throw new ApprovalAccessError(403, 'Typed review is unavailable');
   }
   if (request.status !== 'pending') throw new ApprovalAccessError(409, 'Only pending approval requests can be processed');
@@ -125,7 +125,7 @@ export const getApprovalRequestById = async (requestId: string, branchId: string
   await authorizedActor(actorId, branchId);
   const request = await ApprovalRequest.findOne({_id: requestId, branchId});
   if (!request) throw new ApprovalAccessError(404, 'Approval request not found');
-  if ([PARENT_LEAVE_APPROVAL_ENTITY, PICKUP_AUTHORIZATION_APPROVAL_ENTITY].includes(request.entityType)) {
+  if ([PARENT_LEAVE_APPROVAL_ENTITY, PICKUP_AUTHORIZATION_APPROVAL_ENTITY, EARLY_EXIT_APPROVAL_ENTITY].includes(request.entityType)) {
     throw new ApprovalAccessError(403, 'Typed review is unavailable');
   }
   assertApprovalAuthority(actorId, branchId, request);
