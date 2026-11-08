@@ -140,6 +140,7 @@ export async function readPrincipalPickups(
             checkedSubjects.push(graph.row);
             items.push({
               ...dto,
+              approvalId: String(graph.approval!._id),
               student: {
                 id: String(subject.scope.student._id),
                 fullName: subject.scope.user.fullName,

@@ -375,6 +375,28 @@ test('missing or disabled routing leaves drafts usable and creates no linked app
   assert.equal(await ApprovalRequest.countDocuments(), 0);
 });
 
+test('Principal queue exposes only whitelisted fields and a validated approval ID resolving through typed detail', async () => {
+  const created = await pending();
+  const queue = await http(reviews, principalToken);
+  assert.equal(queue.status, 200);
+  const row = queue.data.data.items[0];
+  assert.equal(row.approvalId, created.approvalId);
+  assert.deepEqual(Object.keys(row).sort(), [
+    'authorizationId', 'pickupPersonId', 'studentId', 'state', 'revision',
+    'personRevision', 'person', 'validFromDate', 'validUntilDate', 'eligibility',
+    'capabilities', 'policyBindingCurrent', 'reviewRoutingState', 'approvalId',
+    'student', 'requester',
+  ].sort());
+  const approval = await ApprovalRequest.findById(row.approvalId).orFail();
+  assert.equal(String(approval.entityId), row.authorizationId);
+  const detail = await http(`${reviews}/${row.approvalId}`, principalToken);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.data.data.authorizationId, row.authorizationId);
+  assert.equal(detail.data.data.approvalId, row.approvalId);
+  assert.ok(!JSON.stringify(queue.data).includes(fields().phone));
+  assert.ok(!JSON.stringify(queue.data).includes(fields().notes));
+});
+
 test('typed queue and detail require a current explicit Principal pickup category grant', async () => {
   const created = await pending();
   const queue = await http(reviews, principalToken);
@@ -390,11 +412,16 @@ test('typed queue and detail require a current explicit Principal pickup categor
     'request_changes',
   ]);
   assert.equal(detail.capabilities.canApprove, false);
-  for (const token of [parentState.token, state.token])
+  for (const token of [parentState.token, state.token]) {
     assert.equal(
       (await http(`${reviews}/${created.approvalId}`, token)).status,
       403,
     );
+    const denied = await http(reviews, token);
+    assert.equal(denied.status, 403);
+    assert.ok(!JSON.stringify(denied.data).includes(created.approvalId));
+    assert.ok(!JSON.stringify(denied.data).includes(fields().fullName));
+  }
   process.env.PRINCIPAL_APPROVAL_AUTHORITY = JSON.stringify({
     [String(parentState.verifier._id)]: {
       branchId: String(state.branch._id),
@@ -431,6 +458,11 @@ test('a current foreign Branch Principal with an explicit grant cannot retrieve 
   const response = await http(`${reviews}/${created.approvalId}`, token);
   assert.equal(response.status, 404);
   assert.ok(!JSON.stringify(response.data).includes(fields().phone));
+  const queue = await http(reviews, token);
+  assert.equal(queue.status, 200);
+  assert.deepEqual(queue.data.data.items, []);
+  assert.ok(!JSON.stringify(queue.data).includes(created.approvalId));
+  assert.ok(!JSON.stringify(queue.data).includes(fields().fullName));
 });
 
 test('Principal detail rechecks the original Parent relationship after a completed read snapshot', async () => {

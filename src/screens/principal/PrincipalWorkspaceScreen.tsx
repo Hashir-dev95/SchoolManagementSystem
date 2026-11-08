@@ -21,6 +21,7 @@ import PrincipalApprovalsScreen from './PrincipalApprovalsScreen';
 import PrincipalDashboardScreen from './PrincipalDashboardScreen';
 import PrincipalInboxScreen from './PrincipalInboxScreen';
 import {hasPermission, PERMISSIONS} from '../../constants/permissions';
+import { Button } from '../../components/hiraDashboard';
 
 type TabKey = 'home' | 'approvals' | 'inbox';
 type Navigation = NativeStackNavigationProp<PrincipalStackParamList>;
@@ -131,6 +132,9 @@ export default function PrincipalWorkspaceScreen() {
       </SafeAreaView>
 
       <View style={styles.page}>
+        {user?.role === 'principal' ? (
+          <Button title="Pickup Authorization Reviews" variant="secondary" onPress={() => navigation.navigate('PickupAuthorizationReviews')} />
+        ) : null}
         {activeTab === 'home' ? (
           <PrincipalDashboardScreen
             onOpenApprovals={() => openTab('approvals')}

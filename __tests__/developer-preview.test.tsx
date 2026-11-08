@@ -140,6 +140,26 @@ test('logout removes preview and a later login cannot inherit the selected role'
   expect(output()).not.toContain('FICTIONAL SAMPLE DATA');
   expect(authService.logout).toHaveBeenCalledWith('real-test-token');
 });
+
+test('Parent pickup Design Preview is fictional, read-only and never changes real authentication', async () => {
+  await signIn();
+  await press('Open Developer Preview');
+  await press('Parent');
+  expect(output()).toContain('Pickup Persons · Design Preview');
+  for (const label of ['Pending', 'Changes Requested', 'Rejected', 'School verification unavailable', 'Policy-blocked approval']) expect(output()).toContain(label);
+  await press('Preview Sample Guardian Two');
+  expect(output()).toContain('Sample explanation: revise the proposed contact details.');
+  expect(output()).toContain('Approve unavailable — school policy required');
+  expect(output()).not.toContain('Confirm exit');
+  expect(output()).not.toContain('Show QR');
+  expect(output()).not.toContain('Save draft');
+  expect(globalThis.fetch).not.toHaveBeenCalled();
+  expect(auth.user).toBe(actualUser);
+  expect(auth.accessToken).toBe('real-test-token');
+  await press('Sara Khan');
+  expect(output()).not.toContain('Fictional pickup detail');
+  expect(authService.logout).not.toHaveBeenCalled();
+});
 test('production guard prevents switching even with a real authenticated session', async () => {
   runtime.__DEV__ = false;
   await signIn();
