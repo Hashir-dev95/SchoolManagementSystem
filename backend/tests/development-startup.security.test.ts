@@ -15,6 +15,7 @@ import { ParentLeaveDecisionOperation } from '../src/models/parentLeaveDecisionO
 import Session from '../src/models/session';
 import { createUser } from '../src/services/auth.service';
 import {Gate, GateStaffAssignment, StudentCustodyState, GateAdminOperation} from '../src/models/gateFoundation';
+import {PickupCustodyPolicy, PickupAuthorization, PickupSubmission, PickupOperation} from '../src/models/pickupAuthorization';
 
 const databaseName = 'startup_security_tests';
 const jwtSecret = 'startup-test-fixture-only-secret';
@@ -95,6 +96,9 @@ test('the real server waits for required indexes and accepts canonical login on 
     assert.match(running.output(), /MongoDB connected successfully[\s\S]*Required database indexes initialized[\s\S]*Backend server listening/);
     assert.ok((await StudentLeave.collection.indexes()).some(index => index.name === 'one_parent_leave_coverage'));
     assert.ok((await ParentLeaveDecisionOperation.collection.indexes()).some(index => index.name === 'parent_leave_principal_operation'));
+    for (const [model, name] of [[PickupCustodyPolicy, 'pickup_policy_branch_unique'], [PickupAuthorization, 'pickup_reciprocal_approval_unique'], [PickupSubmission, 'pickup_submission_cycle_unique'], [PickupOperation, 'pickup_actor_operation_unique']] as const) {
+      assert.ok((await model.collection.indexes()).some(index => index.name === name && index.unique));
+    }
     for (const [model, name] of [[Gate, 'gate_branch_code_unique'], [GateStaffAssignment, 'gate_operator_active_unique'], [StudentCustodyState, 'custody_student_branch_unique'], [GateAdminOperation, 'gate_admin_operation_unique']] as const) {
       assert.ok((await model.collection.indexes()).some(index => index.name === name && index.unique));
     }

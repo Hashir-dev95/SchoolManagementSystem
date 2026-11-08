@@ -13,6 +13,26 @@ export const studentSample = {
   ],
 };
 export const childSamples = ['Ahmed Khan', 'Sara Khan'] as const;
+export const pickupPreviewSamples = [
+  {
+    name: 'Sample Guardian One',
+    relationship: 'Fictional aunt',
+    state: 'Pending',
+    detail: 'Sample proposal awaiting configured school review.',
+  },
+  {
+    name: 'Sample Guardian Two',
+    relationship: 'Fictional uncle',
+    state: 'Changes Requested',
+    detail: 'Sample explanation: revise the proposed contact details.',
+  },
+  {
+    name: 'Sample Guardian Three',
+    relationship: 'Fictional family friend',
+    state: 'Rejected',
+    detail: 'Sample explanation: the school cannot accept these proposed details.',
+  },
+] as const;
 export const financeSample = {
   invoice: ['DEMO-2026-01 · October tuition', 'PKR 12,000 · Partially paid'],
   summary: [
