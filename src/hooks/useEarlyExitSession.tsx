@@ -1,9 +1,28 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Text } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../services/api/apiClient';
-export { usePickupLifetime as useEarlyExitLifetime } from './usePickupSession';
+
+/** A private instance belongs to one focus epoch and cannot become live again. */
+export function useEarlyExitLifetime() {
+  const live = useRef(false);
+  useLayoutEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        live.current = false;
+      },
+      [],
+    ),
+  );
+  return live;
+}
 
 /** Canonical auth identity only; focus/context loss destroys private local state. */
 export function EarlyExitSession({
@@ -15,8 +34,11 @@ export function EarlyExitSession({
 }) {
   const { user, accessToken } = useAuth();
   const [focused, setFocused] = useState(false);
+  const [focusEpoch, setFocusEpoch] = useState(0);
   useFocusEffect(
     useCallback(() => {
+      // Functional increment survives a batched blur/refocus ending in true.
+      setFocusEpoch(epoch => epoch + 1);
       setFocused(true);
       return () => setFocused(false);
     }, []),
@@ -29,7 +51,13 @@ export function EarlyExitSession({
     );
   return focused ? (
     <React.Fragment
-      key={JSON.stringify([user.id, user.role, user.branchId, accessToken])}
+      key={JSON.stringify([
+        user.id,
+        user.role,
+        user.branchId,
+        accessToken,
+        focusEpoch,
+      ])}
     >
       {children(accessToken, user.branchId)}
     </React.Fragment>
