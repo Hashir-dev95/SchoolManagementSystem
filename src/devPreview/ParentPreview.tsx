@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { PreviewPage, PreviewCard, PreviewTabs } from './PreviewUI';
 import { childSamples, pickupPreviewSamples } from './previewData';
 import { Button } from '../components/hiraDashboard';
+import EarlyExitPreview from './EarlyExitPreview';
 
 export default function ParentPreview() {
   const [child, setChild] = useState<string>(childSamples[0]);
@@ -30,6 +31,7 @@ export default function ParentPreview() {
         title="School story"
         lines={['Sample teacher feedback', 'A little learning, every day.']}
       />
+      <EarlyExitPreview key={child} />
       <PreviewCard
         title="Pickup Persons · Design Preview"
         lines={[

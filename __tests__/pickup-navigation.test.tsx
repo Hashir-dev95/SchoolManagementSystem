@@ -65,6 +65,7 @@ test('Parent navigator registers pickup without replacing leave/chat/notificatio
   expect(routes).toEqual(
     expect.arrayContaining([
       'ParentPickupPersons',
+      'ParentEarlyExitRequests',
       'ParentLeaveApplications',
       'ParentChat',
       'ParentNotifications',
@@ -99,6 +100,8 @@ test('Principal navigator preserves typed leave, canonical approvals and attenda
     expect.arrayContaining([
       'PickupAuthorizationReviews',
       'PickupAuthorizationReview',
+      'EarlyExitReviews',
+      'EarlyExitReview',
       'ParentLeaveReview',
       'ApprovalDetail',
       'Attendance',
@@ -119,4 +122,17 @@ test('Principal workspace exposes dedicated review navigation without a fabricat
       .props.onPress(),
   );
   expect(mockNavigate).toHaveBeenCalledWith('PickupAuthorizationReviews');
+});
+
+test('Parent workspace Early Exit entry uses the authenticated route', async () => {
+  await act(async () => { tree = Renderer.create(<ParentWorkspace />); });
+  await act(async () => tree.root.findAllByType(Button).find(node => node.props.title === 'Early Exit Requests')!.props.onPress());
+  expect(mockNavigate).toHaveBeenCalledWith('ParentEarlyExitRequests');
+});
+
+test('Principal workspace Early Exit entry uses its dedicated typed queue', async () => {
+  mockRole = 'principal';
+  await act(async () => { tree = Renderer.create(<PrincipalWorkspace />); });
+  await act(async () => tree.root.findAllByType(Button).find(node => node.props.title === 'Early Exit Reviews')!.props.onPress());
+  expect(mockNavigate).toHaveBeenCalledWith('EarlyExitReviews');
 });

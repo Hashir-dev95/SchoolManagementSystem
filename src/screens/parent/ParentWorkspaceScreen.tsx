@@ -224,6 +224,7 @@ function Workspace({ token }: { token: string }) {
       <View style={styles.actions}>
         <Button title="Leave applications" variant="secondary" onPress={() => navigation.navigate('ParentLeaveApplications')} />
         <Button title="Pickup Persons" variant="secondary" onPress={() => navigation.navigate('ParentPickupPersons')} />
+        <Button title="Early Exit Requests" variant="secondary" onPress={() => navigation.navigate('ParentEarlyExitRequests')} />
         <Button
           title="Messages"
           variant="secondary"
