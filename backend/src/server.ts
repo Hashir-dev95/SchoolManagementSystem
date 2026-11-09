@@ -32,6 +32,7 @@ import {ensureChatIndexes} from './models/chat';
 import {ensureParentLeaveApplicationIndexes} from './models/parentLeaveApplication';
 import {ensureGateFoundationIndexes} from './models/gateFoundation';
 import {ensurePickupAuthorizationIndexes} from './models/pickupAuthorization';
+import {ensureEarlyExitIndexes} from './models/earlyExitRequest';
 
 class StartupError extends Error {}
 const configuredPort = process.env.PORT || '5000';
@@ -65,6 +66,7 @@ const startServer = async (): Promise<void> => {
   await ensureParentLeaveApplicationIndexes();
   await ensureGateFoundationIndexes();
   await ensurePickupAuthorizationIndexes();
+  await ensureEarlyExitIndexes();
   await ensureLiveLessonIndexes();
   await ensureTeacherAccountIndex();
   await ensureAttendanceAmendmentIndexes();

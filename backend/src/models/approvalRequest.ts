@@ -2,8 +2,10 @@ import { Schema, model, Types } from 'mongoose';
 
 export const PARENT_LEAVE_APPROVAL_ENTITY = 'parent_leave_application';
 export const PICKUP_AUTHORIZATION_APPROVAL_ENTITY = 'pickup_authorization';
+export const EARLY_EXIT_APPROVAL_ENTITY = 'early_exit_request';
 
 export const APPROVAL_TYPES = {
+  EARLY_EXIT: 'early_exit_request',
   PICKUP_AUTHORIZATION: 'pickup_authorization',
   LEAVE: 'leave',
   LESSON_PLAN: 'lesson_plan',
@@ -54,6 +56,7 @@ export interface IApprovalRequest {
   resultRevision?: number;
   parentLeaveRevision?: number;
   pickupRevision?: number;
+  earlyExitRevision?: number;
 
   approvalType: ApprovalType;
 
@@ -152,6 +155,7 @@ const approvalRequestSchema = new Schema<IApprovalRequest>(
       validate: Number.isSafeInteger,
     },
     pickupRevision: {type: Number, min: 1, validate: Number.isSafeInteger},
+    earlyExitRevision: {type: Number, min: 1, validate: Number.isSafeInteger},
 
     approvalType: {
       type: String,
@@ -263,6 +267,11 @@ approvalRequestSchema.index(
 approvalRequestSchema.index({entityId: 1}, {
   unique: true, name: 'one_approval_per_pickup_authorization',
   partialFilterExpression: {entityType: PICKUP_AUTHORIZATION_APPROVAL_ENTITY, entityId: {$type: 'objectId'}},
+});
+
+approvalRequestSchema.index({entityId: 1}, {
+  unique: true, name: 'one_approval_per_early_exit',
+  partialFilterExpression: {entityType: EARLY_EXIT_APPROVAL_ENTITY, entityId: {$type: 'objectId'}},
 });
 
 const ApprovalRequest = model<IApprovalRequest>(

@@ -345,6 +345,8 @@ test('Principal navigator retains one stack with unique existing screens and no 
     'ApprovalDetail',
     'ParentLeaveReview',
     'PickupAuthorizationReviews',
+    'EarlyExitReviews',
+    'EarlyExitReview',
     'PickupAuthorizationReview',
     'NoticeDetail',
     'Tasks',

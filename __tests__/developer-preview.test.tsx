@@ -166,6 +166,26 @@ test('production guard prevents switching even with a real authenticated session
   expect(output()).toContain('Normal canonical app');
   expect(output()).not.toContain('Open Developer Preview');
 });
+
+test.each(['Draft', 'Pending', 'Changes Requested', 'Rejected', 'Withdrawn'])(
+  'Early Exit %s preview is fictional and read-only with no network or authentication writes', async state => {
+    await signIn();
+    await press('Open Developer Preview');
+    await press('Parent');
+    expect(output()).toContain('Early Exit · Design Preview');
+    await press(`Preview Early Exit ${state}`);
+    expect(output()).toContain('Fictional Early Exit detail');
+    expect(output()).toContain('No connected Student, Parent or Principal record.');
+    expect(output()).not.toContain('Confirm Early Exit decision');
+    expect(output()).not.toContain('Save draft');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(auth.user).toBe(actualUser);
+    expect(auth.accessToken).toBe('real-test-token');
+    await press('Sara Khan');
+    expect(output()).not.toContain('Fictional Early Exit detail');
+    expect(authService.logout).not.toHaveBeenCalled();
+  },
+);
 test('selecting a privileged UI does not change API authorization or swallow a 403', async () => {
   await signIn();
   await press('Open Developer Preview');

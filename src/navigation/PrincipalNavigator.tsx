@@ -13,6 +13,7 @@ import type { ApprovalRequest } from '../services/principal/principalService';
 import ApprovalDetailScreen from '../screens/principal/ApprovalDetailScreen';
 import PrincipalParentLeaveReviewScreen from '../screens/principal/PrincipalParentLeaveReviewScreen';
 import PrincipalPickupAuthorizationReviewScreen from '../screens/principal/PrincipalPickupAuthorizationReviewScreen';
+import PrincipalEarlyExitReviewScreen from '../screens/principal/PrincipalEarlyExitReviewScreen';
 import NoticeDetailScreen from '../screens/principal/NoticeDetailScreen';
 import PrincipalWorkspaceScreen from '../screens/principal/PrincipalWorkspaceScreen';
 import PrincipalTasksScreen from '../screens/principal/PrincipalTasksScreen';
@@ -42,6 +43,8 @@ export type PrincipalStackParamList = {
   ParentLeaveReview: { approvalId: string };
   PickupAuthorizationReviews: undefined;
   PickupAuthorizationReview: { approvalId: string };
+  EarlyExitReviews: undefined;
+  EarlyExitReview: { approvalId: string };
   NoticeDetail: { noticeId: string };
   Tasks: undefined;
   TaskDetail: { taskId: string; createdMessage?: string };
@@ -74,6 +77,8 @@ export default function PrincipalNavigator() {
       <Stack.Screen name="ApprovalDetail" component={ApprovalDetailScreen} />
       <Stack.Screen name="ParentLeaveReview" component={PrincipalParentLeaveReviewScreen} options={{headerShown: true, title: 'Parent leave review'}} />
       <Stack.Screen name="PickupAuthorizationReviews" component={PrincipalPickupAuthorizationReviewScreen} options={{headerShown: true, title: 'Pickup Authorization Reviews'}} />
+      <Stack.Screen name="EarlyExitReviews" component={PrincipalEarlyExitReviewScreen} options={{headerShown: true, title: 'Early Exit Reviews'}} />
+      <Stack.Screen name="EarlyExitReview" component={PrincipalEarlyExitReviewScreen} options={{headerShown: true, title: 'Early Exit Review'}} />
       <Stack.Screen name="PickupAuthorizationReview" component={PrincipalPickupAuthorizationReviewScreen} options={{headerShown: true, title: 'Pickup authorization review'}} />
       <Stack.Screen name="NoticeDetail" component={NoticeDetailScreen} />
       <Stack.Screen name="Tasks" component={PrincipalTasksScreen} />

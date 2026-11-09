@@ -133,7 +133,10 @@ export default function PrincipalWorkspaceScreen() {
 
       <View style={styles.page}>
         {user?.role === 'principal' ? (
-          <Button title="Pickup Authorization Reviews" variant="secondary" onPress={() => navigation.navigate('PickupAuthorizationReviews')} />
+          <>
+            <Button title="Pickup Authorization Reviews" variant="secondary" onPress={() => navigation.navigate('PickupAuthorizationReviews')} />
+            <Button title="Early Exit Reviews" variant="secondary" onPress={() => navigation.navigate('EarlyExitReviews')} />
+          </>
         ) : null}
         {activeTab === 'home' ? (
           <PrincipalDashboardScreen

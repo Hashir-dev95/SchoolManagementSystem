@@ -3,12 +3,14 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import ParentWorkspaceScreen from '../screens/parent/ParentWorkspaceScreen';
 import ParentLeaveApplicationsScreen from '../screens/parent/ParentLeaveApplicationsScreen';
 import ParentPickupPersonsScreen from '../screens/parent/ParentPickupPersonsScreen';
+import ParentEarlyExitRequestsScreen from '../screens/parent/ParentEarlyExitRequestsScreen';
 import NotificationInboxScreen from '../screens/notifications/NotificationInboxScreen';
 import ChatWorkspaceScreen from '../screens/chat/ChatWorkspaceScreen';
 export type ParentStackParamList = {
   ParentWorkspace: undefined;
   ParentLeaveApplications: undefined;
   ParentPickupPersons: undefined;
+  ParentEarlyExitRequests: undefined;
   ParentNotifications: undefined;
   ParentChat: { conversationId?: string } | undefined;
 };
@@ -16,6 +18,7 @@ const Stack = createNativeStackNavigator<ParentStackParamList>();
 export default function ParentNavigator() {
   return (
     <Stack.Navigator initialRouteName="ParentWorkspace">
+      <Stack.Screen name="ParentEarlyExitRequests" component={ParentEarlyExitRequestsScreen} options={{ title: 'Early Exit Requests' }} />
       <Stack.Screen name="ParentPickupPersons" component={ParentPickupPersonsScreen} options={{ title: 'Pickup Persons' }} />
       <Stack.Screen
         name="ParentLeaveApplications"

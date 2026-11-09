@@ -1,6 +1,7 @@
 import { Router, type Response } from 'express';
 import parentLeaveDraftRoutes from './parent-leave-draft.routes';
 import {parentPickupRouter} from './pickup-authorization.routes';
+import {parentEarlyExitRouter} from './early-exit.routes';
 import {
   authenticateToken,
   type AuthenticatedRequest,
@@ -65,6 +66,7 @@ router.use((_req, res, next) => {
 });
 router.use(authenticateToken, requireRole('parent'));
 router.use('/children/:studentId/pickup-authorizations', parentPickupRouter);
+router.use('/children/:studentId/early-exit-requests', parentEarlyExitRouter);
 router.use('/children/:studentId/leave-applications', parentLeaveDraftRoutes);
 router.get(
   '/',

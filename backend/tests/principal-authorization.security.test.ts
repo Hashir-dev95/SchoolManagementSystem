@@ -324,6 +324,7 @@ const assertNonDisclosingApprovals = (dashboard: Awaited<ReturnType<typeof http>
   assert.equal(dashboard.status, 200);
   assert.deepEqual(dashboard.data.data.pendingApprovals, {total: 0, byType: {
     pickup_authorization: 0,
+    early_exit_request: 0,
     lesson_plan: 0, attendance_correction: 0, leave: 0, refund: 0, discount: 0, result: 0, paper: 0, purchase: 0, payroll: 0, certificate: 0,
   }});
   // Other existing dashboard cards remain available under dashboard permission.
