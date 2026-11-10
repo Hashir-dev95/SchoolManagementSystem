@@ -20,6 +20,10 @@ import {
 } from '../utils/request-validation';
 import { scheduleDate, schoolDateTime } from './school-date.service';
 import type { StudentReadScope } from './student-self-scope.service';
+import {
+  schoolCustodyPolicyContract,
+  assessSchoolCustodyPolicy,
+} from './school-custody-contract';
 
 export const pickupUnavailable = () =>
   new RequestContractError(404, 'Pickup proposal is unavailable');
@@ -176,7 +180,7 @@ export async function currentPickupPolicy(
     const [row] = await PickupCustodyPolicy.create([{ branchId }], { session });
     policy = row.toObject();
   }
-  if (!policy || !Number.isSafeInteger(policy.revision) || policy.revision < 1)
+  if (!policy || !schoolCustodyPolicyContract(policy, branchId))
     throw pickupConflict();
   return policy;
 }
@@ -199,12 +203,14 @@ export async function pickupEligibility(
     custody.state === 'hold'
       ? 'hold'
       : 'unknown';
+  const contract = schoolCustodyPolicyContract(policy, branchId);
   return {
-    operationallyEligible: false as const,
+    operationallyEligible: assessSchoolCustodyPolicy(contract, branchId)
+      .operationallyEligible,
     identityVerification: 'unverified' as const,
     custodyState,
     policyState: 'unconfigured' as const,
-    policyRevision: policy?.revision ?? null,
+    policyRevision: contract?.policy.revision ?? null,
     blockedReasons: [
       'school_custody_policy_unconfigured',
       'pickup_identity_unverified',
