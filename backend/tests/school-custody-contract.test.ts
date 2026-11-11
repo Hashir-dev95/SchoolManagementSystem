@@ -6,6 +6,9 @@ import {
   schoolCustodyPolicyContract,
   assessSchoolCustodyPolicy,
   collectorIdentityBindingMatches,
+  VERIFICATION_INVALIDATION_REASONS,
+  type CollectorVerificationRevisionContext,
+  type VerificationInvalidationReason,
 } from '../src/services/school-custody-contract';
 
 const id = () => new Types.ObjectId().toHexString();
@@ -185,4 +188,121 @@ test('malformed and forged binding metadata never passes consistency validation'
     { ...original, provenance: { ...original.provenance, isAuthorized: true } },
   ])
     assert.equal(collectorIdentityBindingMatches(candidate, source), false);
+});
+
+test('B1 identity, decision, policy and transaction counters remain separate observations', () => {
+  const source = person();
+  const identity = {
+    pickupPersonId: source._id,
+    personRevision: source.revision,
+    identityFingerprint: pickupDigest([
+      source.fullName,
+      source.relationship,
+      source.phone,
+    ]),
+    provenance: {
+      requesterId: source.requesterId,
+      parentStudentLinkId: source.parentStudentLinkId,
+      studentId: source.studentId,
+      branchId: source.branchId,
+      enrollmentId: source.enrollmentId,
+      academicPeriodId: source.academicPeriodId,
+      classId: source.classId,
+      sectionId: source.sectionId,
+    },
+  };
+  const contract = schoolCustodyPolicyContract(
+    { ...policy(), revision: 7, __v: 31 },
+    branchId,
+  )!;
+  const observation: CollectorVerificationRevisionContext = {
+    identity,
+    verificationRevision: 19,
+    policy: contract.policy,
+    documentVersions: { pickupPerson: 23, policy: 31 },
+  };
+  assert.equal(observation.identity.personRevision, 3);
+  assert.equal(observation.verificationRevision, 19);
+  assert.equal(observation.policy.revision, 7);
+  assert.equal(contract.schemaVersion, 1);
+  assert.equal(
+    collectorIdentityBindingMatches(observation.identity, {
+      ...source,
+      __v: 23,
+    }),
+    true,
+  );
+  assert.equal(
+    collectorIdentityBindingMatches(
+      { ...identity, personRevision: observation.verificationRevision },
+      source,
+    ),
+    false,
+  );
+  assert.equal(
+    collectorIdentityBindingMatches(
+      {
+        ...identity,
+        personRevision: observation.documentVersions.pickupPerson,
+      },
+      source,
+    ),
+    false,
+  );
+  assert.equal(
+    assessSchoolCustodyPolicy(contract, branchId).operationallyEligible,
+    false,
+  );
+});
+
+test('B1 changing only policy document __v does not change its business identity or approval', () => {
+  const source = policy();
+  const original = schoolCustodyPolicyContract({ ...source, __v: 0 }, branchId);
+  const fenced = schoolCustodyPolicyContract({ ...source, __v: 29 }, branchId);
+  assert.deepEqual(fenced, original);
+  assert.equal(
+    assessSchoolCustodyPolicy(fenced, branchId).operationallyEligible,
+    false,
+  );
+});
+
+test('B1 speculative verification metadata is not persisted policy or collector binding input', () => {
+  const source = person();
+  for (const claim of [
+    { verificationRevision: 1 },
+    { documentVersions: { pickupPerson: 1, policy: 1 } },
+    { verification: { state: 'verified' } },
+  ]) {
+    assert.equal(
+      schoolCustodyPolicyContract({ ...policy(), ...claim }, branchId),
+      null,
+    );
+    assert.equal(
+      collectorIdentityBindingMatches({ ...binding(source), ...claim }, source),
+      false,
+    );
+  }
+});
+
+test('B1 invalidation reasons are immutable diagnostic labels with no operational authority', () => {
+  assert.ok(Object.isFrozen(VERIFICATION_INVALIDATION_REASONS));
+  const source = person();
+  for (const reason of VERIFICATION_INVALIDATION_REASONS) {
+    const typedReason: VerificationInvalidationReason = reason;
+    const contract = schoolCustodyPolicyContract(policy(), branchId)!;
+    assert.equal(
+      assessSchoolCustodyPolicy(
+        { ...contract, invalidationReason: typedReason },
+        branchId,
+      ).operationallyEligible,
+      false,
+    );
+    assert.equal(
+      collectorIdentityBindingMatches(
+        { ...binding(source), invalidationReason: typedReason },
+        source,
+      ),
+      false,
+    );
+  }
 });
