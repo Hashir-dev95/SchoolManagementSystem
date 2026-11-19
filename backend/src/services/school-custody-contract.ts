@@ -6,6 +6,7 @@ export const SCHOOL_CUSTODY_CONTRACT_VERSION = 1;
 export interface SchoolCustodyPolicyIdentity {
   readonly id: string;
   readonly branchId: string;
+  /** Persisted business-policy revision; neither schemaVersion nor Mongo __v. */
   readonly revision: number;
 }
 export interface SchoolCustodyPolicyContract {
@@ -35,6 +36,7 @@ export interface CustodyVerificationDependencies {
   readonly verifier: {
     readonly actorId: string;
     readonly sessionId: string;
+    /** Transaction-document observations (__v), not durable school grants. */
     readonly actorRevision: number;
     readonly sessionRevision: number;
     readonly schoolAuthorityEvidenceReference: string;
@@ -45,6 +47,7 @@ export interface CustodyVerificationDependencies {
   };
   readonly verification: {
     readonly evidenceReference: string;
+    /** Future school-decision revision; not collector identity or document __v. */
     readonly revision: number;
     readonly validFrom: Date;
     readonly validUntil: Date;
@@ -62,6 +65,7 @@ export interface CustodyVerificationDependencies {
 }
 export interface CollectorIdentityBinding {
   readonly pickupPersonId: string;
+  /** PickupPerson.revision pinned by submissions; verification must not bump it. */
   readonly personRevision: number;
   readonly identityFingerprint: string;
   readonly provenance: CustodySubjectBinding & {
@@ -73,6 +77,37 @@ export interface CollectorVerificationDependencies
   extends CustodyVerificationDependencies {
   readonly collector: CollectorIdentityBinding;
 }
+
+/** Future in-memory observations only: no model fields, writer or proof factory.
+ * Keeping the counters separate does not validate them or grant authority.
+ * Document versions serialize writes; they do not change submitted identity.
+ */
+export interface CollectorVerificationRevisionContext {
+  readonly identity: CollectorIdentityBinding;
+  readonly verificationRevision: number;
+  readonly policy: SchoolCustodyPolicyIdentity;
+  readonly documentVersions: {
+    readonly pickupPerson: number;
+    readonly policy: number;
+  };
+}
+
+/** Diagnostic vocabulary, not an action allowlist, school policy or API input.
+ * No reason can clear Hold, authorize re-verification or enable release.
+ */
+export const VERIFICATION_INVALIDATION_REASONS = Object.freeze([
+  'school_policy_unapproved',
+  'subject_provenance_changed',
+  'collector_identity_changed',
+  'custody_hold',
+  'verification_expired',
+  'verification_revoked',
+  'policy_revision_changed',
+  'verifier_authority_unavailable',
+  'evidence_unavailable',
+] as const);
+export type VerificationInvalidationReason =
+  (typeof VERIFICATION_INVALIDATION_REASONS)[number];
 
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null &&
