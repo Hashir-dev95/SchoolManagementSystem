@@ -35,6 +35,7 @@ import {ensurePickupAuthorizationIndexes} from './models/pickupAuthorization';
 import {ensureEarlyExitIndexes} from './models/earlyExitRequest';
 import {ensureCustodyVerifierIndexes} from './models/custodyVerifierGrant';
 import {ensureProtectedEvidenceIndexes} from './models/protectedEvidence';
+import {ensureStudentCustodyRecordIndexes} from './models/studentCustodyRecord';
 
 class StartupError extends Error {}
 const configuredPort = process.env.PORT || '5000';
@@ -71,6 +72,7 @@ const startServer = async (): Promise<void> => {
   await ensureEarlyExitIndexes();
   await ensureCustodyVerifierIndexes();
   await ensureProtectedEvidenceIndexes();
+  await ensureStudentCustodyRecordIndexes();
   await ensureLiveLessonIndexes();
   await ensureTeacherAccountIndex();
   await ensureAttendanceAmendmentIndexes();
