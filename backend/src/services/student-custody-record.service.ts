@@ -585,20 +585,65 @@ function buildStudentCustodyRecordService(config: Readonly<{
     });
   }
 
-  async function listForStudent(input: Readonly<{ actor: CustodyRecordActor; studentId: string; enrollmentId: string }>) {
+  async function listPageForStudent(input: Readonly<{
+    actor: CustodyRecordActor; studentId: string; enrollmentId: string; limit?: number;
+    before?: Readonly<{ createdAt: Date; id: string }>;
+  }>) {
+    const limit = input.limit ?? 100;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || (input.before && (!Number.isFinite(input.before.createdAt.getTime()) || !validId(input.before.id)))) throw fail('invalid_request');
     const session = await mongoose.startSession();
     try {
       return await session.withTransaction(async () => {
         const { user } = await actorContext(input.actor, session);
         await enrollmentContext(input.actor, input.studentId, input.enrollmentId, session);
         await authorize('read', input.actor, user, input, null, session);
-        const records = await StudentCustodyRecord.find({ branchId: input.actor.branchId, studentId: input.studentId, enrollmentId: input.enrollmentId }).sort({ createdAt: -1, _id: -1 }).limit(100).session(session).lean();
-        return records.map(record => safeRecord(record));
+        const listScope: Record<string, unknown> = { branchId: input.actor.branchId, studentId: input.studentId, enrollmentId: input.enrollmentId };
+        if (user.role === 'parent') listScope.createdBy = input.actor.userId;
+        if (input.before) listScope.$or = [
+          { createdAt: { $lt: input.before.createdAt } },
+          { createdAt: input.before.createdAt, _id: { $lt: new Types.ObjectId(input.before.id) } },
+        ];
+        const records = await StudentCustodyRecord.find(listScope).sort({ createdAt: -1, _id: -1 }).limit(limit + 1).session(session).lean();
+        const page = records.slice(0, limit);
+        const visible = [];
+        for (const record of page) {
+          if (user.role === 'principal') {
+            try {
+              await authorize('read', input.actor, user, { studentId: input.studentId, enrollmentId: input.enrollmentId }, String(record._id), session);
+            } catch (error) {
+              if (error instanceof StudentCustodyRecordError && error.code === 'unauthorized') continue;
+              throw error;
+            }
+          }
+          visible.push(record);
+        }
+        const last = page.at(-1);
+        return {
+          items: visible.map(record => safeRecord(record)),
+          nextCursor: records.length > limit && last ? { createdAt: last.createdAt, id: String(last._id) } : null,
+        };
       }, { readPreference: 'primary', readConcern: { level: 'snapshot' } });
     } finally { await session.endSession(); }
   }
 
-  return Object.freeze({ create, read, mutate, attachEvidence, listForStudent });
+  async function listForStudent(input: Readonly<{ actor: CustodyRecordActor; studentId: string; enrollmentId: string }>) {
+    return (await listPageForStudent(input)).items;
+  }
+
+  async function authorizeEvidenceUpload(input: Readonly<{ actor: CustodyRecordActor; recordId: string }>) {
+    const session = await mongoose.startSession();
+    try {
+      return await session.withTransaction(async () => {
+        const { user } = await actorContext(input.actor, session);
+        const { record } = await requireCurrentRecord(input.actor, input.recordId, session);
+        await authorize('attach_evidence', input.actor, user, { studentId: String(record.studentId), enrollmentId: String(record.enrollmentId) }, input.recordId, session);
+        return record.state === 'draft';
+      }, { readPreference: 'primary', readConcern: { level: 'snapshot' } });
+    } catch { return false; }
+    finally { await session.endSession(); }
+  }
+
+  return Object.freeze({ create, read, mutate, attachEvidence, listForStudent, listPageForStudent, authorizeEvidenceUpload });
 }
 
 /** Supported production operations use fixed, fail-closed dependencies. */

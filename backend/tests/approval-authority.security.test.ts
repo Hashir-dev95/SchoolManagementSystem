@@ -472,9 +472,14 @@ test('Principal dangerous permissions are removed, supporting reads and Super Ad
     !permission.startsWith('teacher.assessments.') &&
     !permission.startsWith('teacher.notices.') && !permission.startsWith('teacher.work.') &&
     permission !== PERMISSIONS.PRINCIPAL_SAFETY_VIEW && permission !== PERMISSIONS.PRINCIPAL_SAFETY_MANAGE &&
+    permission !== PERMISSIONS.PRINCIPAL_CUSTODY_RECORDS_REVIEW &&
     permission !== PERMISSIONS.TEACHER_CLASSES_VIEW && permission !== PERMISSIONS.TEACHER_TIMETABLE_VIEW &&
     permission !== PERMISSIONS.TEACHER_ATTENDANCE_VIEW && permission !== PERMISSIONS.TEACHER_ATTENDANCE_MANAGE &&
     permission !== PERMISSIONS.TEACHER_TIMETABLE_ACKNOWLEDGE && permission !== PERMISSIONS.TEACHER_TIMETABLE_ISSUE));
+  assert.equal(ROLE_PERMISSIONS.principal.includes(PERMISSIONS.PRINCIPAL_CUSTODY_RECORDS_REVIEW), true);
+  assert.equal(ROLE_PERMISSIONS.super_admin.includes(PERMISSIONS.PRINCIPAL_CUSTODY_RECORDS_REVIEW), false);
+  for (const role of ['parent', 'teacher', 'student', 'finance', 'gate_staff'] as const)
+    assert.equal(ROLE_PERMISSIONS[role].includes(PERMISSIONS.PRINCIPAL_CUSTODY_RECORDS_REVIEW), false);
   for (const permission of [PERMISSIONS.GATE_TASKS_VIEW, PERMISSIONS.GATE_ENTRY_RECORD, PERMISSIONS.GATE_PICKUP_VERIFY, PERMISSIONS.GATE_EXIT_CONFIRM, PERMISSIONS.GATE_INCIDENT_ESCALATE]) {
     assert.equal(ROLE_PERMISSIONS.super_admin.includes(permission), false);
   }

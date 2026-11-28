@@ -39,6 +39,10 @@ import {principalResultRouter, studentResultRouter, teacherResultRouter} from '.
 import teacherNotificationRoutes from './routes/teacher-notification.routes';
 import {enrollmentRouter} from './routes/student-enrollment.routes';
 import {academicSetupRouter} from './routes/academic-setup.routes';
+import {
+  custodyRecordApiError, parentCustodyRecordsRouter, parentCollectorRecordsRouter,
+  principalCustodyRecordsRouter, principalCollectorRecordsRouter,
+} from './routes/custody-record.routes';
 
 const backupRoutes = (backupRoutesModule as any).default ?? backupRoutesModule;
 
@@ -46,6 +50,10 @@ const app = express();
 
 app.use(cors());
 app.use('/api/finance-provider', createProviderCallbackRouter());
+// Evidence bytes use a bounded route-scoped raw parser before JSON parsing.
+const protectedEvidenceParser = express.raw({ type: ['application/pdf', 'image/png', 'image/jpeg'], limit: '10mb' });
+app.use('/api/parent/me/children/:studentId/custody-records/:recordId/evidence', protectedEvidenceParser);
+app.use('/api/parent/me/pickup-authorizations/:authorizationId/collector-verification-records/:recordId/evidence', protectedEvidenceParser);
 app.use(express.json());
 
 app.get('/', (_req, res) => {
@@ -61,7 +69,16 @@ app.use('/api/gate', gateFoundationRouter);
 app.use('/api/gate-admin', gateFoundationParseError);
 app.use('/api/gate', gateFoundationParseError);
 app.use('/api/student/me', studentSelfRoutes);
+// Specific Parent custody routes must precede parentSelfRoutes' terminal deny.
+app.use('/api/parent/me/children/:studentId/custody-records', parentCustodyRecordsRouter);
+app.use('/api/parent/me/pickup-authorizations/:authorizationId/collector-verification-records', parentCollectorRecordsRouter);
 app.use('/api/parent/me', parentSelfRoutes);
+app.use('/api/principal/custody-records', principalCustodyRecordsRouter);
+app.use('/api/principal/collector-verification-records', principalCollectorRecordsRouter);
+app.use('/api/parent/me/children/:studentId/custody-records', custodyRecordApiError);
+app.use('/api/parent/me/pickup-authorizations/:authorizationId/collector-verification-records', custodyRecordApiError);
+app.use('/api/principal/custody-records', custodyRecordApiError);
+app.use('/api/principal/collector-verification-records', custodyRecordApiError);
 app.use('/api/parent/me/children/:studentId/pickup-authorizations', pickupParseError);
 app.use('/api/parent/me/children/:studentId/early-exit-requests', earlyExitParseError);
 app.use('/api/finance/me', financeRoutes);

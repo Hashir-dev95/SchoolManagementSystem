@@ -61,6 +61,7 @@ export const PERMISSIONS = {
   PRINCIPAL_DASHBOARD_VIEW: 'principal.dashboard.view',
   PRINCIPAL_APPROVALS_VIEW: 'principal.approvals.view',
   PRINCIPAL_APPROVALS_MANAGE: 'principal.approvals.manage',
+  PRINCIPAL_CUSTODY_RECORDS_REVIEW: 'principal.custodyRecords.review',
   PRINCIPAL_TASKS_MANAGE: 'principal.tasks.manage',
   PRINCIPAL_SAFETY_VIEW: 'principal.safety.view',
   PRINCIPAL_SAFETY_MANAGE: 'principal.safety.manage',

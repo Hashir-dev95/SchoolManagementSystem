@@ -771,7 +771,12 @@ function buildCollectorVerificationRecordService(config: Readonly<{
     });
   }
 
-  async function listForStudent(input: Readonly<{ actor: CollectorVerificationRecordActor; authorizationId: string }>) {
+  async function listPageForStudent(input: Readonly<{
+    actor: CollectorVerificationRecordActor; authorizationId: string; limit?: number;
+    before?: Readonly<{ createdAt: Date; id: string }>;
+  }>) {
+    const limit = input.limit ?? 100;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || (input.before && (!Number.isFinite(input.before.createdAt.getTime()) || !validId(input.before.id)))) throw fail('invalid_request');
     const session = await mongoose.startSession();
     try {
       return await session.withTransaction(async () => {
@@ -785,21 +790,48 @@ function buildCollectorVerificationRecordService(config: Readonly<{
           identityFingerprint: bound.binding.identityFingerprint,
         };
         await authorize('read', input.actor, user, authority, null, session);
-        const records = await CollectorVerificationRecord.find({
+        const filter: Record<string, unknown> = {
           branchId: input.actor.branchId, studentId: bound.proposal.studentId,
           enrollmentId: bound.proposal.enrollmentId, pickupAuthorizationId: bound.proposal._id,
-        }).sort({ createdAt: -1, _id: -1 }).limit(100).session(session).lean();
+        };
+        if (input.before) filter.$or = [
+          { createdAt: { $lt: input.before.createdAt } },
+          { createdAt: input.before.createdAt, _id: { $lt: new Types.ObjectId(input.before.id) } },
+        ];
+        const records = await CollectorVerificationRecord.find(filter).sort({ createdAt: -1, _id: -1 }).limit(limit + 1).session(session).lean();
+        const page = records.slice(0, limit);
         const current = [];
-        for (const record of records) {
+        for (const record of page) {
           if (bindingMismatch(record, bound)) continue;
           current.push(safeRecord(record, await CollectorVerificationRecordEvidence.find({ recordId: record._id }).session(session).lean()));
         }
-        return current;
+        const last = page.at(-1);
+        return {
+          items: current,
+          nextCursor: records.length > limit && last ? { createdAt: last.createdAt, id: String(last._id) } : null,
+        };
       }, { readPreference: 'primary', readConcern: { level: 'snapshot' } });
     } finally { await session.endSession(); }
   }
 
-  return Object.freeze({ create, read, mutate, attachEvidence, listForStudent });
+  async function listForStudent(input: Readonly<{ actor: CollectorVerificationRecordActor; authorizationId: string }>) {
+    return (await listPageForStudent(input)).items;
+  }
+
+  async function authorizeEvidenceUpload(input: Readonly<{ actor: CollectorVerificationRecordActor; recordId: string }>) {
+    const session = await mongoose.startSession();
+    try {
+      return await session.withTransaction(async () => {
+        const { user } = await actorContext(input.actor, session);
+        const { record } = await requireCurrentRecord(input.actor, input.recordId, session);
+        await authorize('attach_evidence', input.actor, user, recordAuthority(record), input.recordId, session);
+        return record.state === 'draft';
+      }, { readPreference: 'primary', readConcern: { level: 'snapshot' } });
+    } catch { return false; }
+    finally { await session.endSession(); }
+  }
+
+  return Object.freeze({ create, read, mutate, attachEvidence, listForStudent, listPageForStudent, authorizeEvidenceUpload });
 }
 
 /** Supported production operations use fixed, fail-closed dependencies. */

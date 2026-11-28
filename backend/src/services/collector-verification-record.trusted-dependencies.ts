@@ -1,23 +1,18 @@
-import type {
-  CollectorVerificationRecordAuthorization,
-  CollectorVerificationRecordActor,
-} from './collector-verification-record.service';
-import type { EvidenceAuthorizationRequest, EvidenceDto } from './protected-evidence.service';
+import { protectedEvidenceRuntime } from './protected-evidence-runtime';
+import type { EvidenceAuthorizationRequest } from './protected-evidence.service';
+import type { CollectorVerificationRecordActor } from './collector-verification-record.service';
+import type { CollectorVerificationRecordAuthorization } from './collector-verification-record.service';
 
-/** No approved Parent/reviewer domain authorizer is wired for this internal
- * foundation. Production access stays denied until that authority is approved. */
-export async function authorizeCollectorVerificationRecord(
-  _request: CollectorVerificationRecordAuthorization,
-): Promise<boolean> {
-  return false;
+/** Defer model-backed authorization loading until after service construction. */
+export async function authorizeCollectorVerificationRecord(request: CollectorVerificationRecordAuthorization) {
+  const trusted = await import('./custody-record-trusted-authorization.js');
+  return trusted.authorizeCollectorVerificationRecord(request);
 }
 
-/** Protected evidence access is fixed-deny until the trusted B2-2 composition
- * has an approved collector-specific authorizer. This creates no upload path. */
-export async function readCollectorVerificationEvidence(_input: {
-  actor: CollectorVerificationRecordActor;
-  evidenceId: string;
+export async function readCollectorVerificationEvidence(input: {
+  actor: CollectorVerificationRecordActor; evidenceId: string;
   authorize: (request: EvidenceAuthorizationRequest) => Promise<boolean>;
-}): Promise<{ metadata: EvidenceDto; content: Buffer; contentType: string }> {
-  throw new Error('Collector verification evidence access is not configured');
+}) {
+  if (!protectedEvidenceRuntime) throw new Error('Protected evidence service is unavailable');
+  return protectedEvidenceRuntime.readAvailable({ ...input, authorize: input.authorize });
 }
